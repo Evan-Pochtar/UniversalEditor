@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = "0.26" # The GUI Framework
-egui = "0.26"   # The Widgets
-ropey = "1.6"   # The 1GB+ Text Engine
-rfd = "0.14"    # Native File Dialogs
-serde = { version = "1.0", features = ["derive"] } # Saving state
+eframe = "0.26"
+egui = "0.26"
+ropey = "1.6"
+rfd = "0.14"
+serde = { version = "1.0", features = ["derive"] }
 chrono = "0.4"
