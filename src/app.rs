@@ -26,7 +26,7 @@ impl UniversalEditor {
                         ui.close_menu();
                     }
                     if ui.button("Open...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                             self.active_module = Some(Box::new(TextEditor::load(path)));
                         }
                         ui.close_menu();
@@ -93,7 +93,7 @@ impl UniversalEditor {
                 }
                 ui.add_space(10.0);
                 if style::secondary_button(ui, "Open File").clicked() {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                         self.active_module = Some(Box::new(TextEditor::load(path)));
                     }
                 }
