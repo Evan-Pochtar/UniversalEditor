@@ -1,18 +1,28 @@
-use eframe::egui;
-use super::style;
+use eframe::{egui, Theme};
+use super::style::{self, ThemeMode};
 use super::modules::{EditorModule, text_editor::TextEditor};
 
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
     sidebar_open: bool,
+    theme_mode: ThemeMode,
 }
 
 impl UniversalEditor {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        style::configure_modern_style(&cc.egui_ctx);
+        let initial_theme = cc.integration_info.system_theme
+            .map(|theme| match theme {
+                Theme::Dark => ThemeMode::Dark,
+                Theme::Light => ThemeMode::Light,
+            })
+            .unwrap_or(ThemeMode::Dark);
+        
+        style::apply_theme(&cc.egui_ctx, initial_theme);
+        
         Self {
             active_module: None,
             sidebar_open: true,
+            theme_mode: initial_theme,
         }
     }
 
@@ -51,7 +61,21 @@ impl UniversalEditor {
                 });
 
                 ui.menu_button("View", |ui| {
-                   ui.checkbox(&mut self.sidebar_open, "Show Sidebar"); 
+                   ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
+                   
+                   ui.separator();
+                   
+                   ui.label("Theme:");
+                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Light), "Light").clicked() {
+                       self.theme_mode = ThemeMode::Light;
+                       style::apply_theme(ctx, self.theme_mode);
+                       ui.close_menu();
+                   }
+                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Dark), "Dark").clicked() {
+                       self.theme_mode = ThemeMode::Dark;
+                       style::apply_theme(ctx, self.theme_mode);
+                       ui.close_menu();
+                   }
                 });
             });
             ui.add_space(4.0);
@@ -88,11 +112,11 @@ impl UniversalEditor {
                 ui.heading("UNIVERSAL EDITOR");
                 ui.add_space(20.0);
 
-                if style::primary_button(ui, "New Text File").clicked() {
+                if style::primary_button(ui, "New Text File", self.theme_mode).clicked() {
                     self.active_module = Some(Box::new(TextEditor::new_empty()));
                 }
                 ui.add_space(10.0);
-                if style::secondary_button(ui, "Open File").clicked() {
+                if style::secondary_button(ui, "Open File", self.theme_mode).clicked() {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                         self.active_module = Some(Box::new(TextEditor::load(path)));
                     }
