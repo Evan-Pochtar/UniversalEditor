@@ -10,13 +10,13 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 720.0])
             .with_title("Universal Editor")
-            .with_icon(eframe::icon_data::from_png_bytes(&[]).unwrap_or_default()), // Add icon here later
+            .with_icon(eframe::icon_data::from_png_bytes(&[]).unwrap_or_default()),
         ..Default::default()
     };
     
     eframe::run_native(
         "Universal Editor",
         options,
-        Box::new(|cc| Box::new(UniversalEditor::new(cc))),
+        Box::new(|cc| Ok(Box::new(UniversalEditor::new(cc)))),
     )
 }

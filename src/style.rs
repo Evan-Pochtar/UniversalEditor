@@ -9,17 +9,15 @@ pub enum ThemeMode {
 pub fn apply_theme(ctx: &egui::Context, theme: ThemeMode) {
     let mut style = (*ctx.style()).clone();
 
-    // Common styling
-    style.visuals.window_rounding = egui::Rounding::same(8.0);
-    style.visuals.menu_rounding = egui::Rounding::same(6.0);
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(4.0);
+    // Common styling - using CornerRadius instead of deprecated Rounding
+    style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(4);
+    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(4);
+    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(4);
+    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(4);
     
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    style.spacing.window_margin = egui::Margin::same(10.0);
+    style.spacing.window_margin = egui::Margin::same(10);
 
     match theme {
         ThemeMode::Dark => apply_dark_theme(&mut style),

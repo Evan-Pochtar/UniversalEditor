@@ -86,7 +86,7 @@ impl EditorModule for TextEditor {
         // --- TOOLBAR ---
         ui.horizontal(|ui| {
             ui.label("Font Family:");
-            egui::ComboBox::from_id_source("font_fam")
+            egui::ComboBox::from_id_salt("font_fam")
                 .selected_text(if matches!(self.font_family, egui::FontFamily::Proportional) { "Sans" } else { "Mono" })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.font_family, egui::FontFamily::Monospace, "Monospace");
@@ -96,7 +96,7 @@ impl EditorModule for TextEditor {
             ui.add_space(10.0);
 
             ui.label("Size:");
-            ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).clamp_range(8.0..=72.0));
+            ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).range(8.0..=72.0));
         });
 
         ui.separator();

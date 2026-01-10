@@ -1,4 +1,4 @@
-use eframe::{egui, Theme};
+use eframe::egui;
 use super::style::{self, ThemeMode};
 use super::modules::{EditorModule, text_editor::TextEditor};
 
@@ -10,12 +10,10 @@ pub struct UniversalEditor {
 
 impl UniversalEditor {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let initial_theme = cc.integration_info.system_theme
-            .map(|theme| match theme {
-                Theme::Dark => ThemeMode::Dark,
-                Theme::Light => ThemeMode::Light,
-            })
-            .unwrap_or(ThemeMode::Dark);
+        let initial_theme = match cc.egui_ctx.theme() {
+            egui::Theme::Dark => ThemeMode::Dark,
+            egui::Theme::Light => ThemeMode::Light,
+        };
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
         
@@ -29,30 +27,30 @@ impl UniversalEditor {
     fn render_top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.add_space(4.0);
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Text File").clicked() {
                         self.active_module = Some(Box::new(TextEditor::new_empty()));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Open...").clicked() {
                         if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                             self.active_module = Some(Box::new(TextEditor::load(path)));
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Save (Ctrl+S)").clicked() {
                         if let Some(module) = &mut self.active_module {
                             let _ = module.save();
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Save As...").clicked() {
                         if let Some(module) = &mut self.active_module {
                             let _ = module.save_as();
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Exit").clicked() {
@@ -69,12 +67,12 @@ impl UniversalEditor {
                    if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Light), "Light").clicked() {
                        self.theme_mode = ThemeMode::Light;
                        style::apply_theme(ctx, self.theme_mode);
-                       ui.close_menu();
+                       ui.close();
                    }
                    if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Dark), "Dark").clicked() {
                        self.theme_mode = ThemeMode::Dark;
                        style::apply_theme(ctx, self.theme_mode);
-                       ui.close_menu();
+                       ui.close();
                    }
                 });
             });
@@ -95,7 +93,7 @@ impl UniversalEditor {
                 
                 ui.label("Open Editors:");
                 if let Some(module) = &self.active_module {
-                    ui.label(format!("📄 {}", module.get_title()));
+                    ui.label(format!("File: {}", module.get_title()));
                 } else {
                     ui.weak("No files open");
                 }
