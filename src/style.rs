@@ -61,7 +61,7 @@ fn apply_dark_theme(style: &mut egui::Style) {
     
     // Selection and hyperlinks
     style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(60, 120, 240, 100);
-    style.visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 140, 255));
+    style.visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0, 0, 0));
     style.visuals.hyperlink_color = egui::Color32::from_rgb(100, 160, 255);
 }
 
