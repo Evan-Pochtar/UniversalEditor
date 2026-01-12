@@ -24,7 +24,7 @@ impl UniversalEditor {
         }
     }
 
-    fn render_top_bar(&mut self, ctx: &egui::Context) {
+    fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.add_space(4.0);
             egui::MenuBar::new().ui(ui, |ui| {
@@ -80,7 +80,7 @@ impl UniversalEditor {
         });
     }
 
-    fn render_sidebar(&mut self, ctx: &egui::Context) {
+    fn sidebar(&mut self, ctx: &egui::Context) {
         if !self.sidebar_open { return; }
         
         egui::SidePanel::left("sidebar")
@@ -104,7 +104,7 @@ impl UniversalEditor {
             });
     }
 
-    fn render_landing_page(&mut self, ui: &mut egui::Ui) {
+    fn landing_page(&mut self, ui: &mut egui::Ui) {
         ui.centered_and_justified(|ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("UNIVERSAL EDITOR");
@@ -126,14 +126,14 @@ impl UniversalEditor {
 
 impl eframe::App for UniversalEditor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.render_top_bar(ctx);
-        self.render_sidebar(ctx);
+        self.top_bar(ctx);
+        self.sidebar(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(module) = &mut self.active_module {
                 module.ui(ui, ctx);
             } else {
-                self.render_landing_page(ui);
+                self.landing_page(ui);
             }
         });
     }

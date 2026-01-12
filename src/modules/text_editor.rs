@@ -127,7 +127,7 @@ impl TextEditor {
         self.wrap_selection("__");
     }
 
-    fn render_markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             let font_size = self.font_size;
             let font_family = self.font_family.clone();
@@ -513,7 +513,7 @@ impl EditorModule for TextEditor {
 
         match self.view_mode {
             ViewMode::Markdown => {
-                self.render_markdown_editable(ui, ctx);
+                self.markdown_editable(ui, ctx);
             }
             ViewMode::Plain => {
                 egui::ScrollArea::vertical().show(ui, |ui| {
