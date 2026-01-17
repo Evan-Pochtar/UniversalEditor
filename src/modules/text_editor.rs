@@ -19,6 +19,7 @@ pub struct TextEditor {
     font_family: egui::FontFamily,
     view_mode: ViewMode,
     last_cursor_range: Option<egui::text::CCursorRange>,
+    pending_cursor_pos: Option<usize>,
 }
 
 impl TextEditor {
@@ -31,6 +32,7 @@ impl TextEditor {
             font_family: egui::FontFamily::Monospace,
             view_mode: ViewMode::Plain,
             last_cursor_range: None,
+            pending_cursor_pos: None,
         }
     }
 
@@ -52,6 +54,7 @@ impl TextEditor {
             font_family: egui::FontFamily::Monospace,
             view_mode: ViewMode::Plain,
             last_cursor_range: None,
+            pending_cursor_pos: None,
         }
     }
 
@@ -68,7 +71,9 @@ impl TextEditor {
             let wrapped = format!("{}{}", wrapper, wrapper);
             self.content.insert_str(cursor_pos, &wrapped);
             self.dirty = true;
-            self.last_cursor_range = None;
+            
+            let wrapper_char_count = wrapper.chars().count();
+            self.pending_cursor_pos = Some(range.primary.index + wrapper_char_count);
         }
     }
 
@@ -85,7 +90,7 @@ impl TextEditor {
             let start_byte = self.char_index_to_byte_index(start_char);
             let end_byte = self.char_index_to_byte_index(end_char);
             
-            let selected = &self.content[start_byte..end_byte];
+            let selected = self.content[start_byte..end_byte].to_string();
             
             let prefix_start_char = start_char.saturating_sub(wrapper.chars().count());
             let prefix_start_byte = self.char_index_to_byte_index(prefix_start_char);
@@ -105,13 +110,15 @@ impl TextEditor {
             if has_prefix && has_suffix {
                 self.content.replace_range(end_byte..suffix_end_byte, "");
                 self.content.replace_range(prefix_start_byte..start_byte, "");
+                self.pending_cursor_pos = Some(start_char + selected.chars().count());
             } else {
                 let wrapped = format!("{}{}{}", wrapper, selected, wrapper);
+                let wrapper_char_count = wrapper.chars().count();
                 self.content.replace_range(start_byte..end_byte, &wrapped);
+                self.pending_cursor_pos = Some(start_char + selected.chars().count() + wrapper_char_count * 2);
             }
             
             self.dirty = true;
-            self.last_cursor_range = None;
         }
     }
 
@@ -154,6 +161,14 @@ impl TextEditor {
                 .frame(false);
 
             let response = ui.add_sized(ui.available_size(), text_edit);
+
+            if let Some(new_pos) = self.pending_cursor_pos.take() {
+                if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
+                    let ccursor = egui::text::CCursor::new(new_pos);
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(ccursor)));
+                    state.store(ctx, response.id);
+                }
+            }
 
             if let Some(state) = egui::TextEdit::load_state(ctx, response.id) {
                 if let Some(cursor_range) = state.cursor.char_range() {
@@ -252,6 +267,14 @@ impl TextEditor {
         Self::parse_inline_formatting_static(line, job, font_size, font_family, cursor_pos, line_start_offset);
     }
 
+    fn invisible_format_static() -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(0.001, egui::FontFamily::Monospace), 
+            color: egui::Color32::TRANSPARENT,
+            ..Default::default()
+        }
+    }
+
     fn parse_inline_formatting_static(
         text: &str,
         job: &mut egui::text::LayoutJob,
@@ -271,77 +294,107 @@ impl TextEditor {
                 pos >= chars.len() || chars[pos].is_whitespace()
             };
 
+            // --- Bold Parsing (**text**) ---
             if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 2, "**") {
-                    let marker_end_pos = end + 2;
-                    if is_followed_by_whitespace(marker_end_pos) {
-                        if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
-                            current_text.clear();
-                        }
+                    if end > i + 2 { 
+                        let marker_end_pos = end + 2;
+                        if is_followed_by_whitespace(marker_end_pos) {
+                            if !current_text.is_empty() {
+                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                current_text.clear();
+                            }
 
-                        let marker_end = text_start_offset + marker_end_pos;
-                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
-                        
-                        if cursor_in_range {
-                            let region: String = chars[i..marker_end_pos].iter().collect();
-                            job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
-                        } else {
-                            let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::bold_format_static(font_size));
+                            let marker_end = text_start_offset + marker_end_pos;
+                            let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos < marker_end);
+                            
+                            if cursor_in_range {
+                                let region: String = chars[i..marker_end_pos].iter().collect();
+                                job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                            } else {
+                                let open_mark: String = chars[i..i+2].iter().collect();
+                                job.append(&open_mark, 0.0, Self::invisible_format_static());
+
+                                let content: String = chars[i + 2..end].iter().collect();
+                                job.append(&content, 0.0, Self::bold_format_static(font_size));
+
+                                let close_mark: String = chars[end..marker_end_pos].iter().collect();
+                                job.append(&close_mark, 0.0, Self::invisible_format_static());
+                            }
+                            i = marker_end_pos;
+                            continue;
                         }
-                        i = marker_end_pos;
-                        continue;
                     }
                 }
             }
 
             if chars[i] == '*' {
-                if let Some(end) = Self::find_closing_marker(&chars, i + 1, "*") {
-                    let marker_end_pos = end + 1;
-                    if is_followed_by_whitespace(marker_end_pos) {
-                        if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
-                            current_text.clear();
-                        }
+                let is_start_of_bold = i + 1 < chars.len() && chars[i + 1] == '*';
+                
+                if !is_start_of_bold {
+                    if let Some(end) = Self::find_closing_marker(&chars, i + 1, "*") {
+                        if end > i + 1 {
+                            let marker_end_pos = end + 1;
+                            if is_followed_by_whitespace(marker_end_pos) {
+                                if !current_text.is_empty() {
+                                    job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                    current_text.clear();
+                                }
 
-                        let marker_end = text_start_offset + marker_end_pos;
-                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
-                        
-                        if cursor_in_range {
-                            let region: String = chars[i..marker_end_pos].iter().collect();
-                            job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
-                        } else {
-                            let content: String = chars[i + 1..end].iter().collect();
-                            job.append(&content, 0.0, Self::italic_format_static(font_size));
+                                let marker_end = text_start_offset + marker_end_pos;
+                                let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos < marker_end);
+                                
+                                if cursor_in_range {
+                                    let region: String = chars[i..marker_end_pos].iter().collect();
+                                    job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                                } else {
+                                    let open_mark: String = chars[i..i+1].iter().collect();
+                                    job.append(&open_mark, 0.0, Self::invisible_format_static());
+
+                                    let content: String = chars[i + 1..end].iter().collect();
+                                    job.append(&content, 0.0, Self::italic_format_static(font_size));
+
+                                    let close_mark: String = chars[end..marker_end_pos].iter().collect();
+                                    job.append(&close_mark, 0.0, Self::invisible_format_static());
+                                }
+                                i = marker_end_pos;
+                                continue;
+                            }
                         }
-                        i = marker_end_pos;
-                        continue;
                     }
                 }
             }
 
+            // --- Underline Parsing (__text__) ---
             if i + 1 < chars.len() && chars[i] == '_' && chars[i + 1] == '_' {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 2, "__") {
-                    let marker_end_pos = end + 2;
-                    if is_followed_by_whitespace(marker_end_pos) {
-                        if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
-                            current_text.clear();
-                        }
+                    if end > i + 2 {
+                        let marker_end_pos = end + 2;
+                        if is_followed_by_whitespace(marker_end_pos) {
+                            if !current_text.is_empty() {
+                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                current_text.clear();
+                            }
 
-                        let marker_end = text_start_offset + marker_end_pos;
-                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
-                        
-                        if cursor_in_range {
-                            let region: String = chars[i..marker_end_pos].iter().collect();
-                            job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
-                        } else {
-                            let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::underline_format_static(font_size));
+                            let marker_end = text_start_offset + marker_end_pos;
+                            let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos < marker_end);
+                            
+                            if cursor_in_range {
+                                let region: String = chars[i..marker_end_pos].iter().collect();
+                                job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                            } else {
+                                let open_mark: String = chars[i..i+2].iter().collect();
+                                job.append(&open_mark, 0.0, Self::invisible_format_static());
+
+                                let content: String = chars[i + 2..end].iter().collect();
+                                job.append(&content, 0.0, Self::underline_format_static(font_size));
+
+                                let close_mark: String = chars[end..marker_end_pos].iter().collect();
+                                job.append(&close_mark, 0.0, Self::invisible_format_static());
+                            }
+                            i = marker_end_pos;
+                            continue;
                         }
-                        i = marker_end_pos;
-                        continue;
                     }
                 }
             }
@@ -525,6 +578,14 @@ impl EditorModule for TextEditor {
                         .frame(false);
 
                     let response = ui.add_sized(ui.available_size(), text_edit);
+
+                    if let Some(new_pos) = self.pending_cursor_pos.take() {
+                        if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
+                            let ccursor = egui::text::CCursor::new(new_pos);
+                            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(ccursor)));
+                            state.store(ctx, response.id);
+                        }
+                    }
 
                     if let Some(state) = egui::TextEdit::load_state(ctx, response.id) {
                         if let Some(cursor_range) = state.cursor.char_range() {

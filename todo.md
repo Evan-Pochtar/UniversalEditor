@@ -20,6 +20,12 @@
 * [ ] Video to Audio File
 
 ## Debugging
+#### Text Editor
+* [ ] Punctuation after Underlined/Bolding/Italics doesn't render properly
+* [ ] If there is a asterisk MUCH after the last italicized word, It will think it connected
+  * Basically, make sure to not check asterisks that are actively being used in words.
+* [ ] Bolding is barely noticable
+  * Seems like just turning the markdown text into same color as the plaintext will help a lot.
 
 ## Features
 #### Text Editor
