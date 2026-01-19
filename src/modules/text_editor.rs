@@ -122,16 +122,38 @@ impl TextEditor {
         }
     }
 
-    fn format_bold(&mut self) {
-        self.wrap_selection("**");
-    }
+    fn format_bold(&mut self) { self.wrap_selection("**"); }
+    fn format_italic(&mut self) { self.wrap_selection("*"); }
+    fn format_underline(&mut self) { self.wrap_selection("__"); }
+    fn format_strikethrough(&mut self) { self.wrap_selection("~~"); }
+    fn format_code(&mut self) { self.wrap_selection("`"); }
 
-    fn format_italic(&mut self) {
-        self.wrap_selection("*");
-    }
+    /// Helper to find a markdown link surrounding a specific cursor position
+    fn find_link_at_offset(chars: &[char], cursor_idx: usize) -> Option<String> {
+        let search_start = cursor_idx.saturating_sub(1000); 
+        let mut start_bracket = None;
+        
+        for i in (search_start..=cursor_idx).rev() {
+            if i < chars.len() && chars[i] == '[' {
+                start_bracket = Some(i);
+                break;
+            }
+        }
 
-    fn format_underline(&mut self) {
-        self.wrap_selection("__");
+        if let Some(start) = start_bracket {
+            if let Some(text_end) = Self::find_closing_bracket(chars, start + 1) {
+                if text_end + 1 < chars.len() && chars[text_end + 1] == '(' {
+                    if let Some(url_end) = Self::find_closing_paren(chars, text_end + 2) {
+                        let end = url_end + 1;
+                        if cursor_idx >= start && cursor_idx <= end {
+                            let url: String = chars[text_end + 2..url_end].iter().collect();
+                            return Some(url);
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -139,19 +161,28 @@ impl TextEditor {
             let font_size = self.font_size;
             let font_family = self.font_family.clone();
             let cursor_pos = self.last_cursor_range.map(|r| r.primary.index);
+            let is_dark_mode = ui.visuals().dark_mode;
             
             let mut layouter = |ui: &egui::Ui, text_buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                 let text = text_buffer.as_str();
                 let mut job = egui::text::LayoutJob::default();
                 job.wrap.max_width = wrap_width;
-                
                 let mut char_offset = 0;
+                let mut in_code_block = false; 
                 for line in text.lines() {
-                    Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset);
+                    if line.trim().starts_with("```") {
+                        in_code_block = !in_code_block;
+                        job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
+                    } 
+                    else if in_code_block {
+                        job.append(line, 0.0, Self::code_format_static(font_size));
+                    } 
+                    else {
+                        Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
+                    }
                     job.append("\n", 0.0, Self::default_format_static(font_size, &font_family));
                     char_offset += line.chars().count() + 1;
                 }
-                
                 ui.fonts_mut(|f| f.layout_job(job))
             };
 
@@ -161,6 +192,20 @@ impl TextEditor {
                 .frame(false);
 
             let response = ui.add_sized(ui.available_size(), text_edit);
+
+            if response.clicked() && ctx.input(|i| i.modifiers.ctrl || i.modifiers.command) {
+                if let Some(cursor_range) = self.last_cursor_range {
+                    let chars: Vec<char> = self.content.chars().collect();
+                    if let Some(url) = Self::find_link_at_offset(&chars, cursor_range.primary.index) {
+                         let final_url = if url.starts_with("http://") || url.starts_with("https://") {
+                             url
+                         } else {
+                             format!("https://{}", url)
+                         };
+                         ctx.open_url(egui::OpenUrl::new_tab(&final_url));
+                    }
+                }
+            }
 
             if let Some(new_pos) = self.pending_cursor_pos.take() {
                 if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
@@ -189,6 +234,7 @@ impl TextEditor {
         font_family: &egui::FontFamily,
         cursor_pos: Option<usize>,
         line_start_offset: usize,
+        is_dark_mode: bool,
     ) {
         if let Some(rest) = line.strip_prefix("### ") {
             let header_start = line_start_offset;
@@ -238,17 +284,17 @@ impl TextEditor {
 
         if let Some(rest) = line.strip_prefix("- ") {
             job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
-            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset);
+            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
         if let Some(rest) = line.strip_prefix("* ") {
             job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
-            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset);
+            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
         if let Some(rest) = line.strip_prefix("+ ") {
             job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
-            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset);
+            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
 
@@ -260,11 +306,11 @@ impl TextEditor {
             let (prefix, rest) = line.split_at(line.char_indices().nth(i + 2).map(|(idx, _)| idx).unwrap_or(line.len()));
             job.append(prefix, 0.0, Self::default_format_static(font_size, font_family));
             let prefix_chars = prefix.chars().count();
-            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + prefix_chars);
+            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + prefix_chars, is_dark_mode);
             return;
         }
 
-        Self::parse_inline_formatting_static(line, job, font_size, font_family, cursor_pos, line_start_offset);
+        Self::parse_inline_formatting_static(line, job, font_size, font_family, cursor_pos, line_start_offset, is_dark_mode);
     }
 
     fn invisible_format_static() -> egui::TextFormat {
@@ -282,6 +328,7 @@ impl TextEditor {
         font_family: &egui::FontFamily,
         cursor_pos: Option<usize>,
         text_start_offset: usize,
+        is_dark_mode: bool,
     ) {
         let chars: Vec<char> = text.chars().collect();
         let mut i = 0;
@@ -301,7 +348,66 @@ impl TextEditor {
                 is_preceded_by_whitespace_or_start(pos) && !chars[pos + marker_len].is_whitespace()
             };
 
-            // --- Bold Parsing (**text**) ---
+            if i + 1 < chars.len() && chars[i] == '~' && chars[i + 1] == '~' && is_valid_marker_start(i, 2) {
+                if let Some(end) = Self::find_closing_marker(&chars, i + 2, "~~") {
+                    if end > i + 2 { 
+                        let marker_end_pos = end + 2;
+                        if !current_text.is_empty() {
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            current_text.clear();
+                        }
+
+                        let marker_end = text_start_offset + marker_end_pos;
+                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos < marker_end);
+                        
+                        if cursor_in_range {
+                            let region: String = chars[i..marker_end_pos].iter().collect();
+                            job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                        } else {
+                            let open_mark: String = chars[i..i+2].iter().collect();
+                            job.append(&open_mark, 0.0, Self::invisible_format_static());
+
+                            let content: String = chars[i + 2..end].iter().collect();
+                            job.append(&content, 0.0, Self::strikethrough_format_static(font_size));
+
+                            let close_mark: String = chars[end..marker_end_pos].iter().collect();
+                            job.append(&close_mark, 0.0, Self::invisible_format_static());
+                        }
+                        i = marker_end_pos;
+                        continue;
+                    }
+                }
+            }
+
+            if chars[i] == '~' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() && chars[i + 1] != '~' {
+                let mut end = i + 1;
+                while end < chars.len() && !chars[end].is_whitespace() && chars[end] != '~' {
+                    end += 1;
+                }
+                if end > i + 1 {
+                    if !current_text.is_empty() {
+                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                        current_text.clear();
+                    }
+
+                    let marker_end = text_start_offset + end;
+                    let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
+                    
+                    if cursor_in_range {
+                        let region: String = chars[i..end].iter().collect();
+                        job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                    } else {
+                        let marker: String = chars[i..i+1].iter().collect();
+                        job.append(&marker, 0.0, Self::invisible_format_static());
+                        
+                        let content: String = chars[i + 1..end].iter().collect();
+                        job.append(&content, 0.0, Self::subscript_format_static(font_size));
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+
             if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' && is_valid_marker_start(i, 2) {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 2, "**") {
                     if end > i + 2 { 
@@ -322,7 +428,7 @@ impl TextEditor {
                             job.append(&open_mark, 0.0, Self::invisible_format_static());
 
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::bold_format_static(font_size));
+                            job.append(&content, 0.0, Self::bold_format_static(font_size, is_dark_mode));
 
                             let close_mark: String = chars[end..marker_end_pos].iter().collect();
                             job.append(&close_mark, 0.0, Self::invisible_format_static());
@@ -368,7 +474,6 @@ impl TextEditor {
                 }
             }
 
-            // --- Underline Parsing (__text__) ---
             if i + 1 < chars.len() && chars[i] == '_' && chars[i + 1] == '_' && is_valid_marker_start(i, 2) {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 2, "__") {
                     if end > i + 2 {
@@ -400,6 +505,99 @@ impl TextEditor {
                 }
             }
 
+            if chars[i] == '`' && is_valid_marker_start(i, 1) {
+                if let Some(end) = Self::find_closing_marker(&chars, i + 1, "`") {
+                    if end > i + 1 {
+                        let marker_end_pos = end + 1;
+                        if !current_text.is_empty() {
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            current_text.clear();
+                        }
+
+                        let marker_end = text_start_offset + marker_end_pos;
+                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos < marker_end);
+                        
+                        if cursor_in_range {
+                            let region: String = chars[i..marker_end_pos].iter().collect();
+                            job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                        } else {
+                            let open_mark: String = chars[i..i+1].iter().collect();
+                            job.append(&open_mark, 0.0, Self::invisible_format_static());
+
+                            let content: String = chars[i + 1..end].iter().collect();
+                            job.append(&content, 0.0, Self::code_format_static(font_size));
+
+                            let close_mark: String = chars[end..marker_end_pos].iter().collect();
+                            job.append(&close_mark, 0.0, Self::invisible_format_static());
+                        }
+                        i = marker_end_pos;
+                        continue;
+                    }
+                }
+            }
+
+            if chars[i] == '^' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() {
+                let mut end = i + 1;
+                while end < chars.len() && !chars[end].is_whitespace() && chars[end] != '^' {
+                    end += 1;
+                }
+                if end > i + 1 {
+                    if !current_text.is_empty() {
+                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                        current_text.clear();
+                    }
+
+                    let marker_end = text_start_offset + end;
+                    let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
+                    
+                    if cursor_in_range {
+                        let region: String = chars[i..end].iter().collect();
+                        job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                    } else {
+                        let marker: String = chars[i..i+1].iter().collect();
+                        job.append(&marker, 0.0, Self::invisible_format_static());
+                        
+                        let content: String = chars[i + 1..end].iter().collect();
+                        job.append(&content, 0.0, Self::superscript_format_static(font_size));
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+
+            if chars[i] == '[' {
+                if let Some(text_end) = Self::find_closing_bracket(&chars, i + 1) {
+                    if text_end + 1 < chars.len() && chars[text_end + 1] == '(' {
+                        if let Some(url_end) = Self::find_closing_paren(&chars, text_end + 2) {
+                            let marker_end_pos = url_end + 1;
+                            if !current_text.is_empty() {
+                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                current_text.clear();
+                            }
+
+                            let marker_end = text_start_offset + marker_end_pos;
+                            let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= current_pos && pos <= marker_end);
+                            
+                            if cursor_in_range {
+                                let region: String = chars[i..marker_end_pos].iter().collect();
+                                job.append(&region, 0.0, Self::markdown_syntax_format_static(font_size));
+                            } else {
+                                let open_bracket: String = chars[i..i+1].iter().collect();
+                                job.append(&open_bracket, 0.0, Self::invisible_format_static());
+
+                                let link_text: String = chars[i + 1..text_end].iter().collect();
+                                job.append(&link_text, 0.0, Self::link_format_static(font_size));
+                                
+                                let hidden_tail: String = chars[text_end..marker_end_pos].iter().collect();
+                                job.append(&hidden_tail, 0.0, Self::invisible_format_static());
+                            }
+                            i = marker_end_pos;
+                            continue;
+                        }
+                    }
+                }
+            }
+
             current_text.push(chars[i]);
             i += 1;
         }
@@ -409,11 +607,17 @@ impl TextEditor {
         }
     }
 
-    fn bold_format_static(font_size: f32) -> egui::TextFormat {
+    fn bold_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { 
+            egui::Color32::WHITE 
+        } else { 
+            egui::Color32::BLACK 
+        };
+        
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 1.05, egui::FontFamily::Proportional),
-            extra_letter_spacing: 1.5,
-            color: egui::Color32::PLACEHOLDER,
+            font_id: egui::FontId::new(font_size * 1.15, egui::FontFamily::Proportional),
+            extra_letter_spacing: 2.5,
+            color,
             ..Default::default()
         }
     }
@@ -436,6 +640,51 @@ impl TextEditor {
         }
     }
 
+    fn strikethrough_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
+            strikethrough: egui::Stroke::new(1.0, egui::Color32::GRAY),
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        }
+    }
+
+    fn code_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Monospace),
+            background: egui::Color32::from_rgba_premultiplied(128, 128, 128, 30),
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        }
+    }
+
+    fn superscript_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
+            valign: egui::Align::TOP,
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        }
+    }
+
+    fn subscript_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
+            valign: egui::Align::BOTTOM,
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        }
+    }
+
+    fn link_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
+            underline: egui::Stroke::new(1.0, egui::Color32::from_rgb(59, 130, 246)),
+            color: egui::Color32::from_rgb(59, 130, 246),
+            ..Default::default()
+        }
+    }
+
     fn find_closing_marker(chars: &[char], start: usize, marker: &str) -> Option<usize> {
         let marker_chars: Vec<char> = marker.chars().collect();
         let marker_len = marker_chars.len();
@@ -453,6 +702,24 @@ impl TextEditor {
                 return Some(i);
             }
             i += 1;
+        }
+        None
+    }
+
+    fn find_closing_bracket(chars: &[char], start: usize) -> Option<usize> {
+        for i in start..chars.len() {
+            if chars[i] == ']' {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_closing_paren(chars: &[char], start: usize) -> Option<usize> {
+        for i in start..chars.len() {
+            if chars[i] == ')' {
+                return Some(i);
+            }
         }
         None
     }
@@ -536,6 +803,12 @@ impl EditorModule for TextEditor {
                     if ui.button(egui::RichText::new("U").underline()).clicked() {
                         self.format_underline();
                     }
+                    if ui.button(egui::RichText::new("S").strikethrough()).clicked() {
+                        self.format_strikethrough();
+                    }
+                    if ui.button(egui::RichText::new("C").monospace()).clicked() {
+                        self.format_code();
+                    }
                 });
             });
 
@@ -618,6 +891,15 @@ impl EditorModule for TextEditor {
             }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::U) {
                 self.format_underline();
+            }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S) {
+                self.format_strikethrough();
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::E) {
+                self.format_code();
+            }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::A) {
+                let _ = self.save_as();
             }
         });
     }
