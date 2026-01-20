@@ -789,56 +789,57 @@ impl EditorModule for TextEditor {
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.horizontal(|ui| {
-            ui.label("Format:");
-            
-            ui.vertical(|ui| {
-                ui.add_space(1.0);
-                ui.horizontal(|ui| {
-                    if ui.button(egui::RichText::new("B").strong()).clicked() {
-                        self.format_bold();
-                    }
-                    if ui.button(egui::RichText::new("I").italics()).clicked() {
-                        self.format_italic();
-                    }
-                    if ui.button(egui::RichText::new("U").underline()).clicked() {
-                        self.format_underline();
-                    }
-                    if ui.button(egui::RichText::new("S").strikethrough()).clicked() {
-                        self.format_strikethrough();
-                    }
-                    if ui.button(egui::RichText::new("C").monospace()).clicked() {
-                        self.format_code();
-                    }
-                });
+            ui.horizontal(|ui| {
+                if ui.button(egui::RichText::new("B").strong()).clicked() {
+                    self.format_bold();
+                }
+                if ui.button(egui::RichText::new("I").italics()).clicked() {
+                    self.format_italic();
+                }
+                if ui.button(egui::RichText::new("U").underline()).clicked() {
+                    self.format_underline();
+                }
+                if ui.button(egui::RichText::new("S").strikethrough()).clicked() {
+                    self.format_strikethrough();
+                }
+                if ui.button(egui::RichText::new("C").monospace()).clicked() {
+                    self.format_code();
+                }
             });
 
             ui.separator();
-
             ui.label("View:");
-            
-            egui::ComboBox::from_id_salt("view_mode")
-                .selected_text(match self.view_mode {
-                    ViewMode::Markdown => "Markdown",
-                    ViewMode::Plain => "Plain Text",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.view_mode, ViewMode::Markdown, "Markdown");
-                    ui.selectable_value(&mut self.view_mode, ViewMode::Plain, "Plain Text");
-                });
+
+            ui.vertical(|ui| {
+                egui::ComboBox::from_id_salt("view_mode")
+                    .selected_text(match self.view_mode {
+                        ViewMode::Markdown => "Markdown",
+                        ViewMode::Plain => "Plain Text",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.view_mode, ViewMode::Markdown, "Markdown");
+                        ui.selectable_value(&mut self.view_mode, ViewMode::Plain, "Plain Text");
+                    });
+            });
 
             ui.separator();
-
             ui.label("Font:");
-            
+
+            ui.vertical(|ui| {
             egui::ComboBox::from_id_salt("font_fam")
                 .selected_text(if matches!(self.font_family, egui::FontFamily::Proportional) { "Sans" } else { "Mono" })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.font_family, egui::FontFamily::Monospace, "Monospace");
                     ui.selectable_value(&mut self.font_family, egui::FontFamily::Proportional, "Sans-Serif");
                 });
+            });
 
+            ui.separator();
             ui.label("Size:");
-            ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).range(8.0..=72.0));
+            
+            ui.vertical(|ui| {
+                ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).range(8.0..=72.0));
+            });
         });
 
         ui.separator();
