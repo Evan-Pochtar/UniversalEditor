@@ -166,11 +166,8 @@ impl TextEditor {
             let cursor_pos = self.last_cursor_range.map(|r| r.primary.index);
             let is_dark_mode = ui.visuals().dark_mode;
             let available_width = ui.available_width();
-
-            let left_padding = 6.0_f32;
-            let right_padding = 6.0_f32;
-            let top_padding = 4.0_f32;
-            let wrap_width = (available_width - left_padding - right_padding).max(10.0);
+            let top_padding = 2.0_f32;
+            let wrap_width = (available_width).max(10.0);
 
             let mut lines: Vec<&str> = Vec::new();
             let mut code_line_flags: Vec<bool> = Vec::new();
@@ -185,19 +182,37 @@ impl TextEditor {
                     code_line_flags.push(in_code_block);
                 }
             }
+
             let mut per_line_row_heights: Vec<Vec<f32>> = Vec::with_capacity(lines.len());
             ui.fonts_mut(|fonts| {
                 for (idx, line) in lines.iter().enumerate() {
                     let mut job = egui::text::LayoutJob::default();
                     job.wrap.max_width = wrap_width;
 
-                    let fmt = if code_line_flags[idx] {
-                        Self::code_block_background_format_static(font_size, is_dark_mode, available_width)
-                    } else {
-                        Self::default_format_static(font_size, &font_family, is_dark_mode)
-                    };
+                    let is_fence = line.trim().starts_with("```");
 
-                    job.append(line, 0.0, fmt);
+                    if code_line_flags[idx] {
+                        let fmt = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
+                        job.append(line, 0.0, fmt);
+                    } else if is_fence {
+                        job.append(line, 0.0, Self::invisible_format_static());
+                    } else {
+                        if line.trim().is_empty() {
+                            let fmt = Self::default_format_static(font_size, &font_family, is_dark_mode);
+                            job.append(line, 0.0, fmt);
+                        } else {
+                            Self::parse_markdown_line_static(
+                                line, 
+                                &mut job, 
+                                font_size, 
+                                &font_family, 
+                                cursor_pos, 
+                                0, 
+                                is_dark_mode
+                            );
+                        }
+                    }
+
                     let galley = fonts.layout_job(job);
                     let mut row_heights: Vec<f32> = Vec::new();
                     for row in &galley.rows {
@@ -216,25 +231,18 @@ impl TextEditor {
             let (outer_rect, _response) = ui.allocate_exact_size(desired_size, Sense::click());
             let painter = ui.painter();
 
-            let first_row_offset = if !per_line_row_heights.is_empty() {
-                per_line_row_heights[0].get(0).cloned().unwrap_or((font_size * 1.25).max(16.0))
-            } else {
-                0.0_f32
-            };
-
-            let mut y = outer_rect.min.y + top_padding - first_row_offset;
-            let full_width = (outer_rect.width() - left_padding - right_padding).max(0.0);
-            let round_radius = 6.0_f32;
+            let mut y = outer_rect.min.y + top_padding;
+            let full_width = (outer_rect.width()).max(0.0);
             let code_bg = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
 
             for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
                 if code_line_flags[line_idx] {
                     for &h in row_heights {
                         let rect = Rect::from_min_size(
-                            pos2(outer_rect.min.x + left_padding, y),
+                            pos2(outer_rect.min.x, y),
                             vec2(full_width, h),
                         );
-                        painter.rect_filled(rect, round_radius, code_bg);
+                        painter.rect_filled(rect, 0.0, code_bg);
                         y += h;
                     }
                 } else {
@@ -775,15 +783,14 @@ impl TextEditor {
     }
 
     fn code_block_background_format_static(font_size: f32, is_dark_mode: bool, _available_width: f32) -> egui::TextFormat {
-        let (bg_color, text_color) = if is_dark_mode {
-            (ColorPalette::ZINC_800, ColorPalette::SLATE_300)
+        let text_color = if is_dark_mode {
+            ColorPalette::SLATE_300
         } else {
-            (ColorPalette::ZINC_200, ColorPalette::ZINC_800)
+            ColorPalette::ZINC_800
         };
         
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 1.1, egui::FontFamily::Monospace),
-            background: bg_color,
+            font_id: egui::FontId::new(font_size * 1.0, egui::FontFamily::Monospace),
             color: text_color,
             ..Default::default()
         }

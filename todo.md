@@ -40,7 +40,7 @@
 - [ ] Can't Combine Formatting
 - [x] When using headers, cursor gets disconnected from the actual position
 - [ ] Cannot highlight and scroll at the same time
-- [ ] Change in font size (E.g Bold & Headers) make code block background out of position
+- [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
 ## Features
 
@@ -57,6 +57,7 @@
 - [x] Superscript, Subscript
 - [x] Clickable Links
 - [x] Make Code blocks more readable.
+  - [ ] Add titles to code blocks (E.g "bash" or "rust")
 - [x] Hover features in toolbar to know what they are (E.g hover B to show "bold")
 - [ ] Latex?
 
