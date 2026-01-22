@@ -158,38 +158,115 @@ impl TextEditor {
     }
 
     fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        use egui::{pos2, vec2, Rect, Sense};
+
         egui::ScrollArea::vertical().show(ui, |ui| {
             let font_size = self.font_size;
             let font_family = self.font_family.clone();
             let cursor_pos = self.last_cursor_range.map(|r| r.primary.index);
             let is_dark_mode = ui.visuals().dark_mode;
             let available_width = ui.available_width();
-            
-            let mut layouter = |ui: &egui::Ui, text_buffer: &dyn egui::TextBuffer, wrap_width: f32| {
+
+            let left_padding = 6.0_f32;
+            let right_padding = 6.0_f32;
+            let top_padding = 4.0_f32;
+            let wrap_width = (available_width - left_padding - right_padding).max(10.0);
+
+            let mut lines: Vec<&str> = Vec::new();
+            let mut code_line_flags: Vec<bool> = Vec::new();
+            let mut in_code_block = false;
+            for line in self.content.lines() {
+                if line.trim().starts_with("```") {
+                    in_code_block = !in_code_block;
+                    lines.push(line);
+                    code_line_flags.push(false);
+                } else {
+                    lines.push(line);
+                    code_line_flags.push(in_code_block);
+                }
+            }
+            let mut per_line_row_heights: Vec<Vec<f32>> = Vec::with_capacity(lines.len());
+            ui.fonts_mut(|fonts| {
+                for (idx, line) in lines.iter().enumerate() {
+                    let mut job = egui::text::LayoutJob::default();
+                    job.wrap.max_width = wrap_width;
+
+                    let fmt = if code_line_flags[idx] {
+                        Self::code_block_background_format_static(font_size, is_dark_mode, available_width)
+                    } else {
+                        Self::default_format_static(font_size, &font_family, is_dark_mode)
+                    };
+
+                    job.append(line, 0.0, fmt);
+                    let galley = fonts.layout_job(job);
+                    let mut row_heights: Vec<f32> = Vec::new();
+                    for row in &galley.rows {
+                        row_heights.push(row.height());
+                    }
+
+                    if row_heights.is_empty() {
+                        row_heights.push((font_size * 1.25).max(16.0));
+                    }
+
+                    per_line_row_heights.push(row_heights);
+                }
+            });
+
+            let desired_size = ui.available_size();
+            let (outer_rect, _response) = ui.allocate_exact_size(desired_size, Sense::click());
+            let painter = ui.painter();
+
+            let first_row_offset = if !per_line_row_heights.is_empty() {
+                per_line_row_heights[0].get(0).cloned().unwrap_or((font_size * 1.25).max(16.0))
+            } else {
+                0.0_f32
+            };
+
+            let mut y = outer_rect.min.y + top_padding - first_row_offset;
+            let full_width = (outer_rect.width() - left_padding - right_padding).max(0.0);
+            let round_radius = 6.0_f32;
+            let code_bg = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
+
+            for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
+                if code_line_flags[line_idx] {
+                    for &h in row_heights {
+                        let rect = Rect::from_min_size(
+                            pos2(outer_rect.min.x + left_padding, y),
+                            vec2(full_width, h),
+                        );
+                        painter.rect_filled(rect, round_radius, code_bg);
+                        y += h;
+                    }
+                } else {
+                    for &h in row_heights {
+                        y += h;
+                    }
+                }
+            }
+
+            let mut layouter = |ui: &egui::Ui, text_buffer: &dyn egui::TextBuffer, wrap_width_closure: f32| {
                 let text = text_buffer.as_str();
                 let mut job = egui::text::LayoutJob::default();
-                job.wrap.max_width = wrap_width;
+                job.wrap.max_width = wrap_width_closure;
                 let mut char_offset = 0;
                 let mut in_code_block = false;
-                
+
                 for line in text.lines() {
                     if line.trim().starts_with("```") {
                         in_code_block = !in_code_block;
-                        
+
                         let marker_end = char_offset + line.chars().count();
                         let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= char_offset && pos <= marker_end);
-                        
+
                         if cursor_in_range {
                             job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
                         } else {
                             job.append(line, 0.0, Self::invisible_format_static());
                         }
-                    } 
-                    else if in_code_block {
+                    } else if in_code_block {
                         let bg_format = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
                         job.append(line, 0.0, bg_format);
-                    } 
-                    else {
+                    } else {
                         Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
                     }
                     job.append("\n", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
@@ -203,7 +280,7 @@ impl TextEditor {
                 .lock_focus(true)
                 .frame(false);
 
-            let response = ui.add_sized(ui.available_size(), text_edit);
+            let response = ui.put(outer_rect, text_edit);
 
             if response.clicked() && ctx.input(|i| i.modifiers.ctrl || i.modifiers.command) {
                 if let Some(cursor_range) = self.last_cursor_range {

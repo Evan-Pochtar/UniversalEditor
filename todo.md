@@ -39,6 +39,8 @@
 - [x] Features in top tool bar are not aligned.
 - [ ] Can't Combine Formatting
 - [x] When using headers, cursor gets disconnected from the actual position
+- [ ] Cannot highlight and scroll at the same time
+- [ ] Change in font size (E.g Bold & Headers) make code block background out of position
 
 ## Features
 
@@ -50,9 +52,11 @@
 - [x] Bold, Italics, Underline, Strikethrough
   - [x] Make Bold stand out more
 - [x] Font, Font Size
+- [x] Headers
+  - [ ] Button to add headers
 - [x] Superscript, Subscript
 - [x] Clickable Links
-- [ ] Make Code blocks more readable.
+- [x] Make Code blocks more readable.
 - [x] Hover features in toolbar to know what they are (E.g hover B to show "bold")
 - [ ] Latex?
 
