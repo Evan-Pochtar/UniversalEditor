@@ -35,10 +35,10 @@
   - Basically, make sure to not check asterisks that are actively being used in words.
 - [x] Bolding is barely noticable
   - Seems like just turning the markdown text into same color as the plaintext will help a lot.
-- [ ] Can't put punctuation after subscript or superscript.
+- [x] Can't put punctuation after subscript or superscript.
 - [x] Features in top tool bar are not aligned.
 - [ ] Can't Combine Formatting
-- [ ] When using headers, cursor gets disconnected from the actual position
+- [x] When using headers, cursor gets disconnected from the actual position
 
 ## Features
 
@@ -53,7 +53,7 @@
 - [x] Superscript, Subscript
 - [x] Clickable Links
 - [ ] Make Code blocks more readable.
-- [ ] Hover features in toolbar to know what they are (E.g hover B to show "bold")
+- [x] Hover features in toolbar to know what they are (E.g hover B to show "bold")
 - [ ] Latex?
 
 ## Other

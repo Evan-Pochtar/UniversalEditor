@@ -705,7 +705,7 @@ impl TextEditor {
         };
         
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size * 1.1, egui::FontFamily::Monospace),
             background: bg_color,
             color: text_color,
             ..Default::default()
@@ -835,7 +835,7 @@ impl EditorModule for TextEditor {
 
     fn save_as(&mut self) -> Result<(), String> {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Text", &["txt", "md", "rs", "toml", "json"])
+            .add_filter("Text", &["txt", "md"])
             .save_file() 
         {
             self.file_path = Some(path);
@@ -848,19 +848,34 @@ impl EditorModule for TextEditor {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             ui.horizontal(|ui| {
-                if ui.button(egui::RichText::new("B").strong()).clicked() {
+                if ui.button(egui::RichText::new("B").strong())
+                    .on_hover_text("Bold (Ctrl+B)")
+                    .clicked() 
+                {
                     self.format_bold();
                 }
-                if ui.button(egui::RichText::new("I").italics()).clicked() {
+                if ui.button(egui::RichText::new("I").italics())
+                    .on_hover_text("Italic (Ctrl+I)")
+                    .clicked() 
+                {
                     self.format_italic();
                 }
-                if ui.button(egui::RichText::new("U").underline()).clicked() {
+                if ui.button(egui::RichText::new("U").underline())
+                    .on_hover_text("Underline (Ctrl+U)")
+                    .clicked() 
+                {
                     self.format_underline();
                 }
-                if ui.button(egui::RichText::new("S").strikethrough()).clicked() {
+                if ui.button(egui::RichText::new("S").strikethrough())
+                    .on_hover_text("Strikethrough (Ctrl+Shift+S)")
+                    .clicked() 
+                {
                     self.format_strikethrough();
                 }
-                if ui.button(egui::RichText::new("C").monospace()).clicked() {
+                if ui.button(egui::RichText::new("C").monospace())
+                    .on_hover_text("Code (Ctrl+E)")
+                    .clicked() 
+                {
                     self.format_code();
                 }
             });
