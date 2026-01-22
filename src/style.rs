@@ -204,50 +204,68 @@ pub fn primary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui::
         ThemeMode::Light => (ColorPalette::BLUE_600, ColorPalette::BLUE_500),
     };
     
-    let button = egui::Button::new(
-        egui::RichText::new(text)
-            .size(16.0)
-            .color(egui::Color32::WHITE)
-    )
-    .min_size(egui::vec2(220.0, 45.0))
-    .fill(bg_color)
-    .stroke(egui::Stroke::NONE);
-    
-    let response = ui.add(button);
-    
-    if response.hovered() {
-        ui.painter().rect_filled(
-            response.rect,
-            4.0,
-            hover_color,
-        );
-    }
-    
-    response
+    ui.scope(|ui| {
+        let style = ui.style_mut();
+        style.visuals.widgets.inactive.bg_fill = bg_color;
+        style.visuals.widgets.inactive.weak_bg_fill = bg_color;
+        style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+
+        style.visuals.widgets.hovered.bg_fill = hover_color;
+        style.visuals.widgets.hovered.weak_bg_fill = hover_color;
+        style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        
+        style.visuals.widgets.active.bg_fill = bg_color;
+        style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+        style.visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
+
+        let button = egui::Button::new(
+            egui::RichText::new(text).size(16.0)
+        )
+        .min_size(egui::vec2(220.0, 45.0));
+        
+        ui.add(button)
+    }).inner
 }
 
 pub fn secondary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui::Response {
-    let (bg_color, stroke_color, text_color) = match theme {
+    let (bg_color, stroke_color, text_color, hover_bg) = match theme {
         ThemeMode::Dark => (
             ColorPalette::ZINC_800,
             ColorPalette::ZINC_600,
             ColorPalette::SLATE_200,
+            ColorPalette::ZINC_700,
         ),
         ThemeMode::Light => (
             egui::Color32::WHITE,
             ColorPalette::GRAY_300,
             ColorPalette::GRAY_800,
+            ColorPalette::GRAY_50,
         ),
     };
     
-    let button = egui::Button::new(
-        egui::RichText::new(text)
-            .size(16.0)
-            .color(text_color)
-    )
-    .min_size(egui::vec2(220.0, 45.0))
-    .fill(bg_color)
-    .stroke(egui::Stroke::new(1.0, stroke_color));
-    
-    ui.add(button)
+    ui.scope(|ui| {
+        let style = ui.style_mut();
+        
+        style.visuals.widgets.inactive.bg_fill = bg_color;
+        style.visuals.widgets.inactive.weak_bg_fill = bg_color;
+        style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text_color);
+        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, stroke_color);
+
+        style.visuals.widgets.hovered.bg_fill = hover_bg;
+        style.visuals.widgets.hovered.weak_bg_fill = hover_bg;
+        style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, text_color);
+        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, stroke_color);
+
+        style.visuals.widgets.active.bg_fill = bg_color;
+        style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, text_color);
+
+        let button = egui::Button::new(
+            egui::RichText::new(text).size(16.0)
+        )
+        .min_size(egui::vec2(220.0, 45.0));
+        
+        ui.add(button)
+    }).inner
 }

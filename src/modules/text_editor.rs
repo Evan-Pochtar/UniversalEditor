@@ -3,6 +3,8 @@ use ropey::Rope;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
+use crate::style::ColorPalette;
+
 use super::EditorModule;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -128,7 +130,6 @@ impl TextEditor {
     fn format_strikethrough(&mut self) { self.wrap_selection("~~"); }
     fn format_code(&mut self) { self.wrap_selection("`"); }
 
-    /// Helper to find a markdown link surrounding a specific cursor position
     fn find_link_at_offset(chars: &[char], cursor_idx: usize) -> Option<String> {
         let search_start = cursor_idx.saturating_sub(1000); 
         let mut start_bracket = None;
@@ -168,19 +169,20 @@ impl TextEditor {
                 let mut job = egui::text::LayoutJob::default();
                 job.wrap.max_width = wrap_width;
                 let mut char_offset = 0;
-                let mut in_code_block = false; 
+                let mut in_code_block = false;
+                
                 for line in text.lines() {
                     if line.trim().starts_with("```") {
                         in_code_block = !in_code_block;
                         job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
                     } 
                     else if in_code_block {
-                        job.append(line, 0.0, Self::code_format_static(font_size));
+                        job.append(line, 0.0, Self::code_block_format_static(font_size, is_dark_mode));
                     } 
                     else {
                         Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
                     }
-                    job.append("\n", 0.0, Self::default_format_static(font_size, &font_family));
+                    job.append("\n", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
                     char_offset += line.chars().count() + 1;
                 }
                 ui.fonts_mut(|f| f.layout_job(job))
@@ -197,12 +199,12 @@ impl TextEditor {
                 if let Some(cursor_range) = self.last_cursor_range {
                     let chars: Vec<char> = self.content.chars().collect();
                     if let Some(url) = Self::find_link_at_offset(&chars, cursor_range.primary.index) {
-                         let final_url = if url.starts_with("http://") || url.starts_with("https://") {
-                             url
-                         } else {
-                             format!("https://{}", url)
-                         };
-                         ctx.open_url(egui::OpenUrl::new_tab(&final_url));
+                        let final_url = if url.starts_with("http://") || url.starts_with("https://") {
+                            url
+                        } else {
+                            format!("https://{}", url)
+                        };
+                        ctx.open_url(egui::OpenUrl::new_tab(&final_url));
                     }
                 }
             }
@@ -243,9 +245,11 @@ impl TextEditor {
             
             if cursor_in_header {
                 job.append("### ", 0.0, Self::markdown_syntax_format_static(font_size));
-                job.append(rest, 0.0, Self::default_format_static(font_size, font_family));
+                job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             } else {
-                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.2));
+                let invisible_prefix = "### ";
+                job.append(invisible_prefix, 0.0, Self::invisible_format_static());
+                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.2, is_dark_mode));
             }
             return;
         }
@@ -256,9 +260,11 @@ impl TextEditor {
             
             if cursor_in_header {
                 job.append("## ", 0.0, Self::markdown_syntax_format_static(font_size));
-                job.append(rest, 0.0, Self::default_format_static(font_size, font_family));
+                job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             } else {
-                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.4));
+                let invisible_prefix = "## ";
+                job.append(invisible_prefix, 0.0, Self::invisible_format_static());
+                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.4, is_dark_mode));
             }
             return;
         }
@@ -269,9 +275,11 @@ impl TextEditor {
             
             if cursor_in_header {
                 job.append("# ", 0.0, Self::markdown_syntax_format_static(font_size));
-                job.append(rest, 0.0, Self::default_format_static(font_size, font_family));
+                job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             } else {
-                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.6));
+                let invisible_prefix = "# ";
+                job.append(invisible_prefix, 0.0, Self::invisible_format_static());
+                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.6, is_dark_mode));
             }
             return;
         }
@@ -283,17 +291,17 @@ impl TextEditor {
         };
 
         if let Some(rest) = line.strip_prefix("- ") {
-            job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
+            job.append("• ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
         if let Some(rest) = line.strip_prefix("* ") {
-            job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
+            job.append("• ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
         if let Some(rest) = line.strip_prefix("+ ") {
-            job.append("• ", 0.0, Self::default_format_static(font_size, font_family));
+            job.append("• ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + list_offset, is_dark_mode);
             return;
         }
@@ -304,7 +312,7 @@ impl TextEditor {
         }
         if i > 0 && line.chars().nth(i) == Some('.') && line.chars().nth(i + 1) == Some(' ') {
             let (prefix, rest) = line.split_at(line.char_indices().nth(i + 2).map(|(idx, _)| idx).unwrap_or(line.len()));
-            job.append(prefix, 0.0, Self::default_format_static(font_size, font_family));
+            job.append(prefix, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
             let prefix_chars = prefix.chars().count();
             Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + prefix_chars, is_dark_mode);
             return;
@@ -353,7 +361,7 @@ impl TextEditor {
                     if end > i + 2 { 
                         let marker_end_pos = end + 2;
                         if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                             current_text.clear();
                         }
 
@@ -368,7 +376,7 @@ impl TextEditor {
                             job.append(&open_mark, 0.0, Self::invisible_format_static());
 
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::strikethrough_format_static(font_size));
+                            job.append(&content, 0.0, Self::strikethrough_format_static(font_size, is_dark_mode));
 
                             let close_mark: String = chars[end..marker_end_pos].iter().collect();
                             job.append(&close_mark, 0.0, Self::invisible_format_static());
@@ -381,12 +389,15 @@ impl TextEditor {
 
             if chars[i] == '~' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() && chars[i + 1] != '~' {
                 let mut end = i + 1;
-                while end < chars.len() && !chars[end].is_whitespace() && chars[end] != '~' {
+                while end < chars.len() && chars[end] != '~' {
+                    if chars[end].is_whitespace() || chars[end].is_ascii_punctuation() {
+                        break;
+                    }
                     end += 1;
                 }
                 if end > i + 1 {
                     if !current_text.is_empty() {
-                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                         current_text.clear();
                     }
 
@@ -401,7 +412,7 @@ impl TextEditor {
                         job.append(&marker, 0.0, Self::invisible_format_static());
                         
                         let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::subscript_format_static(font_size));
+                        job.append(&content, 0.0, Self::subscript_format_static(font_size, is_dark_mode));
                     }
                     i = end;
                     continue;
@@ -413,7 +424,7 @@ impl TextEditor {
                     if end > i + 2 { 
                         let marker_end_pos = end + 2;
                         if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                             current_text.clear();
                         }
 
@@ -447,7 +458,7 @@ impl TextEditor {
                         if end > i + 1 {
                             let marker_end_pos = end + 1;
                             if !current_text.is_empty() {
-                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                                 current_text.clear();
                             }
 
@@ -462,7 +473,7 @@ impl TextEditor {
                                 job.append(&open_mark, 0.0, Self::invisible_format_static());
 
                                 let content: String = chars[i + 1..end].iter().collect();
-                                job.append(&content, 0.0, Self::italic_format_static(font_size));
+                                job.append(&content, 0.0, Self::italic_format_static(font_size, is_dark_mode));
 
                                 let close_mark: String = chars[end..marker_end_pos].iter().collect();
                                 job.append(&close_mark, 0.0, Self::invisible_format_static());
@@ -479,7 +490,7 @@ impl TextEditor {
                     if end > i + 2 {
                         let marker_end_pos = end + 2;
                         if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                             current_text.clear();
                         }
 
@@ -494,7 +505,7 @@ impl TextEditor {
                             job.append(&open_mark, 0.0, Self::invisible_format_static());
 
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::underline_format_static(font_size));
+                            job.append(&content, 0.0, Self::underline_format_static(font_size, is_dark_mode));
 
                             let close_mark: String = chars[end..marker_end_pos].iter().collect();
                             job.append(&close_mark, 0.0, Self::invisible_format_static());
@@ -510,7 +521,7 @@ impl TextEditor {
                     if end > i + 1 {
                         let marker_end_pos = end + 1;
                         if !current_text.is_empty() {
-                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                             current_text.clear();
                         }
 
@@ -525,7 +536,7 @@ impl TextEditor {
                             job.append(&open_mark, 0.0, Self::invisible_format_static());
 
                             let content: String = chars[i + 1..end].iter().collect();
-                            job.append(&content, 0.0, Self::code_format_static(font_size));
+                            job.append(&content, 0.0, Self::code_format_static(font_size, is_dark_mode));
 
                             let close_mark: String = chars[end..marker_end_pos].iter().collect();
                             job.append(&close_mark, 0.0, Self::invisible_format_static());
@@ -538,12 +549,15 @@ impl TextEditor {
 
             if chars[i] == '^' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() {
                 let mut end = i + 1;
-                while end < chars.len() && !chars[end].is_whitespace() && chars[end] != '^' {
+                while end < chars.len() && chars[end] != '^' {
+                    if chars[end].is_whitespace() || chars[end].is_ascii_punctuation() {
+                        break;
+                    }
                     end += 1;
                 }
                 if end > i + 1 {
                     if !current_text.is_empty() {
-                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                        job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                         current_text.clear();
                     }
 
@@ -558,7 +572,7 @@ impl TextEditor {
                         job.append(&marker, 0.0, Self::invisible_format_static());
                         
                         let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::superscript_format_static(font_size));
+                        job.append(&content, 0.0, Self::superscript_format_static(font_size, is_dark_mode));
                     }
                     i = end;
                     continue;
@@ -571,7 +585,7 @@ impl TextEditor {
                         if let Some(url_end) = Self::find_closing_paren(&chars, text_end + 2) {
                             let marker_end_pos = url_end + 1;
                             if !current_text.is_empty() {
-                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+                                job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                                 current_text.clear();
                             }
 
@@ -603,15 +617,15 @@ impl TextEditor {
         }
 
         if !current_text.is_empty() {
-            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family));
+            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
         }
     }
 
     fn bold_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
         let color = if is_dark_mode { 
-            egui::Color32::WHITE 
+            ColorPalette::ZINC_100 
         } else { 
-            egui::Color32::BLACK 
+            ColorPalette::ZINC_900 
         };
         
         egui::TextFormat {
@@ -622,56 +636,82 @@ impl TextEditor {
         }
     }
 
-    fn italic_format_static(font_size: f32) -> egui::TextFormat {
+    fn italic_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
             italics: true,
-            color: egui::Color32::PLACEHOLDER,
+            color,
             ..Default::default()
         }
     }
 
-    fn underline_format_static(font_size: f32) -> egui::TextFormat {
+    fn underline_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
-            underline: egui::Stroke::new(1.0, egui::Color32::GRAY),
-            color: egui::Color32::PLACEHOLDER,
+            underline: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
+            color,
             ..Default::default()
         }
     }
 
-    fn strikethrough_format_static(font_size: f32) -> egui::TextFormat {
+    fn strikethrough_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
-            strikethrough: egui::Stroke::new(1.0, egui::Color32::GRAY),
-            color: egui::Color32::PLACEHOLDER,
+            strikethrough: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
+            color,
             ..Default::default()
         }
     }
 
-    fn code_format_static(font_size: f32) -> egui::TextFormat {
+    fn code_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let (bg_color, text_color) = if is_dark_mode {
+            (ColorPalette::ZINC_800, ColorPalette::AMBER_300)
+        } else {
+            (ColorPalette::ZINC_200, ColorPalette::AMBER_300)
+        };
+
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Monospace),
-            background: egui::Color32::from_rgba_premultiplied(128, 128, 128, 30),
-            color: egui::Color32::PLACEHOLDER,
+            background: bg_color,
+            color: text_color,
             ..Default::default()
         }
     }
 
-    fn superscript_format_static(font_size: f32) -> egui::TextFormat {
+    fn code_block_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let (bg_color, text_color) = if is_dark_mode {
+            (ColorPalette::ZINC_800, ColorPalette::SLATE_300)
+        } else {
+            (ColorPalette::ZINC_200, ColorPalette::ZINC_800)
+        };
+        
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Monospace),
+            background: bg_color,
+            color: text_color,
+            ..Default::default()
+        }
+    }
+
+    fn superscript_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
             valign: egui::Align::TOP,
-            color: egui::Color32::PLACEHOLDER,
+            color,
             ..Default::default()
         }
     }
 
-    fn subscript_format_static(font_size: f32) -> egui::TextFormat {
+    fn subscript_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
             valign: egui::Align::BOTTOM,
-            color: egui::Color32::PLACEHOLDER,
+            color,
             ..Default::default()
         }
     }
@@ -679,8 +719,8 @@ impl TextEditor {
     fn link_format_static(font_size: f32) -> egui::TextFormat {
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
-            underline: egui::Stroke::new(1.0, egui::Color32::from_rgb(59, 130, 246)),
-            color: egui::Color32::from_rgb(59, 130, 246),
+            underline: egui::Stroke::new(1.0, ColorPalette::BLUE_500),
+            color: ColorPalette::BLUE_500,
             ..Default::default()
         }
     }
@@ -727,23 +767,25 @@ impl TextEditor {
     fn markdown_syntax_format_static(font_size: f32) -> egui::TextFormat {
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
-            color: egui::Color32::from_rgb(120, 120, 120),
+            color: ColorPalette::ZINC_500,
             ..Default::default()
         }
     }
 
-    fn heading_format_static(font_size: f32, scale: f32) -> egui::TextFormat {
+    fn heading_format_static(font_size: f32, scale: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * scale, egui::FontFamily::Proportional),
-            color: egui::Color32::PLACEHOLDER,
+            color,
             ..Default::default()
         }
     }
 
-    fn default_format_static(font_size: f32, font_family: &egui::FontFamily) -> egui::TextFormat {
+    fn default_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
+        let color = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, font_family.clone()),
-            color: egui::Color32::PLACEHOLDER,
+            color,
             ..Default::default()
         }
     }
