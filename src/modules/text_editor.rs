@@ -163,6 +163,7 @@ impl TextEditor {
             let font_family = self.font_family.clone();
             let cursor_pos = self.last_cursor_range.map(|r| r.primary.index);
             let is_dark_mode = ui.visuals().dark_mode;
+            let available_width = ui.available_width();
             
             let mut layouter = |ui: &egui::Ui, text_buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                 let text = text_buffer.as_str();
@@ -174,10 +175,19 @@ impl TextEditor {
                 for line in text.lines() {
                     if line.trim().starts_with("```") {
                         in_code_block = !in_code_block;
-                        job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
+                        
+                        let marker_end = char_offset + line.chars().count();
+                        let cursor_in_range = cursor_pos.map_or(false, |pos| pos >= char_offset && pos <= marker_end);
+                        
+                        if cursor_in_range {
+                            job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
+                        } else {
+                            job.append(line, 0.0, Self::invisible_format_static());
+                        }
                     } 
                     else if in_code_block {
-                        job.append(line, 0.0, Self::code_block_format_static(font_size, is_dark_mode));
+                        let bg_format = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
+                        job.append(line, 0.0, bg_format);
                     } 
                     else {
                         Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
@@ -517,6 +527,12 @@ impl TextEditor {
             }
 
             if chars[i] == '`' && is_valid_marker_start(i, 1) {
+                if i + 2 < chars.len() && chars[i + 1] == '`' && chars[i + 2] == '`' {
+                    current_text.push(chars[i]);
+                    i += 1;
+                    continue;
+                }
+                
                 if let Some(end) = Self::find_closing_marker(&chars, i + 1, "`") {
                     if end > i + 1 {
                         let marker_end_pos = end + 1;
@@ -681,7 +697,7 @@ impl TextEditor {
         }
     }
 
-    fn code_block_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    fn code_block_background_format_static(font_size: f32, is_dark_mode: bool, _available_width: f32) -> egui::TextFormat {
         let (bg_color, text_color) = if is_dark_mode {
             (ColorPalette::ZINC_800, ColorPalette::SLATE_300)
         } else {
