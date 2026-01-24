@@ -41,6 +41,7 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [ ] Cannot highlight and scroll at the same time
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
+- [ ] Can click to non-existant line in markdown mode, desyncing cursor.
 
 ## Features
 
@@ -53,7 +54,7 @@
   - [x] Make Bold stand out more
 - [x] Font, Font Size
 - [x] Headers
-  - [ ] Button to add headers
+  - [x] Button to add headers
 - [x] Superscript, Subscript
 - [x] Clickable Links
 - [x] Make Code blocks more readable.

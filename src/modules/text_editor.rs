@@ -157,6 +157,27 @@ impl TextEditor {
         None
     }
 
+    fn format_heading(&mut self, level: usize) {
+        if let Some(range) = self.last_cursor_range {
+            let byte_idx = self.char_index_to_byte_index(range.primary.index);
+            let start_byte = self.content[..byte_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let end_byte = self.content[byte_idx..].find('\n').map(|i| byte_idx + i).unwrap_or(self.content.len());
+            
+            let line = &self.content[start_byte..end_byte];
+            let content_start = line.find(|c: char| c != '#' && !c.is_whitespace()).unwrap_or(line.len());
+            let clean_line = &line[content_start..];
+            
+            let new_line = if level > 0 {
+                format!("{} {}", "#".repeat(level), clean_line)
+            } else {
+                clean_line.to_string()
+            };
+            
+            self.content.replace_range(start_byte..end_byte, &new_line);
+            self.dirty = true;
+        }
+    }
+
     fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         use egui::{pos2, vec2, Rect, Sense};
 
@@ -962,6 +983,21 @@ impl EditorModule for TextEditor {
                 {
                     self.format_code();
                 }
+                
+                ui.separator();
+                
+                if ui.button("H1").on_hover_text("Heading 1").clicked() {
+                    self.format_heading(1);
+                }
+                if ui.button("H2").on_hover_text("Heading 2").clicked() {
+                    self.format_heading(2);
+                }
+                if ui.button("H3").on_hover_text("Heading 3").clicked() {
+                    self.format_heading(3);
+                }
+                if ui.button("H4").on_hover_text("Heading 4").clicked() {
+                    self.format_heading(4);
+                }
             });
 
             ui.separator();
@@ -1058,6 +1094,18 @@ impl EditorModule for TextEditor {
             }
             if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::A) {
                 let _ = self.save_as();
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num1) {
+                self.format_heading(1);
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num2) {
+                self.format_heading(2);
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num3) {
+                self.format_heading(3);
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num4) {
+                self.format_heading(4);
             }
         });
     }
