@@ -1075,7 +1075,12 @@ impl EditorModule for TextEditor {
 
         ctx.input_mut(|i| {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::S) {
-                let _ = self.save();
+                if !i.modifiers.shift {
+                    let _ = self.save();
+                }
+                else {
+                    self.format_strikethrough();
+                }
             }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::B) {
                 self.format_bold();
@@ -1085,9 +1090,6 @@ impl EditorModule for TextEditor {
             }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::U) {
                 self.format_underline();
-            }
-            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S) {
-                self.format_strikethrough();
             }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::E) {
                 self.format_code();

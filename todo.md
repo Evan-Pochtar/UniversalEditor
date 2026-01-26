@@ -33,6 +33,7 @@
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] Can click to non-existant line in markdown mode, desyncing cursor.
+- [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
 - [x] If there is a asterisk MUCH after the last italicized word, It will think it connected
   - Basically, make sure to not check asterisks that are actively being used in words.
