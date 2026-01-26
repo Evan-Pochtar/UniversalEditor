@@ -1,6 +1,7 @@
 use eframe::egui;
 pub mod text_editor;
 
+#[allow(dead_code)]
 pub trait EditorModule {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context);
     fn save(&mut self) -> Result<(), String>;

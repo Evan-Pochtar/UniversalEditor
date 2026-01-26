@@ -113,10 +113,10 @@ impl ColorPalette {
 pub fn apply_theme(ctx: &egui::Context, theme: ThemeMode) {
     let mut style = (*ctx.style()).clone();
 
-    style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(4);
-    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(4);
-    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(4);
-    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(4);
+    style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
+    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
     
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
@@ -268,4 +268,112 @@ pub fn secondary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui
         
         ui.add(button)
     }).inner
+}
+
+pub fn sidebar_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    expanded: &mut bool,
+    theme: ThemeMode,
+    content: impl FnOnce(&mut egui::Ui),
+) {
+    let (header_bg, header_hover, text_color, content_bg) = match theme {
+        ThemeMode::Dark => (
+            egui::Color32::from_rgb(30, 30, 35),
+            egui::Color32::from_rgb(35, 35, 42),
+            ColorPalette::SLATE_100,
+            ColorPalette::ZINC_900,
+        ),
+        ThemeMode::Light => (
+            ColorPalette::GRAY_100,
+            ColorPalette::GRAY_200,
+            ColorPalette::GRAY_800,
+            ColorPalette::GRAY_50,
+        ),
+    };
+
+    ui.horizontal(|ui| {
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), 32.0),
+            egui::Sense::click(),
+        );
+
+        let bg_color = if response.hovered() { header_hover } else { header_bg };
+        ui.painter().rect_filled(rect, 4.0, bg_color);
+
+        let arrow = if *expanded { "▼" } else { "▶" };
+        let text = format!("{} {}", arrow, title);
+        
+        ui.painter().text(
+            rect.left_center() + egui::vec2(12.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            text,
+            egui::FontId::proportional(13.0),
+            text_color,
+        );
+
+        if response.clicked() {
+            *expanded = !*expanded;
+        }
+    });
+
+    if *expanded {
+        ui.scope(|ui| {
+            let painter = ui.painter();
+            let rect = ui.available_rect_before_wrap();
+            painter.rect_filled(rect, 0.0, content_bg);
+            
+            ui.add_space(4.0);
+            content(ui);
+            ui.add_space(4.0);
+        });
+    }
+}
+
+pub fn sidebar_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    icon: &str,
+    theme: ThemeMode,
+) -> egui::Response {
+    let (normal_bg, hover_bg, text_color) = match theme {
+        ThemeMode::Dark => (
+            egui::Color32::TRANSPARENT,
+            egui::Color32::from_rgb(40, 40, 48),
+            ColorPalette::SLATE_200,
+        ),
+        ThemeMode::Light => (
+            egui::Color32::TRANSPARENT,
+            ColorPalette::GRAY_100,
+            ColorPalette::GRAY_800,
+        ),
+    };
+
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width() - 8.0, 32.0),
+        egui::Sense::click(),
+    );
+
+    let bg_color = if response.hovered() { hover_bg } else { normal_bg };
+    ui.painter().rect_filled(rect, 4.0, bg_color);
+
+    let icon_pos = rect.left_center() + egui::vec2(12.0, 0.0);
+    ui.painter().text(
+        icon_pos,
+        egui::Align2::LEFT_CENTER,
+        icon,
+        egui::FontId::proportional(14.0),
+        text_color,
+    );
+
+    let text_pos = rect.left_center() + egui::vec2(32.0, 0.0);
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(13.0),
+        text_color,
+    );
+
+    response
 }
