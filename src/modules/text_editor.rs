@@ -910,6 +910,217 @@ impl TextEditor {
             ..Default::default()
         }
     }
+
+    fn count_visible_chars(&self) -> usize {
+        if self.view_mode != ViewMode::Markdown {
+            return self.content.chars().count();
+        }
+
+        let mut count = 0;
+        let chars: Vec<char> = self.content.chars().collect();
+        let mut i = 0;
+        let mut in_code_block = false;
+
+        while i < chars.len() {
+            let line_start = i;
+            let mut line_end = i;
+            while line_end < chars.len() && chars[line_end] != '\n' {
+                line_end += 1;
+            }
+
+            let line: String = chars[line_start..line_end].iter().collect();
+
+            if line.trim().starts_with("```") {
+                in_code_block = !in_code_block;
+                count += line.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
+
+            if in_code_block {
+                count += line.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
+
+            let mut j = 0;
+            let line_chars: Vec<char> = line.chars().collect();
+            
+            if let Some(rest) = line.strip_prefix("### ") {
+                count += rest.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("## ") {
+                count += rest.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("# ") {
+                count += rest.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
+
+            if line.starts_with("- ") || line.starts_with("* ") || line.starts_with("+ ") {
+                count += 1;
+                j = 2;
+            }
+
+            let mut k = 0;
+            while k < line_chars.len() && line_chars[k].is_ascii_digit() {
+                k += 1;
+            }
+            if k > 0 && k < line_chars.len() && line_chars[k] == '.' && k + 1 < line_chars.len() && line_chars[k + 1] == ' ' {
+                count += k + 2;
+                j = k + 2;
+            }
+
+            while j < line_chars.len() {
+                if j + 1 < line_chars.len() && line_chars[j] == '~' && line_chars[j + 1] == '~' {
+                    if let Some(end) = Self::find_closing_marker(&line_chars, j + 2, "~~") {
+                        if end > j + 2 {
+                            count += end - (j + 2);
+                            j = end + 2;
+                            continue;
+                        }
+                    }
+                }
+
+                if line_chars[j] == '~' && j + 1 < line_chars.len() && !line_chars[j + 1].is_whitespace() && line_chars[j + 1] != '~' {
+                    let mut end = j + 1;
+                    while end < line_chars.len() && line_chars[end] != '~' {
+                        if line_chars[end].is_whitespace() || line_chars[end].is_ascii_punctuation() {
+                            break;
+                        }
+                        end += 1;
+                    }
+                    if end > j + 1 {
+                        count += end - (j + 1);
+                        j = end;
+                        continue;
+                    }
+                }
+
+                if j + 1 < line_chars.len() && line_chars[j] == '*' && line_chars[j + 1] == '*' {
+                    if let Some(end) = Self::find_closing_marker(&line_chars, j + 2, "**") {
+                        if end > j + 2 {
+                            count += end - (j + 2);
+                            j = end + 2;
+                            continue;
+                        }
+                    }
+                }
+
+                if line_chars[j] == '*' {
+                    let is_start_of_bold = j + 1 < line_chars.len() && line_chars[j + 1] == '*';
+                    if !is_start_of_bold {
+                        if let Some(end) = Self::find_closing_marker(&line_chars, j + 1, "*") {
+                            if end > j + 1 {
+                                count += end - (j + 1);
+                                j = end + 1;
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                if j + 1 < line_chars.len() && line_chars[j] == '_' && line_chars[j + 1] == '_' {
+                    if let Some(end) = Self::find_closing_marker(&line_chars, j + 2, "__") {
+                        if end > j + 2 {
+                            count += end - (j + 2);
+                            j = end + 2;
+                            continue;
+                        }
+                    }
+                }
+
+                if line_chars[j] == '`' {
+                    if j + 2 < line_chars.len() && line_chars[j + 1] == '`' && line_chars[j + 2] == '`' {
+                        count += 1;
+                        j += 1;
+                        continue;
+                    }
+
+                    if let Some(end) = Self::find_closing_marker(&line_chars, j + 1, "`") {
+                        if end > j + 1 {
+                            count += end - (j + 1);
+                            j = end + 1;
+                            continue;
+                        }
+                    }
+                }
+
+                if line_chars[j] == '^' && j + 1 < line_chars.len() && !line_chars[j + 1].is_whitespace() {
+                    let mut end = j + 1;
+                    while end < line_chars.len() && line_chars[end] != '^' {
+                        if line_chars[end].is_whitespace() || line_chars[end].is_ascii_punctuation() {
+                            break;
+                        }
+                        end += 1;
+                    }
+                    if end > j + 1 {
+                        count += end - (j + 1);
+                        j = end;
+                        continue;
+                    }
+                }
+
+                if line_chars[j] == '[' {
+                    if let Some(text_end) = Self::find_closing_bracket(&line_chars, j + 1) {
+                        if text_end + 1 < line_chars.len() && line_chars[text_end + 1] == '(' {
+                            if let Some(url_end) = Self::find_closing_paren(&line_chars, text_end + 2) {
+                                count += text_end - (j + 1);
+                                j = url_end + 1;
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                count += 1;
+                j += 1;
+            }
+
+            if line_end < chars.len() {
+                count += 1;
+            }
+            i = line_end + 1;
+        }
+
+        count
+    }
+
+    fn count_words(&self) -> usize {
+        self.content
+            .split_whitespace()
+            .filter(|word| !word.is_empty())
+            .count()
+    }
+
+    fn get_file_name(&self) -> String {
+        self.file_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "Untitled".to_string())
+    }
 }
 
 impl EditorModule for TextEditor {
@@ -950,92 +1161,105 @@ impl EditorModule for TextEditor {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.horizontal(|ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, show_toolbar: bool, show_file_info: bool) {
+        if show_toolbar {
             ui.horizontal(|ui| {
-                if ui.button(egui::RichText::new("B").strong())
-                    .on_hover_text("Bold (Ctrl+B)")
-                    .clicked() 
-                {
-                    self.format_bold();
-                }
-                if ui.button(egui::RichText::new("I").italics())
-                    .on_hover_text("Italic (Ctrl+I)")
-                    .clicked() 
-                {
-                    self.format_italic();
-                }
-                if ui.button(egui::RichText::new("U").underline())
-                    .on_hover_text("Underline (Ctrl+U)")
-                    .clicked() 
-                {
-                    self.format_underline();
-                }
-                if ui.button(egui::RichText::new("S").strikethrough())
-                    .on_hover_text("Strikethrough (Ctrl+Shift+S)")
-                    .clicked() 
-                {
-                    self.format_strikethrough();
-                }
-                if ui.button(egui::RichText::new("C").monospace())
-                    .on_hover_text("Code (Ctrl+E)")
-                    .clicked() 
-                {
-                    self.format_code();
-                }
-                
+                ui.horizontal(|ui| {
+                    if ui.button(egui::RichText::new("B").strong())
+                        .on_hover_text("Bold (Ctrl+B)")
+                        .clicked() 
+                    {
+                        self.format_bold();
+                    }
+                    if ui.button(egui::RichText::new("I").italics())
+                        .on_hover_text("Italic (Ctrl+I)")
+                        .clicked() 
+                    {
+                        self.format_italic();
+                    }
+                    if ui.button(egui::RichText::new("U").underline())
+                        .on_hover_text("Underline (Ctrl+U)")
+                        .clicked() 
+                    {
+                        self.format_underline();
+                    }
+                    if ui.button(egui::RichText::new("S").strikethrough())
+                        .on_hover_text("Strikethrough (Ctrl+Shift+S)")
+                        .clicked() 
+                    {
+                        self.format_strikethrough();
+                    }
+                    if ui.button(egui::RichText::new("C").monospace())
+                        .on_hover_text("Code (Ctrl+E)")
+                        .clicked() 
+                    {
+                        self.format_code();
+                    }
+                    
+                    ui.separator();
+                    
+                    if ui.button("H1").on_hover_text("Heading 1").clicked() {
+                        self.format_heading(1);
+                    }
+                    if ui.button("H2").on_hover_text("Heading 2").clicked() {
+                        self.format_heading(2);
+                    }
+                    if ui.button("H3").on_hover_text("Heading 3").clicked() {
+                        self.format_heading(3);
+                    }
+                    if ui.button("H4").on_hover_text("Heading 4").clicked() {
+                        self.format_heading(4);
+                    }
+                });
+
                 ui.separator();
-                
-                if ui.button("H1").on_hover_text("Heading 1").clicked() {
-                    self.format_heading(1);
-                }
-                if ui.button("H2").on_hover_text("Heading 2").clicked() {
-                    self.format_heading(2);
-                }
-                if ui.button("H3").on_hover_text("Heading 3").clicked() {
-                    self.format_heading(3);
-                }
-                if ui.button("H4").on_hover_text("Heading 4").clicked() {
-                    self.format_heading(4);
-                }
-            });
+                ui.label("View:");
 
-            ui.separator();
-            ui.label("View:");
+                ui.vertical(|ui| {
+                    egui::ComboBox::from_id_salt("view_mode")
+                        .selected_text(match self.view_mode {
+                            ViewMode::Markdown => "Markdown",
+                            ViewMode::Plain => "Plain Text",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.view_mode, ViewMode::Markdown, "Markdown");
+                            ui.selectable_value(&mut self.view_mode, ViewMode::Plain, "Plain Text");
+                        });
+                });
 
-            ui.vertical(|ui| {
-                egui::ComboBox::from_id_salt("view_mode")
-                    .selected_text(match self.view_mode {
-                        ViewMode::Markdown => "Markdown",
-                        ViewMode::Plain => "Plain Text",
-                    })
+                ui.separator();
+                ui.label("Font:");
+
+                ui.vertical(|ui| {
+                egui::ComboBox::from_id_salt("font_fam")
+                    .selected_text(if matches!(self.font_family, egui::FontFamily::Proportional) { "Sans" } else { "Mono" })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.view_mode, ViewMode::Markdown, "Markdown");
-                        ui.selectable_value(&mut self.view_mode, ViewMode::Plain, "Plain Text");
+                        ui.selectable_value(&mut self.font_family, egui::FontFamily::Monospace, "Monospace");
+                        ui.selectable_value(&mut self.font_family, egui::FontFamily::Proportional, "Sans-Serif");
                     });
-            });
+                });
 
-            ui.separator();
-            ui.label("Font:");
-
-            ui.vertical(|ui| {
-            egui::ComboBox::from_id_salt("font_fam")
-                .selected_text(if matches!(self.font_family, egui::FontFamily::Proportional) { "Sans" } else { "Mono" })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.font_family, egui::FontFamily::Monospace, "Monospace");
-                    ui.selectable_value(&mut self.font_family, egui::FontFamily::Proportional, "Sans-Serif");
+                ui.separator();
+                ui.label("Size:");
+                
+                ui.vertical(|ui| {
+                    ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).range(8.0..=72.0));
                 });
             });
 
             ui.separator();
-            ui.label("Size:");
-            
-            ui.vertical(|ui| {
-                ui.add(egui::DragValue::new(&mut self.font_size).speed(0.5).range(8.0..=72.0));
-            });
-        });
+        }
 
-        ui.separator();
+        if show_file_info {
+            ui.horizontal(|ui| {
+                ui.label(format!("File: {}", self.get_file_name()));
+                ui.separator();
+                ui.label(format!("Characters: {}", self.count_visible_chars()));
+                ui.separator();
+                ui.label(format!("Words: {}", self.count_words()));
+            });
+            ui.separator();
+        }
 
         match self.view_mode {
             ViewMode::Markdown => {

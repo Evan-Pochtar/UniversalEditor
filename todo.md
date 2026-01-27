@@ -6,6 +6,7 @@
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
+  - [ ] Change checkmark close/open sidebar to a small arrow.
 
 ## Screens
 
@@ -59,10 +60,11 @@
 - [x] Superscript, Subscript
 - [x] Clickable Links
 - [x] Hover features in toolbar to know what they are (E.g hover B to show "bold")
+- [x] Show what file is being edited
+- [x] Turn off Toolbar
 - [x] Make Code blocks more readable.
   - [ ] Add titles to code blocks (E.g "bash" or "rust")
   - [ ] Add newlines after and before code in code block.
-- [ ] Show what file is being edited
 - [ ] Latex?
 
 ## Other

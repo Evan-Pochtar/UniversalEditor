@@ -74,6 +74,8 @@ pub struct UniversalEditor {
     screens_expanded: bool,
     converters_expanded: bool,
     recent_files_expanded: bool,
+    show_toolbar: bool,
+    show_file_info: bool,
 }
 
 impl UniversalEditor {
@@ -93,6 +95,8 @@ impl UniversalEditor {
             screens_expanded: false,
             converters_expanded: false,
             recent_files_expanded: true,
+            show_toolbar: true,
+            show_file_info: true,
         }
     }
 
@@ -137,6 +141,8 @@ impl UniversalEditor {
 
                 ui.menu_button("View", |ui| {
                    ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
+                   ui.checkbox(&mut self.show_toolbar, "Show Toolbar");
+                   ui.checkbox(&mut self.show_file_info, "Show File Info");
                    
                    ui.separator();
                    
@@ -264,7 +270,7 @@ impl eframe::App for UniversalEditor {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(module) = &mut self.active_module {
-                module.ui(ui, ctx);
+                module.ui(ui, ctx, self.show_toolbar, self.show_file_info);
             } else {
                 self.landing_page(ui);
             }
