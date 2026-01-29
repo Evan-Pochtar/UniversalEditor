@@ -1,5 +1,6 @@
 use eframe::egui;
 pub mod text_editor;
+pub mod image_converter;
 
 #[allow(dead_code)]
 pub trait EditorModule {

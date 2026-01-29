@@ -1,6 +1,6 @@
 use eframe::egui;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_editor::TextEditor};
+use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -93,7 +93,7 @@ impl UniversalEditor {
             theme_mode: initial_theme,
             recent_files: RecentFiles::load(),
             screens_expanded: false,
-            converters_expanded: false,
+            converters_expanded: true,
             recent_files_expanded: true,
             show_toolbar: true,
             show_file_info: true,
@@ -177,7 +177,7 @@ impl UniversalEditor {
                         ui.add_space(8.0);
                         
                         style::sidebar_section(ui, "Screens", &mut self.screens_expanded, self.theme_mode, |ui| {
-                            if style::sidebar_item(ui, "Text Editor", "📄", self.theme_mode).clicked() {
+                            if style::sidebar_item(ui, "Text Editor", "T", self.theme_mode).clicked() {
                                 self.active_module = Some(Box::new(TextEditor::new_empty()));
                             }
                         });
@@ -185,11 +185,9 @@ impl UniversalEditor {
                         ui.add_space(4.0);
                         
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, self.theme_mode, |ui| {
-                            ui.add_space(4.0);
-                            ui.vertical_centered(|ui| {
-                                ui.weak("No converters available");
-                            });
-                            ui.add_space(4.0);
+                            if style::sidebar_item(ui, "Image Converter", "I", self.theme_mode).clicked() {
+                                self.active_module = Some(Box::new(ImageConverter::new()));
+                            }
                         });
                         
                         ui.add_space(4.0);
@@ -210,7 +208,7 @@ impl UniversalEditor {
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
                                         
-                                        if style::sidebar_item(ui, file_name, "📝", self.theme_mode).clicked() {
+                                        if style::sidebar_item(ui, file_name, "F", self.theme_mode).clicked() {
                                             file_to_open = Some(recent_file.path.clone());
                                         }
                                     }
@@ -245,7 +243,7 @@ impl UniversalEditor {
                 
                 ui.heading(egui::RichText::new("UNIVERSAL EDITOR").size(32.0));
                 ui.add_space(8.0);
-                ui.label(egui::RichText::new("A modern, modular text editor").size(14.0));
+                ui.label(egui::RichText::new("A modern, modular editor").size(14.0));
                 
                 ui.add_space(40.0);
 
@@ -257,6 +255,10 @@ impl UniversalEditor {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                         self.open_file(path);
                     }
+                }
+                ui.add_space(12.0);
+                if style::secondary_button(ui, "Image Converter", self.theme_mode).clicked() {
+                    self.active_module = Some(Box::new(ImageConverter::new()));
                 }
             });
         });

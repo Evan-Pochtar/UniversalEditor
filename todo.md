@@ -3,6 +3,8 @@
 ## General
 
 - [ ] Reusable Design
+- [ ] Create Main Menu
+  - [ ] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -24,7 +26,7 @@
 
 - [ ] Video to Gif, Gif to Video
 - [ ] Video Compressor
-- [ ] Img to Img of diff type
+- [x] Img to Img of diff type
 - [ ] Video to Audio File
 
 ## Debugging
@@ -67,6 +69,10 @@
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
 - [ ] Latex?
+
+#### CONVERTER: Img 2 Img
+- [ ] Keyboard Shortcuts
+- [ ] Display Error (For example, width > 256 for ico conversion)
 
 ## Other
 
