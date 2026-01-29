@@ -11,7 +11,6 @@ pub enum ImageFormat {
     Jpeg,
     Png,
     Webp,
-    Gif,
     Bmp,
     Tiff,
     Ico,
@@ -23,7 +22,6 @@ impl ImageFormat {
             ImageFormat::Jpeg => "JPEG",
             ImageFormat::Png => "PNG",
             ImageFormat::Webp => "WebP",
-            ImageFormat::Gif => "GIF",
             ImageFormat::Bmp => "BMP",
             ImageFormat::Tiff => "TIFF",
             ImageFormat::Ico => "ICO",
@@ -35,7 +33,6 @@ impl ImageFormat {
             ImageFormat::Jpeg => "jpg",
             ImageFormat::Png => "png",
             ImageFormat::Webp => "webp",
-            ImageFormat::Gif => "gif",
             ImageFormat::Bmp => "bmp",
             ImageFormat::Tiff => "tiff",
             ImageFormat::Ico => "ico",
@@ -47,7 +44,6 @@ impl ImageFormat {
             ImageFormat::Jpeg,
             ImageFormat::Png,
             ImageFormat::Webp,
-            ImageFormat::Gif,
             ImageFormat::Bmp,
             ImageFormat::Tiff,
             ImageFormat::Ico,
@@ -155,7 +151,7 @@ impl ImageConverter {
             if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     let ext_lower = ext.to_lowercase();
-                    if matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "tiff" | "tif" | "ico") {
+                    if matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "webp" | "bmp" | "tiff" | "tif" | "ico") {
                         if !self.images.iter().any(|img| img.path == path) {
                             self.images.push(ImageFile::new(path));
                         }
@@ -299,10 +295,6 @@ impl ImageConverter {
                 img.save_with_format(&output_path, image::ImageFormat::WebP)
                     .map_err(|e| format!("Failed to save WebP: {}", e))?;
             }
-            ImageFormat::Gif => {
-                img.save_with_format(&output_path, image::ImageFormat::Gif)
-                    .map_err(|e| format!("Failed to save GIF: {}", e))?;
-            }
             ImageFormat::Bmp => {
                 img.save_with_format(&output_path, image::ImageFormat::Bmp)
                     .map_err(|e| format!("Failed to save BMP: {}", e))?;
@@ -435,7 +427,7 @@ impl ImageConverter {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let toggle_text = if self.show_advanced { "Hide" } else { "Show" };
-                        if ui.small_button(toggle_text).clicked() {
+                        if ui.button(toggle_text).clicked() {
                             self.show_advanced = !self.show_advanced;
                         }
                     });
@@ -557,12 +549,12 @@ impl ImageConverter {
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !self.images.is_empty() && ui.small_button("Clear All").clicked() {
+                        if !self.images.is_empty() && ui.button("Clear All").clicked() {
                             self.clear_images();
                         }
-                        if ui.small_button("Add Images").clicked() {
+                        if ui.button("Add Images").clicked() {
                             if let Some(paths) = rfd::FileDialog::new()
-                                .add_filter("Images", &["jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "tif", "ico"])
+                                .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "ico"])
                                 .pick_files()
                             {
                                 self.add_images(paths);
@@ -670,7 +662,7 @@ impl ImageConverter {
                                             });
 
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.small_button("Remove").clicked() {
+                                                if ui.button("Remove").clicked() {
                                                     to_remove = Some(idx);
                                                 }
                                             });

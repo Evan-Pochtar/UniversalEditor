@@ -181,17 +181,13 @@ impl UniversalEditor {
                                 self.active_module = Some(Box::new(TextEditor::new_empty()));
                             }
                         });
-                        
-                        ui.add_space(4.0);
-                        
+                                                
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, self.theme_mode, |ui| {
                             if style::sidebar_item(ui, "Image Converter", "I", self.theme_mode).clicked() {
                                 self.active_module = Some(Box::new(ImageConverter::new()));
                             }
                         });
-                        
-                        ui.add_space(4.0);
-                        
+                                                
                         let recent_files: Vec<RecentFile> = self.recent_files.get_files().to_vec();
                         let mut file_to_open: Option<PathBuf> = None;
                         
