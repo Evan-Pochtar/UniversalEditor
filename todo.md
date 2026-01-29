@@ -33,7 +33,8 @@
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
-- [ ] Can click to non-existant line in markdown mode, desyncing cursor.
+- [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [x] Can click to non-existant line in markdown mode, desyncing cursor.
 - [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
 - [x] If there is a asterisk MUCH after the last italicized word, It will think it connected
@@ -63,8 +64,8 @@
 - [x] Show what file is being edited
 - [x] Turn off Toolbar
 - [x] Make Code blocks more readable.
-  - [ ] Add titles to code blocks (E.g "bash" or "rust")
-  - [ ] Add newlines after and before code in code block.
+  - [x] Add titles to code blocks (E.g "bash" or "rust")
+  - [x] Add newlines after and before code in code block.
 - [ ] Latex?
 
 ## Other

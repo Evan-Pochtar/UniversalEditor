@@ -192,15 +192,20 @@ impl TextEditor {
 
             let mut lines: Vec<&str> = Vec::new();
             let mut code_line_flags: Vec<bool> = Vec::new();
+            let mut fence_line_flags: Vec<bool> = Vec::new();
             let mut in_code_block = false;
+            
             for line in self.content.lines() {
-                if line.trim().starts_with("```") {
+                let is_fence = line.trim().starts_with("```");
+                if is_fence {
                     in_code_block = !in_code_block;
                     lines.push(line);
                     code_line_flags.push(false);
+                    fence_line_flags.push(true);
                 } else {
                     lines.push(line);
                     code_line_flags.push(in_code_block);
+                    fence_line_flags.push(false);
                 }
             }
 
@@ -210,13 +215,16 @@ impl TextEditor {
                     let mut job = egui::text::LayoutJob::default();
                     job.wrap.max_width = wrap_width;
 
-                    let is_fence = line.trim().starts_with("```");
-
-                    if code_line_flags[idx] {
+                    if fence_line_flags[idx] {
+                        let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
+                        if !lang_label.is_empty() {
+                            job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                        } else {
+                            job.append(" ", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                        }
+                    } else if code_line_flags[idx] {
                         let fmt = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
                         job.append(line, 0.0, fmt);
-                    } else if is_fence {
-                        job.append(line, 0.0, Self::invisible_format_static());
                     } else {
                         if line.trim().is_empty() {
                             let fmt = Self::default_format_static(font_size, &font_family, is_dark_mode);
@@ -257,7 +265,16 @@ impl TextEditor {
             let code_bg = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
 
             for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
-                if code_line_flags[line_idx] {
+                if fence_line_flags[line_idx] {
+                    for &h in row_heights {
+                        let rect = Rect::from_min_size(
+                            pos2(outer_rect.min.x, y),
+                            vec2(full_width, h),
+                        );
+                        painter.rect_filled(rect, 0.0, code_bg);
+                        y += h;
+                    }
+                } else if code_line_flags[line_idx] {
                     for &h in row_heights {
                         let rect = Rect::from_min_size(
                             pos2(outer_rect.min.x, y),
@@ -280,7 +297,12 @@ impl TextEditor {
                 let mut char_offset = 0;
                 let mut in_code_block = false;
 
-                for line in text.lines() {
+                let lines_vec: Vec<&str> = text.lines().collect();
+                let ends_with_newline = text.ends_with('\n');
+                
+                for (line_idx, line) in lines_vec.iter().enumerate() {
+                    let is_last_line = line_idx == lines_vec.len() - 1;
+                    
                     if line.trim().starts_with("```") {
                         in_code_block = !in_code_block;
 
@@ -290,7 +312,14 @@ impl TextEditor {
                         if cursor_in_range {
                             job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
                         } else {
-                            job.append(line, 0.0, Self::invisible_format_static());
+                            let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
+                            if !lang_label.is_empty() {
+                                let backticks = "```";
+                                job.append(backticks, 0.0, Self::invisible_format_static());
+                                job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                            } else {
+                                job.append(line, 0.0, Self::invisible_format_static());
+                            }
                         }
                     } else if in_code_block {
                         let bg_format = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
@@ -298,7 +327,10 @@ impl TextEditor {
                     } else {
                         Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
                     }
-                    job.append("\n", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                    
+                    if !is_last_line || ends_with_newline {
+                        job.append("\n", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                    }
                     char_offset += line.chars().count() + 1;
                 }
                 ui.fonts_mut(|f| f.layout_job(job))
@@ -812,6 +844,20 @@ impl TextEditor {
         
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 1.0, egui::FontFamily::Monospace),
+            color: text_color,
+            ..Default::default()
+        }
+    }
+
+    fn code_block_label_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+        let text_color = if is_dark_mode {
+            ColorPalette::BLUE_400
+        } else {
+            ColorPalette::BLUE_600
+        };
+        
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Monospace),
             color: text_color,
             ..Default::default()
         }
