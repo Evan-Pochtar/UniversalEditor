@@ -10,7 +10,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 720.0])
             .with_title("Universal Editor")
-            .with_icon(eframe::icon_data::from_png_bytes(&[]).unwrap_or_default()),
+            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("img/logo.png")).unwrap_or_default()),
         ..Default::default()
     };
     
