@@ -37,6 +37,7 @@
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [ ] Save warning dialogue does not show up on application close
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
 - [x] Can click to non-existant line in markdown mode, desyncing cursor.
@@ -50,6 +51,10 @@
 - [x] Features in top tool bar are not aligned.
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
+
+#### Other
+- [x] Sidebar down arrow shows as empty square
+- [ ] Top bar "View" should not show text editor options when not on text editor
 
 ## Features
 

@@ -301,13 +301,33 @@ pub fn sidebar_section(
         let bg_color = if response.hovered() { header_hover } else { header_bg };
         ui.painter().rect_filled(rect, 4.0, bg_color);
 
-        let arrow = if *expanded { "▼" } else { "▶" };
-        let text = format!("{} {}", arrow, title);
-        
+        let arrow_center = rect.left_center() + egui::vec2(16.0, 0.0);
+        let arrow_size = 4.0;
+
+        let points = if *expanded {
+            vec![
+                arrow_center + egui::vec2(-arrow_size, -arrow_size * 0.5),
+                arrow_center + egui::vec2(arrow_size, -arrow_size * 0.5),
+                arrow_center + egui::vec2(0.0, arrow_size),
+            ]
+        } else {
+            vec![
+                arrow_center + egui::vec2(-arrow_size * 0.5, -arrow_size),
+                arrow_center + egui::vec2(-arrow_size * 0.5, arrow_size),
+                arrow_center + egui::vec2(arrow_size, 0.0),
+            ]
+        };
+
+        ui.painter().add(egui::Shape::convex_polygon(
+            points,
+            text_color,
+            egui::Stroke::NONE,
+        ));
+
         ui.painter().text(
-            rect.left_center() + egui::vec2(12.0, 0.0),
+            rect.left_center() + egui::vec2(30.0, 0.0),
             egui::Align2::LEFT_CENTER,
-            text,
+            title,
             egui::FontId::proportional(13.0),
             text_color,
         );
