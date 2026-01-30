@@ -43,7 +43,7 @@ impl TextEditor {
         
         let content = if let Some(reader) = file {
             let rope = Rope::from_reader(reader).unwrap_or_default();
-            rope.to_string()
+            rope.to_string().replace("\r\n", "\n")
         } else {
             String::new()
         };
@@ -216,11 +216,34 @@ impl TextEditor {
                     job.wrap.max_width = wrap_width;
 
                     if fence_line_flags[idx] {
-                        let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
-                        if !lang_label.is_empty() {
-                            job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                        if let Some(start_idx) = line.find("```") {
+                            let prefix = &line[..start_idx];
+                            let rest = &line[start_idx + 3..];
+                            let label = rest.trim_end();
+                            let suffix_len = rest.len() - label.len();
+                            let has_label = !label.is_empty();
+
+                            if !prefix.is_empty() {
+                                job.append(prefix, 0.0, Self::transparent_format_static(font_size));
+                            }
+
+                            let marker_fmt = if has_label {
+                                Self::zero_width_format_static()
+                            } else {
+                                Self::transparent_format_static(font_size)
+                            };
+                            job.append("```", 0.0, marker_fmt);
+
+                            if has_label {
+                                job.append(label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                            }
+
+                            if suffix_len > 0 {
+                                let suffix = &rest[label.len()..];
+                                job.append(suffix, 0.0, Self::zero_width_format_static());
+                            }
                         } else {
-                            job.append(" ", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                            job.append(line, 0.0, Self::transparent_format_static(font_size));
                         }
                     } else if code_line_flags[idx] {
                         let fmt = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
@@ -251,7 +274,6 @@ impl TextEditor {
                     if row_heights.is_empty() {
                         row_heights.push((font_size * 1.25).max(16.0));
                     }
-
                     per_line_row_heights.push(row_heights);
                 }
             });
@@ -265,16 +287,7 @@ impl TextEditor {
             let code_bg = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
 
             for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
-                if fence_line_flags[line_idx] {
-                    for &h in row_heights {
-                        let rect = Rect::from_min_size(
-                            pos2(outer_rect.min.x, y),
-                            vec2(full_width, h),
-                        );
-                        painter.rect_filled(rect, 0.0, code_bg);
-                        y += h;
-                    }
-                } else if code_line_flags[line_idx] {
+                if fence_line_flags[line_idx] || code_line_flags[line_idx] {
                     for &h in row_heights {
                         let rect = Rect::from_min_size(
                             pos2(outer_rect.min.x, y),
@@ -312,11 +325,34 @@ impl TextEditor {
                         if cursor_in_range {
                             job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
                         } else {
-                            let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
-                            if !lang_label.is_empty() {
-                                job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                            if let Some(start_idx) = line.find("```") {
+                                let prefix = &line[..start_idx];
+                                let rest = &line[start_idx + 3..];
+                                let label = rest.trim_end();
+                                let suffix_len = rest.len() - label.len();
+                                let has_label = !label.is_empty();
+
+                                if !prefix.is_empty() {
+                                    job.append(prefix, 0.0, Self::transparent_format_static(font_size));
+                                }
+
+                                let marker_fmt = if has_label {
+                                    Self::zero_width_format_static()
+                                } else {
+                                    Self::transparent_format_static(font_size)
+                                };
+                                job.append("```", 0.0, marker_fmt);
+
+                                if has_label {
+                                    job.append(label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                                }
+
+                                if suffix_len > 0 {
+                                    let suffix = &rest[label.len()..];
+                                    job.append(suffix, 0.0, Self::zero_width_format_static());
+                                }
                             } else {
-                                job.append(" ", 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
+                                job.append(line, 0.0, Self::transparent_format_static(font_size));
                             }
                         }
                     } else if in_code_block {
@@ -340,7 +376,7 @@ impl TextEditor {
                 .frame(false);
 
             let response = ui.put(outer_rect, text_edit);
-
+            
             if response.clicked() && ctx.input(|i| i.modifiers.ctrl || i.modifiers.command) {
                 if let Some(cursor_range) = self.last_cursor_range {
                     let chars: Vec<char> = self.content.chars().collect();
@@ -470,6 +506,22 @@ impl TextEditor {
     fn invisible_format_static() -> egui::TextFormat {
         egui::TextFormat {
             font_id: egui::FontId::new(0.001, egui::FontFamily::Monospace), 
+            color: egui::Color32::TRANSPARENT,
+            ..Default::default()
+        }
+    }
+
+    fn transparent_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
+            color: egui::Color32::TRANSPARENT,
+            ..Default::default()
+        }
+    }
+
+    fn zero_width_format_static() -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(0.01, egui::FontFamily::Monospace), 
             color: egui::Color32::TRANSPARENT,
             ..Default::default()
         }
