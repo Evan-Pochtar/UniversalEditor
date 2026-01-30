@@ -43,7 +43,7 @@ impl TextEditor {
         
         let content = if let Some(reader) = file {
             let rope = Rope::from_reader(reader).unwrap_or_default();
-            rope.to_string()
+            rope.to_string().replace("\r\n", "\n")
         } else {
             String::new()
         };
@@ -58,6 +58,10 @@ impl TextEditor {
             last_cursor_range: None,
             pending_cursor_pos: None,
         }
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
     }
 
     fn char_index_to_byte_index(&self, char_index: usize) -> usize {
@@ -216,11 +220,34 @@ impl TextEditor {
                     job.wrap.max_width = wrap_width;
 
                     if fence_line_flags[idx] {
-                        let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
-                        if !lang_label.is_empty() {
-                            job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                        if let Some(start_idx) = line.find("```") {
+                            let prefix = &line[..start_idx];
+                            let rest = &line[start_idx + 3..];
+                            let label = rest.trim_end();
+                            let suffix_len = rest.len() - label.len();
+                            let has_label = !label.is_empty();
+
+                            if !prefix.is_empty() {
+                                job.append(prefix, 0.0, Self::transparent_format_static(font_size));
+                            }
+
+                            let marker_fmt = if has_label {
+                                Self::zero_width_format_static()
+                            } else {
+                                Self::transparent_format_static(font_size)
+                            };
+                            job.append("```", 0.0, marker_fmt);
+
+                            if has_label {
+                                job.append(label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                            }
+
+                            if suffix_len > 0 {
+                                let suffix = &rest[label.len()..];
+                                job.append(suffix, 0.0, Self::zero_width_format_static());
+                            }
                         } else {
-                            job.append(" ", 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                            job.append(line, 0.0, Self::transparent_format_static(font_size));
                         }
                     } else if code_line_flags[idx] {
                         let fmt = Self::code_block_background_format_static(font_size, is_dark_mode, available_width);
@@ -251,7 +278,6 @@ impl TextEditor {
                     if row_heights.is_empty() {
                         row_heights.push((font_size * 1.25).max(16.0));
                     }
-
                     per_line_row_heights.push(row_heights);
                 }
             });
@@ -265,16 +291,7 @@ impl TextEditor {
             let code_bg = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
 
             for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
-                if fence_line_flags[line_idx] {
-                    for &h in row_heights {
-                        let rect = Rect::from_min_size(
-                            pos2(outer_rect.min.x, y),
-                            vec2(full_width, h),
-                        );
-                        painter.rect_filled(rect, 0.0, code_bg);
-                        y += h;
-                    }
-                } else if code_line_flags[line_idx] {
+                if fence_line_flags[line_idx] || code_line_flags[line_idx] {
                     for &h in row_heights {
                         let rect = Rect::from_min_size(
                             pos2(outer_rect.min.x, y),
@@ -312,13 +329,34 @@ impl TextEditor {
                         if cursor_in_range {
                             job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
                         } else {
-                            let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
-                            if !lang_label.is_empty() {
-                                let backticks = "```";
-                                job.append(backticks, 0.0, Self::invisible_format_static());
-                                job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                            if let Some(start_idx) = line.find("```") {
+                                let prefix = &line[..start_idx];
+                                let rest = &line[start_idx + 3..];
+                                let label = rest.trim_end();
+                                let suffix_len = rest.len() - label.len();
+                                let has_label = !label.is_empty();
+
+                                if !prefix.is_empty() {
+                                    job.append(prefix, 0.0, Self::transparent_format_static(font_size));
+                                }
+
+                                let marker_fmt = if has_label {
+                                    Self::zero_width_format_static()
+                                } else {
+                                    Self::transparent_format_static(font_size)
+                                };
+                                job.append("```", 0.0, marker_fmt);
+
+                                if has_label {
+                                    job.append(label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
+                                }
+
+                                if suffix_len > 0 {
+                                    let suffix = &rest[label.len()..];
+                                    job.append(suffix, 0.0, Self::zero_width_format_static());
+                                }
                             } else {
-                                job.append(line, 0.0, Self::invisible_format_static());
+                                job.append(line, 0.0, Self::transparent_format_static(font_size));
                             }
                         }
                     } else if in_code_block {
@@ -342,7 +380,7 @@ impl TextEditor {
                 .frame(false);
 
             let response = ui.put(outer_rect, text_edit);
-
+            
             if response.clicked() && ctx.input(|i| i.modifiers.ctrl || i.modifiers.command) {
                 if let Some(cursor_range) = self.last_cursor_range {
                     let chars: Vec<char> = self.content.chars().collect();
@@ -386,6 +424,21 @@ impl TextEditor {
         line_start_offset: usize,
         is_dark_mode: bool,
     ) {
+        if let Some(rest) = line.strip_prefix("#### ") {
+            let header_start = line_start_offset;
+            let header_end = line_start_offset + line.chars().count();
+            let cursor_in_header = cursor_pos.map_or(false, |pos| pos >= header_start && pos <= header_end);
+            
+            if cursor_in_header {
+                job.append("#### ", 0.0, Self::markdown_syntax_format_static(font_size));
+                job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+            } else {
+                let invisible_prefix = "#### ";
+                job.append(invisible_prefix, 0.0, Self::invisible_format_static());
+                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.1, is_dark_mode));
+            }
+            return;
+        }
         if let Some(rest) = line.strip_prefix("### ") {
             let header_start = line_start_offset;
             let header_end = line_start_offset + line.chars().count();
@@ -472,6 +525,22 @@ impl TextEditor {
     fn invisible_format_static() -> egui::TextFormat {
         egui::TextFormat {
             font_id: egui::FontId::new(0.001, egui::FontFamily::Monospace), 
+            color: egui::Color32::TRANSPARENT,
+            ..Default::default()
+        }
+    }
+
+    fn transparent_format_static(font_size: f32) -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
+            color: egui::Color32::TRANSPARENT,
+            ..Default::default()
+        }
+    }
+
+    fn zero_width_format_static() -> egui::TextFormat {
+        egui::TextFormat {
+            font_id: egui::FontId::new(0.01, egui::FontFamily::Monospace), 
             color: egui::Color32::TRANSPARENT,
             ..Default::default()
         }
@@ -998,6 +1067,14 @@ impl TextEditor {
             let mut j = 0;
             let line_chars: Vec<char> = line.chars().collect();
             
+            if let Some(rest) = line.strip_prefix("#### ") {
+                count += rest.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
             if let Some(rest) = line.strip_prefix("### ") {
                 count += rest.chars().count();
                 if line_end < chars.len() {
@@ -1170,6 +1247,10 @@ impl TextEditor {
 }
 
 impl EditorModule for TextEditor {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn get_title(&self) -> String {
         let name = self.file_path.as_ref()
             .and_then(|p| p.file_name())
@@ -1298,8 +1379,21 @@ impl EditorModule for TextEditor {
 
         if show_file_info {
             ui.horizontal(|ui| {
+                let is_dark_mode = ui.visuals().dark_mode;
+                
                 ui.label(format!("File: {}", self.get_file_name()));
                 ui.separator();
+                
+                let save_status = if self.dirty { "Unsaved" } else { "Saved" };
+                let save_color = if self.dirty {
+                    if is_dark_mode { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }
+                } else {
+                    if is_dark_mode { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }
+                };
+                
+                ui.label(egui::RichText::new(save_status).color(save_color));
+                ui.separator();
+                
                 ui.label(format!("Characters: {}", self.count_visible_chars()));
                 ui.separator();
                 ui.label(format!("Words: {}", self.count_words()));

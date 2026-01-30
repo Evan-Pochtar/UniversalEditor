@@ -3,6 +3,9 @@
 ## General
 
 - [ ] Reusable Design
+- [ ] "System" option to decide light/dark mode
+- [ ] Create Main Menu
+  - [ ] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -24,7 +27,7 @@
 
 - [ ] Video to Gif, Gif to Video
 - [ ] Video Compressor
-- [ ] Img to Img of diff type
+- [x] Img to Img of diff type
 - [ ] Video to Audio File
 
 ## Debugging
@@ -34,6 +37,9 @@
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [ ] Save warning dialogue does not show up on application close
+- [x] Code block cursor desync
+- [x] Code block desync with words right after/before code block
 - [x] Can click to non-existant line in markdown mode, desyncing cursor.
 - [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
@@ -45,6 +51,10 @@
 - [x] Features in top tool bar are not aligned.
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
+
+#### Other
+- [x] Sidebar down arrow shows as empty square
+- [ ] Top bar "View" should not show text editor options when not on text editor
 
 ## Features
 
@@ -66,7 +76,12 @@
 - [x] Make Code blocks more readable.
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
+- [x] Showing saved/unsaved
 - [ ] Latex?
+
+#### CONVERTER: Img 2 Img
+- [ ] Keyboard Shortcuts
+- [ ] Display Error (For example, width > 256 for ico conversion)
 
 ## Other
 

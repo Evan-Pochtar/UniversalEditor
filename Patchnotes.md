@@ -1,0 +1,15 @@
+# Universal Editor Patchnotes
+
+## V0.0.1
+
+#### Features
+- **IMG2IMG COVNERTER**: Img2Img Converter added (jpeg, png, webp, bmp, tiff, ico file options)
+- **TEXT EDITOR**: Header Level 4 on Markdown Mode (E.g ####)
+- **TEXT EDITOR**: Adding warning dialogue for leaving an unsaved file.
+- **GENERAL**: Adding Logo
+
+#### Debugging
+- **TEXT EDITOR**: Codeblock Background now sync's properly (mostly)
+- **TEXT EDITOR**: Cursor now no longer desyncs when multi-line codeblocks are present
+- **TEXT EDITOR**: Cursor now no longer desyncs on load with old files
+- **GENERAL**: Sidebar now no longer shows empty white box instead of down arrow
