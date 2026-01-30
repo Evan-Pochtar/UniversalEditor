@@ -424,6 +424,21 @@ impl TextEditor {
         line_start_offset: usize,
         is_dark_mode: bool,
     ) {
+        if let Some(rest) = line.strip_prefix("#### ") {
+            let header_start = line_start_offset;
+            let header_end = line_start_offset + line.chars().count();
+            let cursor_in_header = cursor_pos.map_or(false, |pos| pos >= header_start && pos <= header_end);
+            
+            if cursor_in_header {
+                job.append("#### ", 0.0, Self::markdown_syntax_format_static(font_size));
+                job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+            } else {
+                let invisible_prefix = "#### ";
+                job.append(invisible_prefix, 0.0, Self::invisible_format_static());
+                job.append(rest, 0.0, Self::heading_format_static(font_size, 1.1, is_dark_mode));
+            }
+            return;
+        }
         if let Some(rest) = line.strip_prefix("### ") {
             let header_start = line_start_offset;
             let header_end = line_start_offset + line.chars().count();
@@ -1052,6 +1067,14 @@ impl TextEditor {
             let mut j = 0;
             let line_chars: Vec<char> = line.chars().collect();
             
+            if let Some(rest) = line.strip_prefix("#### ") {
+                count += rest.chars().count();
+                if line_end < chars.len() {
+                    count += 1;
+                }
+                i = line_end + 1;
+                continue;
+            }
             if let Some(rest) = line.strip_prefix("### ") {
                 count += rest.chars().count();
                 if line_end < chars.len() {
