@@ -1,4 +1,5 @@
 use eframe::egui;
+use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
 use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter};
 use std::path::PathBuf;
@@ -66,6 +67,13 @@ impl RecentFiles {
     }
 }
 
+enum PendingAction {
+    OpenFile(PathBuf),
+    NewFile,
+    SwitchModule(Box<dyn EditorModule>),
+    Exit,
+}
+
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
     sidebar_open: bool,
@@ -76,6 +84,8 @@ pub struct UniversalEditor {
     recent_files_expanded: bool,
     show_toolbar: bool,
     show_file_info: bool,
+    show_unsaved_dialog: bool,
+    pending_action: Option<PendingAction>,
 }
 
 impl UniversalEditor {
@@ -97,12 +107,160 @@ impl UniversalEditor {
             recent_files_expanded: true,
             show_toolbar: true,
             show_file_info: true,
+            show_unsaved_dialog: false,
+            pending_action: None,
         }
     }
 
+    fn has_unsaved_changes(&self) -> bool {
+        if let Some(module) = &self.active_module {
+            if let Some(text_editor) = module.as_any().downcast_ref::<TextEditor>() {
+                return text_editor.is_dirty();
+            }
+        }
+        false
+    }
+
     fn open_file(&mut self, path: PathBuf) {
-        self.active_module = Some(Box::new(TextEditor::load(path.clone())));
-        self.recent_files.add_file(path);
+        if self.has_unsaved_changes() {
+            self.pending_action = Some(PendingAction::OpenFile(path));
+            self.show_unsaved_dialog = true;
+        } else {
+            self.active_module = Some(Box::new(TextEditor::load(path.clone())));
+            self.recent_files.add_file(path);
+        }
+    }
+
+    fn new_text_file(&mut self) {
+        if self.has_unsaved_changes() {
+            self.pending_action = Some(PendingAction::NewFile);
+            self.show_unsaved_dialog = true;
+        } else {
+            self.active_module = Some(Box::new(TextEditor::new_empty()));
+        }
+    }
+
+    fn switch_to_module(&mut self, module: Box<dyn EditorModule>) {
+        if self.has_unsaved_changes() {
+            self.pending_action = Some(PendingAction::SwitchModule(module));
+            self.show_unsaved_dialog = true;
+        } else {
+            self.active_module = Some(module);
+        }
+    }
+
+    fn execute_pending_action(&mut self) {
+        if let Some(action) = self.pending_action.take() {
+            match action {
+                PendingAction::OpenFile(path) => {
+                    self.active_module = Some(Box::new(TextEditor::load(path.clone())));
+                    self.recent_files.add_file(path);
+                }
+                PendingAction::NewFile => {
+                    self.active_module = Some(Box::new(TextEditor::new_empty()));
+                }
+                PendingAction::SwitchModule(module) => {
+                    self.active_module = Some(module);
+                }
+                PendingAction::Exit => {}
+            }
+        }
+    }
+
+    fn render_unsaved_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_unsaved_dialog {
+            return;
+        }
+
+        let (bg_color, border_color, text_color, overlay_color) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (
+                ColorPalette::ZINC_800,
+                ColorPalette::ZINC_700,
+                ColorPalette::ZINC_100,
+                egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
+            )
+        } else {
+            (
+                egui::Color32::WHITE,
+                ColorPalette::GRAY_300,
+                ColorPalette::GRAY_900,
+                egui::Color32::from_rgba_premultiplied(0, 0, 0, 150),
+            )
+        };
+
+        egui::Area::new(egui::Id::new("overlay"))
+            .fixed_pos(egui::pos2(0.0, 0.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                let screen_rect = ctx.content_rect();
+                let painter = ui.painter();
+                painter.rect_filled(screen_rect, 0.0, overlay_color);
+            });
+
+        egui::Window::new("Unsaved Changes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .order(egui::Order::Tooltip)
+            .frame(egui::Frame::new()
+                .fill(bg_color)
+                .stroke(egui::Stroke::new(1.0, border_color))
+                .corner_radius(8.0)
+                .inner_margin(24.0))
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(8.0);
+                    
+                    ui.label(
+                        egui::RichText::new("Do you want to save changes?")
+                            .size(16.0)
+                            .color(text_color)
+                    );
+                    
+                    ui.add_space(8.0);
+                    
+                    ui.label(
+                        egui::RichText::new("Your changes will be lost if you don't save them.")
+                            .size(13.0)
+                            .color(if matches!(self.theme_mode, ThemeMode::Dark) {
+                                ColorPalette::ZINC_400
+                            } else {
+                                ColorPalette::GRAY_600
+                            })
+                    );
+                    
+                    ui.add_space(24.0);
+                    
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        
+                        let save_clicked = style::primary_button(ui, "Save", self.theme_mode).clicked();
+                        let dont_save_clicked = style::secondary_button(ui, "Don't Save", self.theme_mode).clicked();
+                        let cancel_clicked = style::secondary_button(ui, "Cancel", self.theme_mode).clicked();
+                        
+                        if save_clicked {
+                            if let Some(module) = &mut self.active_module {
+                                let _ = module.save();
+                            }
+                            self.show_unsaved_dialog = false;
+                            self.execute_pending_action();
+                        }
+                        
+                        if dont_save_clicked {
+                            self.show_unsaved_dialog = false;
+                            self.execute_pending_action();
+                        }
+                        
+                        if cancel_clicked {
+                            self.show_unsaved_dialog = false;
+                            self.pending_action = None;
+                        }
+                    });
+                    
+                    ui.add_space(8.0);
+                });
+            });
     }
 
     fn top_bar(&mut self, ctx: &egui::Context) {
@@ -111,7 +269,7 @@ impl UniversalEditor {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Text File").clicked() {
-                        self.active_module = Some(Box::new(TextEditor::new_empty()));
+                        self.new_text_file();
                         ui.close();
                     }
                     if ui.button("Open...").clicked() {
@@ -135,7 +293,12 @@ impl UniversalEditor {
                     }
                     ui.separator();
                     if ui.button("Exit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        if self.has_unsaved_changes() {
+                            self.pending_action = Some(PendingAction::Exit);
+                            self.show_unsaved_dialog = true;
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
                     }
                 });
 
@@ -176,22 +339,36 @@ impl UniversalEditor {
                     .show(ui, |ui| {
                         ui.add_space(8.0);
                         
-                        style::sidebar_section(ui, "Screens", &mut self.screens_expanded, self.theme_mode, |ui| {
-                            if style::sidebar_item(ui, "Text Editor", "T", self.theme_mode).clicked() {
-                                self.active_module = Some(Box::new(TextEditor::new_empty()));
+                        let mut new_text_file_clicked = false;
+                        let mut image_converter_clicked = false;
+                        
+                        let theme_mode = self.theme_mode;
+                        
+                        style::sidebar_section(ui, "Screens", &mut self.screens_expanded, theme_mode, |ui| {
+                            if style::sidebar_item(ui, "Text Editor", "T", theme_mode).clicked() {
+                                new_text_file_clicked = true;
                             }
                         });
+                        
+                        if new_text_file_clicked {
+                            self.new_text_file();
+                        }
                                                 
-                        style::sidebar_section(ui, "Converters", &mut self.converters_expanded, self.theme_mode, |ui| {
-                            if style::sidebar_item(ui, "Image Converter", "I", self.theme_mode).clicked() {
-                                self.active_module = Some(Box::new(ImageConverter::new()));
+                        style::sidebar_section(ui, "Converters", &mut self.converters_expanded, theme_mode, |ui| {
+                            if style::sidebar_item(ui, "Image Converter", "I", theme_mode).clicked() {
+                                image_converter_clicked = true;
                             }
                         });
+                        
+                        if image_converter_clicked {
+                            let converter = Box::new(ImageConverter::new());
+                            self.switch_to_module(converter);
+                        }
                                                 
                         let recent_files: Vec<RecentFile> = self.recent_files.get_files().to_vec();
                         let mut file_to_open: Option<PathBuf> = None;
                         
-                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, self.theme_mode, |ui| {
+                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {
                             if recent_files.is_empty() {
                                 ui.centered_and_justified(|ui| {
                                     ui.weak("No recent files");
@@ -204,7 +381,7 @@ impl UniversalEditor {
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
                                         
-                                        if style::sidebar_item(ui, file_name, "F", self.theme_mode).clicked() {
+                                        if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
                                             file_to_open = Some(recent_file.path.clone());
                                         }
                                     }
@@ -263,6 +440,12 @@ impl UniversalEditor {
 
 impl eframe::App for UniversalEditor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(PendingAction::Exit) = &self.pending_action {
+            if !self.show_unsaved_dialog {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+
         self.top_bar(ctx);
         self.sidebar(ctx);
 
@@ -273,5 +456,7 @@ impl eframe::App for UniversalEditor {
                 self.landing_page(ui);
             }
         });
+
+        self.render_unsaved_dialog(ctx);
     }
 }

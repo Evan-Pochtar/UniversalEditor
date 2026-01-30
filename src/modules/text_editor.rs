@@ -60,6 +60,10 @@ impl TextEditor {
         }
     }
 
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
     fn char_index_to_byte_index(&self, char_index: usize) -> usize {
         self.content.char_indices()
             .nth(char_index)
@@ -1220,6 +1224,10 @@ impl TextEditor {
 }
 
 impl EditorModule for TextEditor {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn get_title(&self) -> String {
         let name = self.file_path.as_ref()
             .and_then(|p| p.file_name())
@@ -1348,8 +1356,21 @@ impl EditorModule for TextEditor {
 
         if show_file_info {
             ui.horizontal(|ui| {
+                let is_dark_mode = ui.visuals().dark_mode;
+                
                 ui.label(format!("File: {}", self.get_file_name()));
                 ui.separator();
+                
+                let save_status = if self.dirty { "Unsaved" } else { "Saved" };
+                let save_color = if self.dirty {
+                    if is_dark_mode { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }
+                } else {
+                    if is_dark_mode { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }
+                };
+                
+                ui.label(egui::RichText::new(save_status).color(save_color));
+                ui.separator();
+                
                 ui.label(format!("Characters: {}", self.count_visible_chars()));
                 ui.separator();
                 ui.label(format!("Words: {}", self.count_words()));

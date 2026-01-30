@@ -806,6 +806,10 @@ impl ImageConverter {
 }
 
 impl EditorModule for ImageConverter {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
 

@@ -3,6 +3,7 @@
 ## General
 
 - [ ] Reusable Design
+- [ ] "System" option to decide light/dark mode
 - [ ] Create Main Menu
   - [ ] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
@@ -70,6 +71,7 @@
 - [x] Make Code blocks more readable.
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
+- [x] Showing saved/unsaved
 - [ ] Latex?
 
 #### CONVERTER: Img 2 Img
