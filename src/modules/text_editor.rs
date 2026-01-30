@@ -314,11 +314,9 @@ impl TextEditor {
                         } else {
                             let lang_label = line.trim().strip_prefix("```").unwrap_or("").trim();
                             if !lang_label.is_empty() {
-                                let backticks = "```";
-                                job.append(backticks, 0.0, Self::invisible_format_static());
                                 job.append(lang_label, 0.0, Self::code_block_label_format_static(font_size, is_dark_mode));
                             } else {
-                                job.append(line, 0.0, Self::invisible_format_static());
+                                job.append(" ", 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
                             }
                         }
                     } else if in_code_block {

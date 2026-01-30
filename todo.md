@@ -36,6 +36,8 @@
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [ ] Code block cursor desync
+- [x] Code block desync with words right after/before code block
 - [x] Can click to non-existant line in markdown mode, desyncing cursor.
 - [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
