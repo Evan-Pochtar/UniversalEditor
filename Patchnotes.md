@@ -17,6 +17,8 @@
 ## V0.0.2
 
 #### Features
+- **IMG2IMG CONVERTER**: Error's in image processing now dispalyed on UI
+- **IMG2IMG CONVERTER**: .ico now has auto-scale to 256px option
 - **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
 - **TEXT EDITOR**: Tooltips for Headers include Keyboard Shortcut
 - **GENERAL**: Added "System" Theme
