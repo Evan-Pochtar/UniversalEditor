@@ -67,6 +67,59 @@ impl RecentFiles {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum ThemePreference {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppSettings {
+    theme_preference: ThemePreference,
+    show_toolbar: bool,
+    show_file_info: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme_preference: ThemePreference::System,
+            show_toolbar: true,
+            show_file_info: true,
+        }
+    }
+}
+
+impl AppSettings {
+    fn load() -> Self {
+        let config_path = Self::get_config_path();
+        if let Ok(contents) = fs::read_to_string(&config_path) {
+            if let Ok(settings) = serde_json::from_str(&contents) {
+                return settings;
+            }
+        }
+        Self::default()
+    }
+
+    fn save(&self) {
+        let config_path = Self::get_config_path();
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = fs::write(config_path, json);
+        }
+    }
+
+    fn get_config_path() -> PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("universal_editor");
+        path.push("app_settings.json");
+        path
+    }
+}
+
 enum PendingAction {
     OpenFile(PathBuf),
     NewFile,
@@ -78,6 +131,7 @@ pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
     sidebar_open: bool,
     theme_mode: ThemeMode,
+    theme_preference: ThemePreference,
     recent_files: RecentFiles,
     screens_expanded: bool,
     converters_expanded: bool,
@@ -90,9 +144,17 @@ pub struct UniversalEditor {
 
 impl UniversalEditor {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let initial_theme = match cc.egui_ctx.theme() {
+        let settings = AppSettings::load();
+        
+        let system_theme = match cc.egui_ctx.theme() {
             egui::Theme::Dark => ThemeMode::Dark,
             egui::Theme::Light => ThemeMode::Light,
+        };
+        
+        let initial_theme = match settings.theme_preference {
+            ThemePreference::System => system_theme,
+            ThemePreference::Light => ThemeMode::Light,
+            ThemePreference::Dark => ThemeMode::Dark,
         };
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
@@ -101,14 +163,23 @@ impl UniversalEditor {
             active_module: None,
             sidebar_open: true,
             theme_mode: initial_theme,
+            theme_preference: settings.theme_preference,
             recent_files: RecentFiles::load(),
             screens_expanded: false,
             converters_expanded: false,
             recent_files_expanded: false,
-            show_toolbar: true,
-            show_file_info: true,
+            show_toolbar: settings.show_toolbar,
+            show_file_info: settings.show_file_info,
             show_unsaved_dialog: false,
             pending_action: None,
+        }
+    }
+
+    fn is_in_text_editor(&self) -> bool {
+        if let Some(module) = &self.active_module {
+            module.as_any().downcast_ref::<TextEditor>().is_some()
+        } else {
+            false
         }
     }
 
@@ -165,6 +236,15 @@ impl UniversalEditor {
                 PendingAction::Exit => {}
             }
         }
+    }
+
+    fn save_settings(&self) {
+        let settings = AppSettings {
+            theme_preference: self.theme_preference,
+            show_toolbar: self.show_toolbar,
+            show_file_info: self.show_file_info,
+        };
+        settings.save();
     }
 
     fn render_unsaved_dialog(&mut self, ctx: &egui::Context) {
@@ -304,20 +384,60 @@ impl UniversalEditor {
 
                 ui.menu_button("View", |ui| {
                    ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
-                   ui.checkbox(&mut self.show_toolbar, "Show Toolbar");
-                   ui.checkbox(&mut self.show_file_info, "Show File Info");
+                   
+                   if self.is_in_text_editor() {
+                       let toolbar_changed = ui.checkbox(&mut self.show_toolbar, "Show Toolbar").changed();
+                       let file_info_changed = ui.checkbox(&mut self.show_file_info, "Show File Info").changed();
+                       
+                       if toolbar_changed || file_info_changed {
+                           self.save_settings();
+                       }
+                   }
                    
                    ui.separator();
                    
                    ui.label("Theme:");
-                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Light), "Light").clicked() {
-                       self.theme_mode = ThemeMode::Light;
+                   
+                   let system_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::System), 
+                       "System"
+                   ).clicked();
+                   
+                   let light_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::Light), 
+                       "Light"
+                   ).clicked();
+                   
+                   let dark_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::Dark), 
+                       "Dark"
+                   ).clicked();
+                   
+                   if system_clicked {
+                       self.theme_preference = ThemePreference::System;
+                       let system_theme = match ctx.theme() {
+                           egui::Theme::Dark => ThemeMode::Dark,
+                           egui::Theme::Light => ThemeMode::Light,
+                       };
+                       self.theme_mode = system_theme;
                        style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
                        ui.close();
                    }
-                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Dark), "Dark").clicked() {
+                   
+                   if light_clicked {
+                       self.theme_preference = ThemePreference::Light;
+                       self.theme_mode = ThemeMode::Light;
+                       style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
+                       ui.close();
+                   }
+                   
+                   if dark_clicked {
+                       self.theme_preference = ThemePreference::Dark;
                        self.theme_mode = ThemeMode::Dark;
                        style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
                        ui.close();
                    }
                 });
@@ -440,6 +560,18 @@ impl UniversalEditor {
 
 impl eframe::App for UniversalEditor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if matches!(self.theme_preference, ThemePreference::System) {
+            let system_theme = match ctx.theme() {
+                egui::Theme::Dark => ThemeMode::Dark,
+                egui::Theme::Light => ThemeMode::Light,
+            };
+            
+            if self.theme_mode != system_theme {
+                self.theme_mode = system_theme;
+                style::apply_theme(ctx, self.theme_mode);
+            }
+        }
+
         if let Some(PendingAction::Exit) = &self.pending_action {
             if !self.show_unsaved_dialog {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);

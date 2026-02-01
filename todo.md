@@ -3,7 +3,7 @@
 ## General
 
 - [ ] Reusable Design
-- [ ] "System" option to decide light/dark mode
+- [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
   - [ ] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
@@ -54,7 +54,7 @@
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
-- [ ] Top bar "View" should not show text editor options when not on text editor
+- [x] Top bar "View" should not show text editor options when not on text editor
 
 ## Features
 

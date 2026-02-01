@@ -13,3 +13,13 @@
 - **TEXT EDITOR**: Cursor now no longer desyncs when multi-line codeblocks are present
 - **TEXT EDITOR**: Cursor now no longer desyncs on load with old files
 - **GENERAL**: Sidebar now no longer shows empty white box instead of down arrow
+
+## V0.0.2
+
+#### Features
+- **GENERAL**: Added "System" Theme
+- **GENERAL**: Theme setting saves between sessions
+- **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
+
+#### Debugging
+- **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
