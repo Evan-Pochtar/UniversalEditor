@@ -1325,16 +1325,16 @@ impl EditorModule for TextEditor {
                     
                     ui.separator();
                     
-                    if ui.button("H1").on_hover_text("Heading 1").clicked() {
+                    if ui.button("H1").on_hover_text("Heading 1 (Ctrl+1)").clicked() {
                         self.format_heading(1);
                     }
-                    if ui.button("H2").on_hover_text("Heading 2").clicked() {
+                    if ui.button("H2").on_hover_text("Heading 2 (Ctrl+2)").clicked() {
                         self.format_heading(2);
                     }
-                    if ui.button("H3").on_hover_text("Heading 3").clicked() {
+                    if ui.button("H3").on_hover_text("Heading 3 (Ctrl+3)").clicked() {
                         self.format_heading(3);
                     }
-                    if ui.button("H4").on_hover_text("Heading 4").clicked() {
+                    if ui.button("H4").on_hover_text("Heading 4 (Ctrl+4)").clicked() {
                         self.format_heading(4);
                     }
                 });

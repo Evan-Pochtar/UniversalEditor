@@ -17,9 +17,10 @@
 ## V0.0.2
 
 #### Features
+- **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
+- **TEXT EDITOR**: Tooltips for Headers include Keyboard Shortcut
 - **GENERAL**: Added "System" Theme
 - **GENERAL**: Theme setting saves between sessions
-- **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
 
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
