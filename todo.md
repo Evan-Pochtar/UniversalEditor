@@ -2,7 +2,7 @@
 
 ## General
 
-- [ ] Reusable Design
+- [x] Reusable Design
 - [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
   - [ ] Page you go to changes depending on what file you put in on main menu
@@ -15,9 +15,9 @@
 
 - [x] Txt, Md
 - [ ] Word Docs, ect.
-- [ ] Img Processing (Paint-like)
-- [ ] Video Processing (Framiax-like)
-- [ ] JSON Processing (JSONEditor-Like)
+- [x] Img Processing
+- [ ] Video Processing
+- [ ] JSON Processing
 - [ ] CSV, Excel, ect.
 - [ ] PDF
 - [ ] Zip/Unzip
@@ -79,13 +79,54 @@
 - [x] Showing saved/unsaved
 - [ ] Latex?
 
+#### Image Editor
+
+- [ ] Layer system 
+  - [ ] Add
+  - [ ] Reorder
+  - [ ] Merge
+  - [ ] Opacity
+- [ ] Selection tools
+  - [ ] Ellipse
+  - [ ] Free-hand lasso
+  - [ ] Magic wand
+- [ ] Gradient tool
+  - [ ] Linear
+  - [ ] Radial
+- [ ] Performance
+  - [ ] Brush is slightly laggy, make more smooth
+  - [ ] Increase performance of filters on bigger images (E.g Blur)
+  - [ ] General performance and usability improvements
+- [ ] Color picker
+  - [ ] Recent colors option in color picker
+  - [ ] Bigger/Clearer Color picker
+  - [ ] Color code to color option
+- [ ] More brush presets or options
+  - [ ] Custom brush shapes?
+- [ ] Copy/paste/cut within selection
+- [ ] Pattern/texture fill
+- [ ] Perspective/affine warp
+- [ ] Color code to color option
+- [ ] Edge detection filter
+- [ ] Canvas size (extend without scaling)
+- [ ] Export with metadata
+- [ ] Export to other image types
+- [ ] Snap to grid for text/crop
+- [ ] Filter preview before apply
+- [ ] Better toolbar organization
+- [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
+- [ ] Drag-and-drop image open
+- [ ] Improve button look when the screen/resolution is smaller
+- [ ] Images show up in recent files
+
 #### CONVERTER: Img 2 Img
 - [ ] Keyboard Shortcuts
-- [ ] Display Error (For example, width > 256 for ico conversion)
+- [x] Display Error (For example, width > 256 for ico conversion)
 
 ## Other
 
 - [x] Create Todo List
+- [ ] Clear/Remove recent files
 
 ## Testing
 

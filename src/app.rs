@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter};
+use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_editor::ImageEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -187,6 +187,9 @@ impl UniversalEditor {
         if let Some(module) = &self.active_module {
             if let Some(text_editor) = module.as_any().downcast_ref::<TextEditor>() {
                 return text_editor.is_dirty();
+            }
+            if let Some(image_editor) = module.as_any().downcast_ref::<ImageEditor>() {
+                return image_editor.is_dirty();
             }
         }
         false
@@ -460,6 +463,7 @@ impl UniversalEditor {
                         ui.add_space(8.0);
                         
                         let mut new_text_file_clicked = false;
+                        let mut image_editor_clicked = false;
                         let mut image_converter_clicked = false;
                         
                         let theme_mode = self.theme_mode;
@@ -468,14 +472,20 @@ impl UniversalEditor {
                             if style::sidebar_item(ui, "Text Editor", "T", theme_mode).clicked() {
                                 new_text_file_clicked = true;
                             }
+                            if style::sidebar_item(ui, "Image Editor", "I", theme_mode).clicked() {
+                                image_editor_clicked = true;
+                            }
                         });
                         
                         if new_text_file_clicked {
                             self.new_text_file();
                         }
+                        if image_editor_clicked {
+                            self.switch_to_module(Box::new(ImageEditor::new()));
+                        }
                                                 
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, theme_mode, |ui| {
-                            if style::sidebar_item(ui, "Image Converter", "I", theme_mode).clicked() {
+                            if style::sidebar_item(ui, "Image Converter", "C", theme_mode).clicked() {
                                 image_converter_clicked = true;
                             }
                         });
@@ -548,6 +558,10 @@ impl UniversalEditor {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
                         self.open_file(path);
                     }
+                }
+                ui.add_space(12.0);
+                if style::secondary_button(ui, "Image Editor", self.theme_mode).clicked() {
+                    self.active_module = Some(Box::new(ImageEditor::new()));
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Image Converter", self.theme_mode).clicked() {
