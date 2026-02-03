@@ -109,14 +109,14 @@
 - [ ] Color code to color option
 - [ ] Edge detection filter
 - [ ] Canvas size (extend without scaling)
-- [ ] Export with metadata
-- [ ] Export to other image types
+- [x] Export with metadata
+- [x] Export to other image types
 - [ ] Snap to grid for text/crop
 - [ ] Filter preview before apply
 - [ ] Better toolbar organization
 - [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
 - [ ] Drag-and-drop image open
-- [ ] Improve button look when the screen/resolution is smaller
+- [x] Improve button look when the screen/resolution is smaller
 - [ ] Images show up in recent files
 
 #### CONVERTER: Img 2 Img
@@ -126,7 +126,8 @@
 ## Other
 
 - [x] Create Todo List
-- [ ] Clear/Remove recent files
+- [x] Clear/Remove recent files
+  - [ ] Trashcan icon instead of x
 
 ## Testing
 

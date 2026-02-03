@@ -65,6 +65,11 @@ impl RecentFiles {
     fn get_files(&self) -> &[RecentFile] {
         &self.files
     }
+
+    fn remove_file(&mut self, path: &PathBuf) {
+        self.files.retain(|f| &f.path != path);
+        self.save();
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -200,7 +205,24 @@ impl UniversalEditor {
             self.pending_action = Some(PendingAction::OpenFile(path));
             self.show_unsaved_dialog = true;
         } else {
-            self.active_module = Some(Box::new(TextEditor::load(path.clone())));
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_lowercase());
+            
+            let module: Box<dyn EditorModule> = match ext.as_deref() {
+                Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
+                Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
+                    let mut editor = ImageEditor::load(path.clone());
+                    editor.set_file_callback(Box::new(move |p: PathBuf| {
+                        let mut recent = RecentFiles::load();
+                        recent.add_file(p);
+                    }));
+                    Box::new(editor)
+                }
+                _ => Box::new(TextEditor::load(path.clone())),
+            };
+            
+            self.active_module = Some(module);
             self.recent_files.add_file(path);
         }
     }
@@ -227,7 +249,24 @@ impl UniversalEditor {
         if let Some(action) = self.pending_action.take() {
             match action {
                 PendingAction::OpenFile(path) => {
-                    self.active_module = Some(Box::new(TextEditor::load(path.clone())));
+                    let ext = path.extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_lowercase());
+                    
+                    let module: Box<dyn EditorModule> = match ext.as_deref() {
+                        Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
+                        Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
+                            let mut editor = ImageEditor::load(path.clone());
+                            editor.set_file_callback(Box::new(move |p: PathBuf| {
+                                let mut recent = RecentFiles::load();
+                                recent.add_file(p);
+                            }));
+                            Box::new(editor)
+                        }
+                        _ => Box::new(TextEditor::load(path.clone())),
+                    };
+                    
+                    self.active_module = Some(module);
                     self.recent_files.add_file(path);
                 }
                 PendingAction::NewFile => {
@@ -248,6 +287,15 @@ impl UniversalEditor {
             show_file_info: self.show_file_info,
         };
         settings.save();
+    }
+
+    fn create_image_editor_with_callback(&self) -> Box<dyn EditorModule> {
+        let mut editor = ImageEditor::new();
+        editor.set_file_callback(Box::new(move |path: PathBuf| {
+            let mut recent = RecentFiles::load();
+            recent.add_file(path);
+        }));
+        Box::new(editor)
     }
 
     fn render_unsaved_dialog(&mut self, ctx: &egui::Context) {
@@ -481,7 +529,7 @@ impl UniversalEditor {
                             self.new_text_file();
                         }
                         if image_editor_clicked {
-                            self.switch_to_module(Box::new(ImageEditor::new()));
+                            self.switch_to_module(self.create_image_editor_with_callback());
                         }
                                                 
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, theme_mode, |ui| {
@@ -497,8 +545,9 @@ impl UniversalEditor {
                                                 
                         let recent_files: Vec<RecentFile> = self.recent_files.get_files().to_vec();
                         let mut file_to_open: Option<PathBuf> = None;
+                        let mut file_to_remove: Option<PathBuf> = None;
                         
-                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {
+                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {                 
                             if recent_files.is_empty() {
                                 ui.centered_and_justified(|ui| {
                                     ui.weak("No recent files");
@@ -511,13 +560,25 @@ impl UniversalEditor {
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
                                         
-                                        if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
-                                            file_to_open = Some(recent_file.path.clone());
-                                        }
+                                        ui.horizontal(|ui| {
+                                            if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
+                                                file_to_open = Some(recent_file.path.clone());
+                                            }
+                                            
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.small_button("x").clicked() {
+                                                    file_to_remove = Some(recent_file.path.clone());
+                                                }
+                                            });
+                                        });
                                     }
                                 }
                             }
                         });
+                        
+                        if let Some(path) = file_to_remove {
+                            self.recent_files.remove_file(&path);
+                        }
                         
                         if let Some(path) = file_to_open {
                             self.open_file(path);
@@ -561,7 +622,7 @@ impl UniversalEditor {
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Image Editor", self.theme_mode).clicked() {
-                    self.active_module = Some(Box::new(ImageEditor::new()));
+                    self.active_module = Some(self.create_image_editor_with_callback());
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Image Converter", self.theme_mode).clicked() {

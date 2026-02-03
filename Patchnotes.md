@@ -18,12 +18,15 @@
 
 #### Features
 - **IMG EDITOR**: First prototype of image editor
+- **IMG EDITOR**: Exporting to other image types now allowed (jpeg, png, webp, bmp, tiff, ico)
+- **IMG EDITOR**: Option for preservation of metadata
 - **IMG2IMG CONVERTER**: Error's in image processing now dispalyed on UI
 - **IMG2IMG CONVERTER**: .ico now has auto-scale to 256px option
 - **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
 - **TEXT EDITOR**: Tooltips for Headers include Keyboard Shortcut
 - **GENERAL**: Added "System" Theme
 - **GENERAL**: Theme setting saves between sessions
+- **GENERAL**: Now able to remove files from "recent files" list on sidebar 
 
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
