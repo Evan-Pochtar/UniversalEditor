@@ -30,3 +30,4 @@
 
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
+- **GENERAL**: Images now show up in recent files when opened from main menu

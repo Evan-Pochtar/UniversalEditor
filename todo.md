@@ -106,7 +106,6 @@
 - [ ] Copy/paste/cut within selection
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
-- [ ] Color code to color option
 - [ ] Edge detection filter
 - [ ] Canvas size (extend without scaling)
 - [x] Export with metadata
@@ -118,6 +117,8 @@
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
 - [ ] Images show up in recent files
+- [ ] Better text selection/writing tool
+  - [ ] Resize text, easy selection of text
 
 #### CONVERTER: Img 2 Img
 - [ ] Keyboard Shortcuts

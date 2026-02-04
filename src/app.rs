@@ -205,6 +205,8 @@ impl UniversalEditor {
             self.pending_action = Some(PendingAction::OpenFile(path));
             self.show_unsaved_dialog = true;
         } else {
+            self.recent_files.add_file(path.clone());
+            
             let ext = path.extension()
                 .and_then(|e| e.to_str())
                 .map(|s| s.to_lowercase());
@@ -212,18 +214,17 @@ impl UniversalEditor {
             let module: Box<dyn EditorModule> = match ext.as_deref() {
                 Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
                 Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
-                    let mut editor = ImageEditor::load(path.clone());
+                    let mut editor = ImageEditor::load(path);
                     editor.set_file_callback(Box::new(move |p: PathBuf| {
                         let mut recent = RecentFiles::load();
                         recent.add_file(p);
                     }));
                     Box::new(editor)
                 }
-                _ => Box::new(TextEditor::load(path.clone())),
+                _ => Box::new(TextEditor::load(path)),
             };
             
             self.active_module = Some(module);
-            self.recent_files.add_file(path);
         }
     }
 
@@ -249,6 +250,8 @@ impl UniversalEditor {
         if let Some(action) = self.pending_action.take() {
             match action {
                 PendingAction::OpenFile(path) => {
+                    self.recent_files.add_file(path.clone());
+                    
                     let ext = path.extension()
                         .and_then(|e| e.to_str())
                         .map(|s| s.to_lowercase());
@@ -256,18 +259,17 @@ impl UniversalEditor {
                     let module: Box<dyn EditorModule> = match ext.as_deref() {
                         Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
                         Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
-                            let mut editor = ImageEditor::load(path.clone());
+                            let mut editor = ImageEditor::load(path);
                             editor.set_file_callback(Box::new(move |p: PathBuf| {
                                 let mut recent = RecentFiles::load();
                                 recent.add_file(p);
                             }));
                             Box::new(editor)
                         }
-                        _ => Box::new(TextEditor::load(path.clone())),
+                        _ => Box::new(TextEditor::load(path)),
                     };
                     
                     self.active_module = Some(module);
-                    self.recent_files.add_file(path);
                 }
                 PendingAction::NewFile => {
                     self.active_module = Some(Box::new(TextEditor::new_empty()));
@@ -404,7 +406,10 @@ impl UniversalEditor {
                         ui.close();
                     }
                     if ui.button("Open...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
+                            .pick_file() 
+                        {
                             self.open_file(path);
                         }
                         ui.close();
@@ -616,7 +621,10 @@ impl UniversalEditor {
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Open File", self.theme_mode).clicked() {
-                    if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
+                        .pick_file() 
+                    {
                         self.open_file(path);
                     }
                 }
