@@ -77,6 +77,7 @@
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
+- [ ] Opening .md file automatically sets markdown mode
 - [ ] Latex?
 
 #### Image Editor
@@ -128,7 +129,7 @@
 
 - [x] Create Todo List
 - [x] Clear/Remove recent files
-  - [ ] Trashcan icon instead of x
+  - [x] Trashcan icon instead of x
 
 ## Testing
 

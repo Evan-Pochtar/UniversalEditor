@@ -571,7 +571,13 @@ impl UniversalEditor {
                                             }
                                             
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.small_button("x").clicked() {
+                                                let delete_color = if matches!(theme_mode, ThemeMode::Dark) {
+                                                    ColorPalette::SLATE_100
+                                                } else {
+                                                    ColorPalette::GRAY_600
+                                                };
+                                                
+                                                if ui.button(egui::RichText::new("🗑").color(delete_color).size(14.0)).clicked() {
                                                     file_to_remove = Some(recent_file.path.clone());
                                                 }
                                             });

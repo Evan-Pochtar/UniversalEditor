@@ -27,6 +27,7 @@
 - **GENERAL**: Added "System" Theme
 - **GENERAL**: Theme setting saves between sessions
 - **GENERAL**: Now able to remove files from "recent files" list on sidebar 
+- **GENERAL**: Adding trashcan icon instead of "x" for recent files removal
 
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
