@@ -2,10 +2,13 @@ use eframe::egui;
 use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageEncoder, Rgba};
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
 use super::EditorModule;
 
 const MAX_UNDO: usize = 20;
+const TEXTURE_UPDATE_INTERVAL: f32 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tool {
@@ -144,6 +147,11 @@ pub struct ImageEditor {
     show_color_picker: bool,
     canvas_rect: Option<egui::Rect>,
     text_focused: bool,
+
+    last_texture_update: f32,
+    filter_progress: Arc<Mutex<f32>>,
+    is_processing: bool,
+    pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
 }
 
 impl ImageEditor {
@@ -186,6 +194,10 @@ impl ImageEditor {
             show_color_picker: false,
             canvas_rect: None,
             text_focused: false,
+            last_texture_update: 0.0,
+            filter_progress: Arc::new(Mutex::new(0.0)),
+            is_processing: false,
+            pending_filter_result: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -363,7 +375,6 @@ impl ImageEditor {
         }
         
         self.image = Some(DynamicImage::ImageRgba8(buf));
-        self.texture_dirty = true;
         self.dirty = true;
     }
 
@@ -482,82 +493,119 @@ impl ImageEditor {
     }
 
     fn apply_brightness_contrast(&mut self) {
-        let img = match self.image.as_mut() {
+        let img = match self.image.clone() {
             Some(i) => i,
             None => return,
         };
+        
         let b = self.brightness;
         let c = 1.0 + self.contrast / 100.0;
-        let mut buf = img.to_rgba8();
-        let mut pixels = buf.as_flat_samples_mut();
-        let samples = pixels.as_mut_slice();
+        let progress = Arc::clone(&self.filter_progress);
+        let result = Arc::clone(&self.pending_filter_result);
         
-        for chunk in samples.chunks_exact_mut(4) {
-            for i in 0..3 {
-                let val = chunk[i] as f32;
-                chunk[i] = ((val - 128.0) * c + 128.0 + b).clamp(0.0, 255.0) as u8;
+        self.is_processing = true;
+        *progress.lock().unwrap() = 0.0;
+        
+        thread::spawn(move || {
+            let mut buf = img.to_rgba8();
+            let total = (buf.width() * buf.height()) as usize;
+            let mut processed = 0;
+            
+            for pixel in buf.pixels_mut() {
+                for i in 0..3 {
+                    let val = pixel[i] as f32;
+                    pixel[i] = ((val - 128.0) * c + 128.0 + b).clamp(0.0, 255.0) as u8;
+                }
+                
+                processed += 1;
+                if processed % 5000 == 0 {
+                    *progress.lock().unwrap() = processed as f32 / total as f32;
+                }
             }
-        }
-        
-        self.image = Some(DynamicImage::ImageRgba8(buf));
-        self.texture_dirty = true;
-        self.dirty = true;
-        self.brightness = 0.0;
-        self.contrast = 0.0;
-        self.filter_panel = FilterPanel::None;
+            
+            *result.lock().unwrap() = Some(DynamicImage::ImageRgba8(buf));
+            *progress.lock().unwrap() = 1.0;
+        });
     }
 
     fn apply_hue_saturation(&mut self) {
-        let img = match self.image.as_mut() {
+        let img = match self.image.clone() {
             Some(i) => i,
             None => return,
         };
+        
         let sat_factor = 1.0 + self.saturation / 100.0;
         let hue_shift = self.hue;
-        let mut buf = img.to_rgba8();
-        for y in 0..buf.height() {
-            for x in 0..buf.width() {
-                let p = buf.get_pixel(x, y).0;
-                let (h, s, v) = rgb_to_hsv(p[0], p[1], p[2]);
-                let nh = (h + hue_shift).rem_euclid(360.0);
-                let ns = (s * sat_factor).clamp(0.0, 1.0);
-                let (nr, ng, nb) = hsv_to_rgb(nh, ns, v);
-                buf.put_pixel(x, y, Rgba([nr, ng, nb, p[3]]));
+        let progress = Arc::clone(&self.filter_progress);
+        let result = Arc::clone(&self.pending_filter_result);
+        
+        self.is_processing = true;
+        *progress.lock().unwrap() = 0.0;
+        
+        thread::spawn(move || {
+            let mut buf = img.to_rgba8();
+            let total = buf.height();
+            
+            for y in 0..buf.height() {
+                for x in 0..buf.width() {
+                    let p = buf.get_pixel(x, y).0;
+                    let (h, s, v) = rgb_to_hsv(p[0], p[1], p[2]);
+                    let nh = (h + hue_shift).rem_euclid(360.0);
+                    let ns = (s * sat_factor).clamp(0.0, 1.0);
+                    let (nr, ng, nb) = hsv_to_rgb(nh, ns, v);
+                    buf.put_pixel(x, y, Rgba([nr, ng, nb, p[3]]));
+                }
+                
+                if y % 10 == 0 {
+                    *progress.lock().unwrap() = y as f32 / total as f32;
+                }
             }
-        }
-        self.image = Some(DynamicImage::ImageRgba8(buf));
-        self.texture_dirty = true;
-        self.dirty = true;
-        self.hue = 0.0;
-        self.saturation = 0.0;
-        self.filter_panel = FilterPanel::None;
+            
+            *result.lock().unwrap() = Some(DynamicImage::ImageRgba8(buf));
+            *progress.lock().unwrap() = 1.0;
+        });
     }
 
     fn apply_blur(&mut self) {
-        let img = match &self.image {
+        let img = match self.image.clone() {
             Some(i) => i,
             None => return,
         };
-        let blurred = img.blur(self.blur_radius);
-        self.image = Some(blurred);
-        self.texture_dirty = true;
-        self.dirty = true;
-        self.blur_radius = 3.0;
-        self.filter_panel = FilterPanel::None;
+        
+        let radius = self.blur_radius;
+        let progress = Arc::clone(&self.filter_progress);
+        let result = Arc::clone(&self.pending_filter_result);
+        
+        self.is_processing = true;
+        *progress.lock().unwrap() = 0.0;
+        
+        thread::spawn(move || {
+            *progress.lock().unwrap() = 0.5;
+            let blurred = img.blur(radius);
+            *result.lock().unwrap() = Some(blurred);
+            *progress.lock().unwrap() = 1.0;
+        });
     }
 
     fn apply_sharpen(&mut self) {
-        let amount = self.sharpen_amount;
-        let img = match &self.image {
+        let img = match self.image.clone() {
             Some(i) => i,
             None => return,
         };
-        let sharpened = img.unsharpen(amount, 0);
-        self.image = Some(sharpened);
-        self.texture_dirty = true;
-        self.dirty = true;
-        self.sharpen_amount = 1.0;
-        self.filter_panel = FilterPanel::None;
+        
+        let amount = self.sharpen_amount;
+        let progress = Arc::clone(&self.filter_progress);
+        let result = Arc::clone(&self.pending_filter_result);
+        
+        self.is_processing = true;
+        *progress.lock().unwrap() = 0.0;
+        
+        thread::spawn(move || {
+            *progress.lock().unwrap() = 0.5;
+            let sharpened = img.unsharpen(amount, 0);
+            *result.lock().unwrap() = Some(sharpened);
+            *progress.lock().unwrap() = 1.0;
+        });
     }
 
     fn apply_grayscale(&mut self) {
@@ -652,15 +700,27 @@ impl ImageEditor {
     }
 
     fn apply_resize(&mut self) {
-        if let Some(img) = &self.image {
-            if self.resize_w == 0 || self.resize_h == 0 { return; }
-            let resized = img.resize(self.resize_w, self.resize_h, image::imageops::FilterType::Lanczos3);
-            self.image = Some(resized);
-            self.texture_dirty = true;
-            self.dirty = true;
-            self.fit_on_next_frame = true;
-            self.filter_panel = FilterPanel::None;
-        }
+        let img = match self.image.clone() {
+            Some(i) => i,
+            None => return,
+        };
+        
+        if self.resize_w == 0 || self.resize_h == 0 { return; }
+        
+        let w = self.resize_w;
+        let h = self.resize_h;
+        let progress = Arc::clone(&self.filter_progress);
+        let result = Arc::clone(&self.pending_filter_result);
+        
+        self.is_processing = true;
+        *progress.lock().unwrap() = 0.0;
+        
+        thread::spawn(move || {
+            *progress.lock().unwrap() = 0.5;
+            let resized = img.resize(w, h, image::imageops::FilterType::Lanczos3);
+            *result.lock().unwrap() = Some(resized);
+            *progress.lock().unwrap() = 1.0;
+        });
     }
 
     fn export_image(&mut self) -> Result<PathBuf, String> {
@@ -1005,6 +1065,43 @@ impl ImageEditor {
             .corner_radius(6.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
+                if self.is_processing {
+                    let progress_val = *self.filter_progress.lock().unwrap();
+                    
+                    ui.label(egui::RichText::new("Processing Filter...").size(13.0).color(text_col));
+                    ui.add_space(8.0);
+                    
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width().min(300.0), 28.0),
+                        egui::Sense::hover(),
+                    );
+                    
+                    let progress_bg = if matches!(theme, ThemeMode::Dark) {
+                        ColorPalette::ZINC_700
+                    } else {
+                        ColorPalette::GRAY_200
+                    };
+                    
+                    ui.painter().rect_filled(rect, 4.0, progress_bg);
+                    
+                    let fill_rect = egui::Rect::from_min_size(
+                        rect.min,
+                        egui::vec2(rect.width() * progress_val, rect.height()),
+                    );
+                    ui.painter().rect_filled(fill_rect, 4.0, ColorPalette::BLUE_500);
+                    
+                    let progress_text = format!("{:.0}%", progress_val * 100.0);
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        &progress_text,
+                        egui::FontId::proportional(13.0),
+                        egui::Color32::WHITE,
+                    );
+                    
+                    return;
+                }
+                
                 match self.filter_panel {
                     FilterPanel::BrightnessContrast => {
                         ui.label(egui::RichText::new("Brightness / Contrast").size(13.0).color(text_col));
@@ -1160,6 +1257,17 @@ impl ImageEditor {
     }
 
     fn render_canvas(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if self.is_dragging && (self.tool == Tool::Brush || self.tool == Tool::Eraser) {
+            self.last_texture_update += ctx.input(|i| i.unstable_dt);
+            if self.last_texture_update >= TEXTURE_UPDATE_INTERVAL {
+                self.texture_dirty = true;
+                self.last_texture_update = 0.0;
+            }
+        } else if self.last_texture_update > 0.0 {
+            self.texture_dirty = true;
+            self.last_texture_update = 0.0;
+        }
+        
         let canvas_rect = ui.available_rect_before_wrap();
         self.canvas_rect = Some(canvas_rect);
 
@@ -1304,6 +1412,8 @@ impl ImageEditor {
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
                 Tool::Brush | Tool::Eraser => {
+                    self.texture_dirty = true;
+                    self.last_texture_update = 0.0;
                     self.stroke_points.clear();
                     self.is_dragging = false;
                 }
@@ -1403,6 +1513,50 @@ impl ImageEditor {
             Err("Cancelled".to_string())
         }
     }
+
+    fn check_filter_completion(&mut self) {
+        if !self.is_processing {
+            return;
+        }
+        
+        let progress = *self.filter_progress.lock().unwrap();
+        if progress >= 1.0 {
+            if let Some(result) = self.pending_filter_result.lock().unwrap().take() {
+                self.resize_w = result.width();
+                self.resize_h = result.height();
+                self.image = Some(result);
+                self.texture_dirty = true;
+                self.dirty = true;
+                self.is_processing = false;
+                
+                match self.filter_panel {
+                    FilterPanel::BrightnessContrast => {
+                        self.brightness = 0.0;
+                        self.contrast = 0.0;
+                        self.filter_panel = FilterPanel::None;
+                    }
+                    FilterPanel::HueSaturation => {
+                        self.hue = 0.0;
+                        self.saturation = 0.0;
+                        self.filter_panel = FilterPanel::None;
+                    }
+                    FilterPanel::Blur => {
+                        self.blur_radius = 3.0;
+                        self.filter_panel = FilterPanel::None;
+                    }
+                    FilterPanel::Sharpen => {
+                        self.sharpen_amount = 1.0;
+                        self.filter_panel = FilterPanel::None;
+                    }
+                    FilterPanel::Resize => {
+                        self.fit_on_next_frame = true;
+                        self.filter_panel = FilterPanel::None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
@@ -1457,6 +1611,11 @@ impl EditorModule for ImageEditor {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
 
         self.handle_keyboard(ctx);
+        self.check_filter_completion();
+
+        if self.is_processing {
+            ctx.request_repaint();
+        }
 
         if self.image.is_none() && self.file_path.is_none() {
             ui.centered_and_justified(|ui| {
