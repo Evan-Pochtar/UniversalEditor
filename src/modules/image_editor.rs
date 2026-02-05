@@ -1,5 +1,5 @@
 use eframe::egui;
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, ImageEncoder};
+use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageEncoder, Rgba};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use crate::style::{ColorPalette, ThemeMode};
@@ -290,6 +290,11 @@ impl ImageEditor {
             Some(i) => i,
             None => return,
         };
+        
+        if self.stroke_points.len() < 2 {
+            return;
+        }
+        
         let mut buf = img.to_rgba8();
         let width = buf.width();
         let height = buf.height();
@@ -300,6 +305,7 @@ impl ImageEditor {
         };
         let radius = if self.tool == Tool::Eraser { self.eraser_size / 2.0 } else { self.brush_size / 2.0 };
         let opacity = if self.tool == Tool::Eraser { 1.0 } else { self.brush_opacity };
+        let radius_sq = radius * radius;
 
         for i in 0..self.stroke_points.len().saturating_sub(1) {
             let (x0, y0) = self.stroke_points[i];
@@ -308,6 +314,7 @@ impl ImageEditor {
             let dy = y1 - y0;
             let dist = (dx * dx + dy * dy).sqrt();
             let steps = (dist / (radius * 0.4).max(1.0)).ceil() as usize;
+            
             for s in 0..=steps {
                 let t = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
                 let cx = x0 + dx * t;
@@ -316,31 +323,45 @@ impl ImageEditor {
                 let max_x = ((cx + radius).ceil() as u32).min(width);
                 let min_y = (cy - radius).max(0.0) as u32;
                 let max_y = ((cy + radius).ceil() as u32).min(height);
+                
                 for py in min_y..max_y {
+                    let dy_sq = (py as f32 - cy).powi(2);
+                    
                     for px in min_x..max_x {
-                        let dist_sq = (px as f32 - cx).powi(2) + (py as f32 - cy).powi(2);
-                        if dist_sq <= radius * radius {
-                            let falloff = 1.0 - (dist_sq / (radius * radius)).sqrt();
+                        let dx_sq = (px as f32 - cx).powi(2);
+                        let dist_sq = dx_sq + dy_sq;
+                        
+                        if dist_sq <= radius_sq {
+                            let falloff = 1.0 - (dist_sq / radius_sq).sqrt();
                             let alpha = (falloff * opacity * 255.0) as u8;
-                            let pixel = buf.get_pixel(px, py);
-                            let [er, eg, eb, ea] = pixel.0;
-                            if self.tool == Tool::Eraser {
-                                let new_a = ea.saturating_sub(alpha);
-                                buf.put_pixel(px, py, Rgba([er, eg, eb, new_a]));
-                            } else {
-                                let fa = alpha as f32 / 255.0;
-                                let fb = 1.0 - fa * (base_a as f32 / 255.0);
-                                let nr = (r as f32 * fa * (base_a as f32 / 255.0) + er as f32 * fb).min(255.0) as u8;
-                                let ng = (g as f32 * fa * (base_a as f32 / 255.0) + eg as f32 * fb).min(255.0) as u8;
-                                let nb = (b as f32 * fa * (base_a as f32 / 255.0) + eb as f32 * fb).min(255.0) as u8;
-                                let na = ((base_a as f32 * fa + ea as f32 * fb).min(255.0)) as u8;
-                                buf.put_pixel(px, py, Rgba([nr, ng, nb, na]));
+                            
+                            unsafe {
+                                let pixel = buf.unsafe_get_pixel(px, py);
+                                let [er, eg, eb, ea] = pixel.0;
+                                
+                                let new_pixel = if self.tool == Tool::Eraser {
+                                    Rgba([er, eg, eb, ea.saturating_sub(alpha)])
+                                } else {
+                                    let fa = alpha as u16;
+                                    let base_factor = (base_a as u16 * fa) / 255;
+                                    let fb = 255 - base_factor;
+                                    
+                                    let nr = ((r as u16 * base_factor + er as u16 * fb) / 255) as u8;
+                                    let ng = ((g as u16 * base_factor + eg as u16 * fb) / 255) as u8;
+                                    let nb = ((b as u16 * base_factor + eb as u16 * fb) / 255) as u8;
+                                    let na = ((base_factor + ea as u16 * fb / 255).min(255)) as u8;
+                                    
+                                    Rgba([nr, ng, nb, na])
+                                };
+                                
+                                buf.unsafe_put_pixel(px, py, new_pixel);
                             }
                         }
                     }
                 }
             }
         }
+        
         self.image = Some(DynamicImage::ImageRgba8(buf));
         self.texture_dirty = true;
         self.dirty = true;
@@ -357,13 +378,23 @@ impl ImageEditor {
         let target = buf.get_pixel(start_x, start_y).0;
         let fill = [self.color.r(), self.color.g(), self.color.b(), self.color.a()];
         if target == fill { return; }
-        let mut stack = vec![(start_x, start_y)];
+        
+        let mut visited = vec![false; (width * height) as usize];
+        let mut stack = Vec::with_capacity(1024);
+        stack.push((start_x, start_y));
         let tolerance = 30i32;
+        
         while let Some((x, y)) = stack.pop() {
+            let idx = (y * width + x) as usize;
+            if visited[idx] {
+                continue;
+            }
+            visited[idx] = true;
+            
             let cur = buf.get_pixel(x, y).0;
-            let diff: i32 = [0,1,2,3].iter().map(|&i| (cur[i] as i32 - target[i] as i32).abs()).sum();
+            let diff: i32 = (0..4).map(|i| (cur[i] as i32 - target[i] as i32).abs()).sum();
             if diff > tolerance { continue; }
-            if cur == fill { continue; }
+            
             buf.put_pixel(x, y, Rgba(fill));
             if x > 0 { stack.push((x - 1, y)); }
             if x + 1 < width { stack.push((x + 1, y)); }
@@ -456,19 +487,18 @@ impl ImageEditor {
             None => return,
         };
         let b = self.brightness;
-        let c = self.contrast;
+        let c = 1.0 + self.contrast / 100.0;
         let mut buf = img.to_rgba8();
-        for y in 0..buf.height() {
-            for x in 0..buf.width() {
-                let p = buf.get_pixel(x, y).0;
-                let mut channels = [p[0] as f32, p[1] as f32, p[2] as f32];
-                for ch in channels.iter_mut() {
-                    *ch = (*ch - 128.0) * (1.0 + c / 100.0) + 128.0 + b;
-                    *ch = ch.clamp(0.0, 255.0);
-                }
-                buf.put_pixel(x, y, Rgba([channels[0] as u8, channels[1] as u8, channels[2] as u8, p[3]]));
+        let mut pixels = buf.as_flat_samples_mut();
+        let samples = pixels.as_mut_slice();
+        
+        for chunk in samples.chunks_exact_mut(4) {
+            for i in 0..3 {
+                let val = chunk[i] as f32;
+                chunk[i] = ((val - 128.0) * c + 128.0 + b).clamp(0.0, 255.0) as u8;
             }
         }
+        
         self.image = Some(DynamicImage::ImageRgba8(buf));
         self.texture_dirty = true;
         self.dirty = true;
@@ -545,12 +575,15 @@ impl ImageEditor {
             None => return,
         };
         let mut buf = img.to_rgba8();
-        for y in 0..buf.height() {
-            for x in 0..buf.width() {
-                let p = buf.get_pixel(x, y).0;
-                buf.put_pixel(x, y, Rgba([255 - p[0], 255 - p[1], 255 - p[2], p[3]]));
-            }
+        let mut pixels = buf.as_flat_samples_mut();
+        let samples = pixels.as_mut_slice();
+        
+        for chunk in samples.chunks_exact_mut(4) {
+            chunk[0] = 255 - chunk[0];
+            chunk[1] = 255 - chunk[1];
+            chunk[2] = 255 - chunk[2];
         }
+        
         self.image = Some(DynamicImage::ImageRgba8(buf));
         self.texture_dirty = true;
         self.dirty = true;
@@ -562,16 +595,19 @@ impl ImageEditor {
             None => return,
         };
         let mut buf = img.to_rgba8();
-        for y in 0..buf.height() {
-            for x in 0..buf.width() {
-                let p = buf.get_pixel(x, y).0;
-                let (r, g, b) = (p[0] as f32, p[1] as f32, p[2] as f32);
-                let nr = (r * 0.393 + g * 0.769 + b * 0.189).min(255.0) as u8;
-                let ng = (r * 0.349 + g * 0.686 + b * 0.168).min(255.0) as u8;
-                let nb = (r * 0.272 + g * 0.534 + b * 0.131).min(255.0) as u8;
-                buf.put_pixel(x, y, Rgba([nr, ng, nb, p[3]]));
-            }
+        
+        for pixel in buf.pixels_mut() {
+            let [r, g, b, a] = pixel.0;
+            let (rf, gf, bf) = (r as f32, g as f32, b as f32);
+            
+            pixel.0 = [
+                (rf * 0.393 + gf * 0.769 + bf * 0.189).min(255.0) as u8,
+                (rf * 0.349 + gf * 0.686 + bf * 0.168).min(255.0) as u8,
+                (rf * 0.272 + gf * 0.534 + bf * 0.131).min(255.0) as u8,
+                a,
+            ];
         }
+        
         self.image = Some(DynamicImage::ImageRgba8(buf));
         self.texture_dirty = true;
         self.dirty = true;
@@ -882,7 +918,7 @@ impl ImageEditor {
     }
 
     fn render_options_bar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
-      ui.spacing_mut().slider_width = 100.0;
+        ui.spacing_mut().slider_width = 100.0;
         let (bg, border, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_400)
         } else {
@@ -955,7 +991,7 @@ impl ImageEditor {
     }
 
     fn render_filter_panel(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
-      ui.spacing_mut().slider_width = 120.0;
+        ui.spacing_mut().slider_width = 120.0;
         if self.filter_panel == FilterPanel::None { return; }
         let (bg, border, text_col, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_800, ColorPalette::BLUE_600, ColorPalette::ZINC_100, ColorPalette::ZINC_400)

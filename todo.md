@@ -98,6 +98,7 @@
   - [ ] Brush is slightly laggy, make more smooth
   - [ ] Increase performance of filters on bigger images (E.g Blur)
   - [ ] General performance and usability improvements
+  - [ ] Add loading screen for filters etc.
 - [ ] Color picker
   - [ ] Recent colors option in color picker
   - [ ] Bigger/Clearer Color picker
