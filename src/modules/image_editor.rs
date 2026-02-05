@@ -8,7 +8,6 @@ use crate::style::{ColorPalette, ThemeMode};
 use super::EditorModule;
 
 const MAX_UNDO: usize = 20;
-const TEXTURE_UPDATE_INTERVAL: f32 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tool {
@@ -148,7 +147,6 @@ pub struct ImageEditor {
     canvas_rect: Option<egui::Rect>,
     text_focused: bool,
 
-    last_texture_update: f32,
     filter_progress: Arc<Mutex<f32>>,
     is_processing: bool,
     pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
@@ -194,7 +192,6 @@ impl ImageEditor {
             show_color_picker: false,
             canvas_rect: None,
             text_focused: false,
-            last_texture_update: 0.0,
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
@@ -298,16 +295,21 @@ impl ImageEditor {
     }
 
     fn apply_brush_stroke(&mut self) {
-        let img = match self.image.as_mut() {
-            Some(i) => i,
-            None => return,
+        if let Some(img) = self.image.as_mut() {
+            if !matches!(img, DynamicImage::ImageRgba8(_)) {
+                *img = DynamicImage::ImageRgba8(img.to_rgba8());
+            }
+        }
+        
+        let buf = match self.image.as_mut() {
+            Some(DynamicImage::ImageRgba8(buf)) => buf,
+            _ => return,
         };
         
         if self.stroke_points.len() < 2 {
             return;
         }
         
-        let mut buf = img.to_rgba8();
         let width = buf.width();
         let height = buf.height();
         let (r, g, b, base_a) = if self.tool == Tool::Eraser {
@@ -374,8 +376,8 @@ impl ImageEditor {
             }
         }
         
-        self.image = Some(DynamicImage::ImageRgba8(buf));
         self.dirty = true;
+        self.texture_dirty = true;
     }
 
     fn flood_fill(&mut self, start_x: u32, start_y: u32) {
@@ -823,11 +825,19 @@ impl ImageEditor {
                 egui::Color32::from_rgba_unmultiplied(r, g, b, a)
             }).collect(),
         };
-        self.texture = Some(ctx.tex_manager().write().alloc(
-            "image_editor_img".into(),
-            color_image.into(),
-            egui::TextureOptions::default(),
-        ));
+
+        if let Some(texture_id) = self.texture {
+            ctx.tex_manager().write().set(
+                texture_id,
+                egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default())
+            );
+        } else {
+            self.texture = Some(ctx.tex_manager().write().alloc(
+                "image_editor_img".into(),
+                color_image.into(),
+                egui::TextureOptions::default(),
+            ));
+        }
         self.texture_dirty = false;
     }
 
@@ -1257,17 +1267,6 @@ impl ImageEditor {
     }
 
     fn render_canvas(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        if self.is_dragging && (self.tool == Tool::Brush || self.tool == Tool::Eraser) {
-            self.last_texture_update += ctx.input(|i| i.unstable_dt);
-            if self.last_texture_update >= TEXTURE_UPDATE_INTERVAL {
-                self.texture_dirty = true;
-                self.last_texture_update = 0.0;
-            }
-        } else if self.last_texture_update > 0.0 {
-            self.texture_dirty = true;
-            self.last_texture_update = 0.0;
-        }
-        
         let canvas_rect = ui.available_rect_before_wrap();
         self.canvas_rect = Some(canvas_rect);
 
@@ -1413,7 +1412,6 @@ impl ImageEditor {
             match self.tool {
                 Tool::Brush | Tool::Eraser => {
                     self.texture_dirty = true;
-                    self.last_texture_update = 0.0;
                     self.stroke_points.clear();
                     self.is_dragging = false;
                 }

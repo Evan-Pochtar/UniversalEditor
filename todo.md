@@ -53,6 +53,9 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
+#### Image Editor
+- [ ] Can't just click to color for brush, must drag
+
 #### Other
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
@@ -96,7 +99,7 @@
   - [ ] Linear
   - [ ] Radial
 - [ ] Performance
-  - [ ] Brush is slightly laggy, make more smooth
+  - [ ] Brush is slightly laggy, make more smooth on large images
   - [x] Increase performance of filters on bigger images (E.g Blur)
   - [ ] General performance and usability improvements
   - [x] Add loading screen for filters etc.
