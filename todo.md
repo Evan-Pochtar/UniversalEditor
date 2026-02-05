@@ -11,6 +11,7 @@
   - [x] Converter/Screen List
   - [ ] Change checkmark close/open sidebar to a small arrow.
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [ ] Unified Top Bar Handling
 
 ## Screens
 
@@ -55,6 +56,11 @@
 
 #### Image Editor
 - [ ] Can't just click to color for brush, must drag
+- [ ] Color picker
+  - [ ] Hexcode Does not update properly on color picker
+  - [ ] Alpha seems to break color picker
+  - [ ] Button's aren't quite aligned on the color picker
+  - [ ] Cant see cursor on color picker
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
@@ -103,10 +109,10 @@
   - [x] Increase performance of filters on bigger images (E.g Blur)
   - [ ] General performance and usability improvements
   - [x] Add loading screen for filters etc.
-- [ ] Color picker
-  - [ ] Recent colors option in color picker
-  - [ ] Bigger/Clearer Color picker
-  - [ ] Color code to color option
+- [x] Color picker
+  - [x] Recent colors option in color picker
+  - [x] Bigger/Clearer Color picker
+  - [x] Color code to color option
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
 - [ ] Copy/paste/cut within selection

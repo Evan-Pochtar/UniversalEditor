@@ -21,6 +21,7 @@
 - **IMG EDITOR**: Exporting to other image types now allowed (jpeg, png, webp, bmp, tiff, ico)
 - **IMG EDITOR**: Option for preservation of metadata
 - **IMG EDITOR**: Loading screen for applying filters
+- **IMG EDITOR**: Color picker now supports hexcodes
 - **IMG2IMG CONVERTER**: Error's in image processing now dispalyed on UI
 - **IMG2IMG CONVERTER**: .ico now has auto-scale to 256px option
 - **TEXT EDITOR**: Saved Toolbar/File info settings between sessions

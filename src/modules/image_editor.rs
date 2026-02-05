@@ -6,8 +6,120 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
 use super::EditorModule;
+use serde::{Deserialize, Serialize};
+use std::fs;
 
 const MAX_UNDO: usize = 20;
+const MAX_COLOR_HISTORY: usize = 20;
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct RgbaColor {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+impl RgbaColor {
+    fn to_egui(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
+    }
+    
+    fn from_egui(c: egui::Color32) -> Self {
+        Self { r: c.r(), g: c.g(), b: c.b(), a: c.a() }
+    }
+    
+    fn to_hex(&self) -> String {
+        if self.a == 255 {
+            format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
+        } else {
+            format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
+        }
+    }
+    
+    fn from_hex(hex: &str) -> Option<Self> {
+        let hex = hex.trim_start_matches('#');
+        match hex.len() {
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                Some(Self { r, g, b, a: 255 })
+            }
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+                Some(Self { r, g, b, a })
+            }
+            _ => None,
+        }
+    }
+    
+    fn to_rgb_string(&self) -> String {
+        if self.a == 255 {
+            format!("rgb({}, {}, {})", self.r, self.g, self.b)
+        } else {
+            format!("rgba({}, {}, {}, {:.2})", self.r, self.g, self.b, self.a as f32 / 255.0)
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ColorHistory {
+    colors: VecDeque<RgbaColor>,
+}
+
+impl ColorHistory {
+    fn new() -> Self {
+        Self { colors: VecDeque::new() }
+    }
+    
+    fn load() -> Self {
+        let path = Self::get_config_path();
+        if let Ok(contents) = fs::read_to_string(&path) {
+            if let Ok(history) = serde_json::from_str(&contents) {
+                return history;
+            }
+        }
+        Self::new()
+    }
+    
+    fn save(&self) {
+        let path = Self::get_config_path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string(self) {
+            let _ = fs::write(path, json);
+        }
+    }
+    
+    fn get_config_path() -> PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("universal_editor");
+        path.push("color_history.json");
+        path
+    }
+    
+    fn add_color(&mut self, color: RgbaColor) {
+        if let Some(pos) = self.colors.iter().position(|c| *c == color) {
+            self.colors.remove(pos);
+        }
+        self.colors.push_front(color);
+        if self.colors.len() > MAX_COLOR_HISTORY {
+            self.colors.pop_back();
+        }
+        self.save();
+    }
+    
+    fn get_colors(&self) -> &VecDeque<RgbaColor> {
+        &self.colors
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tool {
@@ -144,6 +256,8 @@ pub struct ImageEditor {
     export_callback: Option<Box<dyn Fn(PathBuf) + Send + Sync>>,
 
     show_color_picker: bool,
+    color_history: ColorHistory,
+    hex_input: String,
     canvas_rect: Option<egui::Rect>,
     text_focused: bool,
 
@@ -190,6 +304,8 @@ impl ImageEditor {
             export_auto_scale_ico: true,
             export_callback: None,
             show_color_picker: false,
+            color_history: ColorHistory::load(),
+            hex_input: String::from("#000000FF"),
             canvas_rect: None,
             text_focused: false,
             filter_progress: Arc::new(Mutex::new(0.0)),
@@ -218,6 +334,12 @@ impl ImageEditor {
     pub fn set_file_callback(&mut self, callback: Box<dyn Fn(PathBuf) + Send + Sync>) {
         self.export_callback = Some(callback);
     }
+
+    fn add_color_to_history(&mut self) {
+        let rgba = RgbaColor::from_egui(self.color);
+        self.color_history.add_color(rgba);
+    }
+
 
     fn push_undo(&mut self) {
         if let Some(img) = &self.image {
@@ -424,6 +546,8 @@ impl ImageEditor {
             let p = img.get_pixel(x, y);
             let rgba = p.0;
             self.color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+            self.add_color_to_history();
+            self.hex_input = RgbaColor::from_egui(self.color).to_hex();
         }
     }
 
@@ -795,7 +919,7 @@ impl ImageEditor {
             ExportFormat::Ico => {
                 if export_img.width() > 256 || export_img.height() > 256 {
                     return Err(format!(
-                        "ICO format requires dimensions ≤256px. Image is {}x{}. Enable auto-scaling in export settings.",
+                        "ICO format requires dimensions â‰¤256px. Image is {}x{}. Enable auto-scaling in export settings.",
                         export_img.width(), export_img.height()
                     ));
                 }
@@ -1266,6 +1390,188 @@ impl ImageEditor {
             });
     }
 
+    fn render_color_picker(&mut self, _ui: &mut egui::Ui, ctx: &egui::Context, theme: ThemeMode) {
+        if !self.show_color_picker { return; }
+
+        let (bg, border, text_col, weak_col) = if matches!(theme, ThemeMode::Dark) {
+            (ColorPalette::ZINC_800, ColorPalette::BLUE_600, ColorPalette::ZINC_100, ColorPalette::ZINC_400)
+        } else {
+            (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
+        };
+
+        egui::Window::new("Color Picker")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 60.0))
+            .fixed_size(egui::vec2(340.0, 0.0))
+            .frame(egui::Frame::new()
+                .fill(bg)
+                .stroke(egui::Stroke::new(1.5, border))
+                .corner_radius(8.0)
+                .inner_margin(16.0))
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing.y = 8.0;
+                
+                let mut rgb = [self.color.r() as f32 / 255.0, self.color.g() as f32 / 255.0, self.color.b() as f32 / 255.0];
+                let mut alpha = self.color.a() as f32 / 255.0;
+                
+                let picker_size = egui::vec2(280.0, 280.0);
+                let (rect, response) = ui.allocate_exact_size(picker_size, egui::Sense::click_and_drag());
+                
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter_at(rect);
+                    let steps = 40;
+                    let cell_w = rect.width() / steps as f32;
+                    let cell_h = rect.height() / steps as f32;
+                    
+                    for y in 0..steps {
+                        for x in 0..steps {
+                            let s = x as f32 / (steps - 1) as f32;
+                            let v = 1.0 - (y as f32 / (steps - 1) as f32);
+                            let (r, g, b) = hsv_to_rgb_f32(rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]).0, s, v);
+                            let color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+                            let cell_rect = egui::Rect::from_min_size(
+                                egui::pos2(rect.min.x + x as f32 * cell_w, rect.min.y + y as f32 * cell_h),
+                                egui::vec2(cell_w.ceil(), cell_h.ceil()),
+                            );
+                            painter.rect_filled(cell_rect, 0.0, color);
+                        }
+                    }
+                }
+                
+                if response.clicked() || response.dragged() {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        let x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
+                        let y = ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
+                        let s = x;
+                        let v = 1.0 - y;
+                        let (h, _, _) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        rgb = [r, g, b];
+                    }
+                }
+                
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Hue:").size(12.0).color(weak_col));
+                    let hue_size = egui::vec2(ui.available_width(), 24.0);
+                    let (hue_rect, hue_response) = ui.allocate_exact_size(hue_size, egui::Sense::click_and_drag());
+                    
+                    if ui.is_rect_visible(hue_rect) {
+                        let painter = ui.painter_at(hue_rect);
+                        let steps = 60;
+                        let step_w = hue_rect.width() / steps as f32;
+                        
+                        for i in 0..steps {
+                            let h = (i as f32 / steps as f32) * 360.0;
+                            let (r, g, b) = hsv_to_rgb_f32(h, 1.0, 1.0);
+                            let color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+                            let cell_rect = egui::Rect::from_min_size(
+                                egui::pos2(hue_rect.min.x + i as f32 * step_w, hue_rect.min.y),
+                                egui::vec2(step_w.ceil(), hue_rect.height()),
+                            );
+                            painter.rect_filled(cell_rect, 0.0, color);
+                        }
+                        
+                        painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }), egui::StrokeKind::Outside);
+                    }
+                    
+                    if hue_response.clicked() || hue_response.dragged() {
+                        if let Some(pos) = hue_response.interact_pointer_pos() {
+                            let x = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0);
+                            let h = x * 360.0;
+                            let (_, s, v) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                            let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                            rgb = [r, g, b];
+                        }
+                    }
+                });
+                
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Alpha:").size(12.0).color(weak_col));
+                    if ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).show_value(false)).changed() {}
+                });
+                
+                self.color = egui::Color32::from_rgba_unmultiplied(
+                    (rgb[0] * 255.0) as u8,
+                    (rgb[1] * 255.0) as u8,
+                    (rgb[2] * 255.0) as u8,
+                    (alpha * 255.0) as u8,
+                );
+                
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+                
+                ui.label(egui::RichText::new("Color Values").size(13.0).color(text_col));
+                
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("RGB:").size(12.0).color(weak_col));
+                    let rgb_str = RgbaColor::from_egui(self.color).to_rgb_string();
+                    ui.label(egui::RichText::new(&rgb_str).size(12.0).color(text_col).monospace());
+                    if ui.button("Copy").clicked() {
+                        ctx.copy_text(rgb_str);
+                    }
+                });
+                
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Hex:").size(12.0).color(weak_col));
+                    let response = ui.text_edit_singleline(&mut self.hex_input);
+                    if response.changed() {
+                        if let Some(color) = RgbaColor::from_hex(&self.hex_input) {
+                            self.color = color.to_egui();
+                        }
+                    }
+                    if response.lost_focus() {
+                        self.hex_input = RgbaColor::from_egui(self.color).to_hex();
+                    }
+                    if ui.button("Copy").clicked() {
+                        ctx.copy_text(self.hex_input.clone());
+                    }
+                });
+                
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Recent").size(13.0).color(text_col));
+                    if ui.button("Clear").clicked() {
+                        self.color_history = ColorHistory::new();
+                    }
+                });
+                
+                ui.horizontal_wrapped(|ui| {
+                    let history = self.color_history.get_colors().clone();
+                    for color in history.iter() {
+                        let btn = egui::Button::new("")
+                            .fill(color.to_egui())
+                            .min_size(egui::vec2(28.0, 28.0));
+                        if ui.add(btn).clicked() {
+                            self.color = color.to_egui();
+                            self.hex_input = color.to_hex();
+                        }
+                    }
+                });
+                
+                ui.add_space(8.0);
+                
+                ui.horizontal(|ui| {
+                    if ui.button("Apply").clicked() {
+                        self.add_color_to_history();
+                        self.show_color_picker = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_color_picker = false;
+                    }
+                });
+            });
+    }
+
+
     fn render_canvas(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let canvas_rect = ui.available_rect_before_wrap();
         self.canvas_rect = Some(canvas_rect);
@@ -1426,6 +1732,7 @@ impl ImageEditor {
                     if let Some((ix, iy)) = self.screen_to_image(pos) {
                         self.push_undo();
                         self.flood_fill(ix, iy);
+                        self.add_color_to_history();
                     }
                 }
                 Tool::Eyedropper => {
@@ -1438,6 +1745,7 @@ impl ImageEditor {
                         if self.text_state.placing && self.text_state.pos.is_some() {
                             self.push_undo();
                             self.stamp_text();
+                            self.add_color_to_history();
                         }
                         self.text_state.placing = true;
                         self.text_state.pos = Some((ix, iy));
@@ -1557,6 +1865,40 @@ impl ImageEditor {
     }
 }
 
+
+fn rgb_to_hsv_f32(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let v = max;
+    let s = if max == 0.0 { 0.0 } else { delta / max };
+    let h = if delta == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / delta) % 6.0)
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    (if h < 0.0 { h + 360.0 } else { h }, s, v)
+}
+
+fn hsv_to_rgb_f32(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match h as u32 {
+        0..=59 => (c, x, 0.0),
+        60..=119 => (x, c, 0.0),
+        120..=179 => (0.0, c, x),
+        180..=239 => (0.0, x, c),
+        240..=299 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    (r + m, g + m, b + m)
+}
+
 fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
     let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
     let max = r.max(g).max(b);
@@ -1668,33 +2010,7 @@ impl EditorModule for ImageEditor {
         }
 
         if self.show_color_picker {
-            egui::Frame::new()
-                .fill(if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_50 })
-                .stroke(egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }))
-                .corner_radius(6.0)
-                .inner_margin(8.0)
-                .show(ui, |ui| {
-                    let mut color = self.color;
-                    if egui::color_picker::color_picker_color32(ui, &mut color, egui::color_picker::Alpha::Opaque) {
-                        self.color = color;
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Presets:").size(12.0));
-                        let presets = [
-                            egui::Color32::BLACK, egui::Color32::WHITE,
-                            egui::Color32::from_rgb(255, 0, 0), egui::Color32::from_rgb(0, 128, 0),
-                            egui::Color32::from_rgb(0, 0, 255), egui::Color32::from_rgb(255, 255, 0),
-                            egui::Color32::from_rgb(255, 0, 255), egui::Color32::from_rgb(0, 255, 255),
-                            ColorPalette::BLUE_500, ColorPalette::AMBER_500,
-                        ];
-                        for &preset in &presets {
-                            let btn = egui::Button::new("").fill(preset).min_size(egui::vec2(22.0, 22.0));
-                            if ui.add(btn).clicked() { self.color = preset; }
-                        }
-                    });
-                    if ui.button("Close").clicked() { self.show_color_picker = false; }
-                });
-            ui.add_space(4.0);
+            self.render_color_picker(ui, ctx, theme);
         }
 
         self.render_canvas(ui, ctx);
