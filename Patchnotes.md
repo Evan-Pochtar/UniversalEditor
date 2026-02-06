@@ -26,6 +26,7 @@
 - **IMG2IMG CONVERTER**: .ico now has auto-scale to 256px option
 - **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
 - **TEXT EDITOR**: Tooltips for Headers include Keyboard Shortcut
+- **TEXT EDITOR**: Automatic view mode detection based off of file extension
 - **GENERAL**: Added "System" Theme
 - **GENERAL**: Theme setting saves between sessions
 - **GENERAL**: Now able to remove files from "recent files" list on sidebar 

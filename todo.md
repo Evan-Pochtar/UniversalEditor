@@ -5,7 +5,7 @@
 - [x] Reusable Design
 - [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
-  - [ ] Page you go to changes depending on what file you put in on main menu
+  - [x] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -87,7 +87,7 @@
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
-- [ ] Opening .md file automatically sets markdown mode
+- [x] Opening .md file automatically sets markdown mode
 - [ ] Latex?
 
 #### Image Editor

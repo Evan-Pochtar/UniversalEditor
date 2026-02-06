@@ -48,16 +48,28 @@ impl TextEditor {
             String::new()
         };
 
+        let view_mode = Self::detect_view_mode(&path);
+
         Self {
             file_path: Some(path),
             content,
             dirty: false,
             font_size: 14.0,
             font_family: egui::FontFamily::Monospace,
-            view_mode: ViewMode::Plain,
+            view_mode,
             last_cursor_range: None,
             pending_cursor_pos: None,
         }
+    }
+
+    fn detect_view_mode(path: &PathBuf) -> ViewMode {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| match ext.to_lowercase().as_str() {
+                "md" | "markdown" => ViewMode::Markdown,
+                _ => ViewMode::Plain,
+            })
+            .unwrap_or(ViewMode::Plain)
     }
 
     pub fn is_dirty(&self) -> bool {
