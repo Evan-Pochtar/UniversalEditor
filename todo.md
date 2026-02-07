@@ -56,11 +56,10 @@
 
 #### Image Editor
 - [ ] Can't just click to color for brush, must drag
-- [ ] Color picker
-  - [ ] Hexcode Does not update properly on color picker
-  - [ ] Alpha seems to break color picker
-  - [ ] Button's aren't quite aligned on the color picker
-  - [ ] Cant see cursor on color picker
+- [x] Color picker
+  - [x] Hexcode Does not update properly on color picker
+  - [x] Button's aren't quite aligned on the color picker
+  - [x] Cant see cursor on color picker
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
@@ -113,6 +112,7 @@
   - [x] Recent colors option in color picker
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
+  - [ ] Add opacity to color picker
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
 - [ ] Copy/paste/cut within selection
@@ -132,6 +132,7 @@
 - [ ] Better text selection/writing tool
   - [ ] Resize text, easy selection of text
 - [ ] Make image converter and image editor use the same export function
+- [ ] Add different cursors for different functions/tools
 
 #### CONVERTER: Img 2 Img
 - [ ] Keyboard Shortcuts

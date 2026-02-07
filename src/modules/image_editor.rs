@@ -1411,10 +1411,18 @@ impl ImageEditor {
                 .inner_margin(16.0))
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
-                
+
                 let mut rgb = [self.color.r() as f32 / 255.0, self.color.g() as f32 / 255.0, self.color.b() as f32 / 255.0];
-                let mut alpha = self.color.a() as f32 / 255.0;
+                let (h_current, s, v) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                let hue_id = ui.make_persistent_id("picker_hue_state");
+                let mut h = ui.data(|d| d.get_temp(hue_id)).unwrap_or(h_current);
+
+                if s > 0.005 && v > 0.005 {
+                    h = h_current;
+                    ui.data_mut(|d| d.insert_temp(hue_id, h));
+                }
                 
+                let mut color_changed = false;      
                 let picker_size = egui::vec2(280.0, 280.0);
                 let (rect, response) = ui.allocate_exact_size(picker_size, egui::Sense::click_and_drag());
                 
@@ -1426,10 +1434,10 @@ impl ImageEditor {
                     
                     for y in 0..steps {
                         for x in 0..steps {
-                            let s = x as f32 / (steps - 1) as f32;
-                            let v = 1.0 - (y as f32 / (steps - 1) as f32);
-                            let (r, g, b) = hsv_to_rgb_f32(rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]).0, s, v);
-                            let color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+                            let s_cell = x as f32 / (steps - 1) as f32;
+                            let v_cell = 1.0 - (y as f32 / (steps - 1) as f32);
+                            let (r, g, b) = hsv_to_rgb_f32(h, s_cell, v_cell);
+                            let color: egui::Color32 = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
                             let cell_rect = egui::Rect::from_min_size(
                                 egui::pos2(rect.min.x + x as f32 * cell_w, rect.min.y + y as f32 * cell_h),
                                 egui::vec2(cell_w.ceil(), cell_h.ceil()),
@@ -1437,17 +1445,24 @@ impl ImageEditor {
                             painter.rect_filled(cell_rect, 0.0, color);
                         }
                     }
+                    
+                    let cursor_x = rect.min.x + s * rect.width();
+                    let cursor_y = rect.min.y + (1.0 - v) * rect.height();
+                    let cursor_pos = egui::pos2(cursor_x, cursor_y);
+                    
+                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
                 }
                 
                 if response.clicked() || response.dragged() {
                     if let Some(pos) = response.interact_pointer_pos() {
                         let x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
                         let y = ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
-                        let s = x;
-                        let v = 1.0 - y;
-                        let (h, _, _) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        let s_new = x;
+                        let v_new = 1.0 - y;
+                        let (r, g, b) = hsv_to_rgb_f32(h, s_new, v_new);
                         rgb = [r, g, b];
+                        color_changed = true;
                     }
                 }
                 
@@ -1464,8 +1479,8 @@ impl ImageEditor {
                         let step_w = hue_rect.width() / steps as f32;
                         
                         for i in 0..steps {
-                            let h = (i as f32 / steps as f32) * 360.0;
-                            let (r, g, b) = hsv_to_rgb_f32(h, 1.0, 1.0);
+                            let h_step = (i as f32 / steps as f32) * 360.0;
+                            let (r, g, b) = hsv_to_rgb_f32(h_step, 1.0, 1.0);
                             let color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
                             let cell_rect = egui::Rect::from_min_size(
                                 egui::pos2(hue_rect.min.x + i as f32 * step_w, hue_rect.min.y),
@@ -1475,32 +1490,41 @@ impl ImageEditor {
                         }
                         
                         painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }), egui::StrokeKind::Outside);
+                        
+                        let hue_cursor_x = hue_rect.min.x + (h / 360.0) * hue_rect.width();
+                        let hue_cursor_rect = egui::Rect::from_center_size(
+                            egui::pos2(hue_cursor_x, hue_rect.center().y),
+                            egui::vec2(4.0, hue_rect.height() + 2.0)
+                        );
+                        painter.rect_filled(hue_cursor_rect, 2.0, egui::Color32::WHITE);
+                        painter.rect_stroke(hue_cursor_rect, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
                     }
                     
                     if hue_response.clicked() || hue_response.dragged() {
                         if let Some(pos) = hue_response.interact_pointer_pos() {
                             let x = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0);
-                            let h = x * 360.0;
-                            let (_, s, v) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                            let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                            let h_new = x * 360.0;
+                            
+                            h = h_new;
+                            ui.data_mut(|d| d.insert_temp(hue_id, h));
+                            
+                            let (_, s_curr, v_curr) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                            let (r, g, b) = hsv_to_rgb_f32(h_new, s_curr, v_curr);
                             rgb = [r, g, b];
+                            color_changed = true;
                         }
                     }
                 });
                 
-                ui.add_space(4.0);
-                
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Alpha:").size(12.0).color(weak_col));
-                    if ui.add(egui::Slider::new(&mut alpha, 0.0..=1.0).show_value(false)).changed() {}
-                });
-                
-                self.color = egui::Color32::from_rgba_unmultiplied(
+                self.color = egui::Color32::from_rgb(
                     (rgb[0] * 255.0) as u8,
                     (rgb[1] * 255.0) as u8,
                     (rgb[2] * 255.0) as u8,
-                    (alpha * 255.0) as u8,
                 );
+                
+                if color_changed {
+                    self.hex_input = RgbaColor::from_egui(self.color).to_hex();
+                }
                 
                 ui.add_space(4.0);
                 ui.separator();
@@ -1512,7 +1536,7 @@ impl ImageEditor {
                     ui.label(egui::RichText::new("RGB:").size(12.0).color(weak_col));
                     let rgb_str = RgbaColor::from_egui(self.color).to_rgb_string();
                     ui.label(egui::RichText::new(&rgb_str).size(12.0).color(text_col).monospace());
-                    if ui.button("Copy").clicked() {
+                    if ui.small_button("Copy").clicked() {
                         ctx.copy_text(rgb_str);
                     }
                 });
@@ -1521,14 +1545,15 @@ impl ImageEditor {
                     ui.label(egui::RichText::new("Hex:").size(12.0).color(weak_col));
                     let response = ui.text_edit_singleline(&mut self.hex_input);
                     if response.changed() {
-                        if let Some(color) = RgbaColor::from_hex(&self.hex_input) {
+                        if let Some(mut color) = RgbaColor::from_hex(&self.hex_input) {
+                            color.a = 255;
                             self.color = color.to_egui();
                         }
                     }
                     if response.lost_focus() {
                         self.hex_input = RgbaColor::from_egui(self.color).to_hex();
                     }
-                    if ui.button("Copy").clicked() {
+                    if ui.small_button("Copy").clicked() {
                         ctx.copy_text(self.hex_input.clone());
                     }
                 });
@@ -1539,7 +1564,7 @@ impl ImageEditor {
                 
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Recent").size(13.0).color(text_col));
-                    if ui.button("Clear").clicked() {
+                    if ui.small_button("Clear").clicked() {
                         self.color_history = ColorHistory::new();
                     }
                 });
@@ -1551,8 +1576,10 @@ impl ImageEditor {
                             .fill(color.to_egui())
                             .min_size(egui::vec2(28.0, 28.0));
                         if ui.add(btn).clicked() {
-                            self.color = color.to_egui();
-                            self.hex_input = color.to_hex();
+                            let mut c = *color;
+                            c.a = 255;
+                            self.color = c.to_egui();
+                            self.hex_input = c.to_hex();
                         }
                     }
                 });
