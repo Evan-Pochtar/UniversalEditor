@@ -2,22 +2,24 @@
 
 ## General
 
-- [ ] Reusable Design
-- [ ] "System" option to decide light/dark mode
+- [x] Reusable Design
+- [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
-  - [ ] Page you go to changes depending on what file you put in on main menu
+  - [x] Page you go to changes depending on what file you put in on main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
   - [ ] Change checkmark close/open sidebar to a small arrow.
+- [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [ ] Unified Top Bar Handling
 
 ## Screens
 
 - [x] Txt, Md
 - [ ] Word Docs, ect.
-- [ ] Img Processing (Paint-like)
-- [ ] Video Processing (Framiax-like)
-- [ ] JSON Processing (JSONEditor-Like)
+- [x] Img Processing
+- [ ] Video Processing
+- [ ] JSON Processing
 - [ ] CSV, Excel, ect.
 - [ ] PDF
 - [ ] Zip/Unzip
@@ -52,9 +54,16 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
+#### Image Editor
+- [ ] Can't just click to color for brush, must drag
+- [x] Color picker
+  - [x] Hexcode Does not update properly on color picker
+  - [x] Button's aren't quite aligned on the color picker
+  - [x] Cant see cursor on color picker
+
 #### Other
 - [x] Sidebar down arrow shows as empty square
-- [ ] Top bar "View" should not show text editor options when not on text editor
+- [x] Top bar "View" should not show text editor options when not on text editor
 
 ## Features
 
@@ -77,15 +86,63 @@
   - [x] Add titles to code blocks (E.g "bash" or "rust")
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
+- [x] Opening .md file automatically sets markdown mode
 - [ ] Latex?
+
+#### Image Editor
+
+- [ ] Layer system 
+  - [ ] Add
+  - [ ] Reorder
+  - [ ] Merge
+  - [ ] Opacity
+- [ ] Selection tools
+  - [ ] Ellipse
+  - [ ] Free-hand lasso
+  - [ ] Magic wand
+- [ ] Gradient tool
+  - [ ] Linear
+  - [ ] Radial
+- [ ] Performance
+  - [ ] Brush is slightly laggy, make more smooth on large images
+  - [x] Increase performance of filters on bigger images (E.g Blur)
+  - [ ] General performance and usability improvements
+  - [x] Add loading screen for filters etc.
+- [x] Color picker
+  - [x] Recent colors option in color picker
+  - [x] Bigger/Clearer Color picker
+  - [x] Color code to color option
+  - [ ] Add opacity to color picker
+- [ ] More brush presets or options
+  - [ ] Custom brush shapes?
+- [ ] Copy/paste/cut within selection
+- [ ] Pattern/texture fill
+- [ ] Perspective/affine warp
+- [ ] Edge detection filter
+- [ ] Canvas size (extend without scaling)
+- [x] Export with metadata
+- [x] Export to other image types
+- [ ] Snap to grid for text/crop
+- [ ] Filter preview before apply
+- [ ] Better toolbar organization
+- [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
+- [ ] Drag-and-drop image open
+- [x] Improve button look when the screen/resolution is smaller
+- [ ] Images show up in recent files
+- [ ] Better text selection/writing tool
+  - [ ] Resize text, easy selection of text
+- [ ] Make image converter and image editor use the same export function
+- [ ] Add different cursors for different functions/tools
 
 #### CONVERTER: Img 2 Img
 - [ ] Keyboard Shortcuts
-- [ ] Display Error (For example, width > 256 for ico conversion)
+- [x] Display Error (For example, width > 256 for ico conversion)
 
 ## Other
 
 - [x] Create Todo List
+- [x] Clear/Remove recent files
+  - [x] Trashcan icon instead of x
 
 ## Testing
 

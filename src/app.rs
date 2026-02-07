@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter};
+use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_editor::ImageEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -65,6 +65,64 @@ impl RecentFiles {
     fn get_files(&self) -> &[RecentFile] {
         &self.files
     }
+
+    fn remove_file(&mut self, path: &PathBuf) {
+        self.files.retain(|f| &f.path != path);
+        self.save();
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum ThemePreference {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppSettings {
+    theme_preference: ThemePreference,
+    show_toolbar: bool,
+    show_file_info: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme_preference: ThemePreference::System,
+            show_toolbar: true,
+            show_file_info: true,
+        }
+    }
+}
+
+impl AppSettings {
+    fn load() -> Self {
+        let config_path = Self::get_config_path();
+        if let Ok(contents) = fs::read_to_string(&config_path) {
+            if let Ok(settings) = serde_json::from_str(&contents) {
+                return settings;
+            }
+        }
+        Self::default()
+    }
+
+    fn save(&self) {
+        let config_path = Self::get_config_path();
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = fs::write(config_path, json);
+        }
+    }
+
+    fn get_config_path() -> PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("universal_editor");
+        path.push("app_settings.json");
+        path
+    }
 }
 
 enum PendingAction {
@@ -78,6 +136,7 @@ pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
     sidebar_open: bool,
     theme_mode: ThemeMode,
+    theme_preference: ThemePreference,
     recent_files: RecentFiles,
     screens_expanded: bool,
     converters_expanded: bool,
@@ -90,9 +149,17 @@ pub struct UniversalEditor {
 
 impl UniversalEditor {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let initial_theme = match cc.egui_ctx.theme() {
+        let settings = AppSettings::load();
+        
+        let system_theme = match cc.egui_ctx.theme() {
             egui::Theme::Dark => ThemeMode::Dark,
             egui::Theme::Light => ThemeMode::Light,
+        };
+        
+        let initial_theme = match settings.theme_preference {
+            ThemePreference::System => system_theme,
+            ThemePreference::Light => ThemeMode::Light,
+            ThemePreference::Dark => ThemeMode::Dark,
         };
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
@@ -101,14 +168,23 @@ impl UniversalEditor {
             active_module: None,
             sidebar_open: true,
             theme_mode: initial_theme,
+            theme_preference: settings.theme_preference,
             recent_files: RecentFiles::load(),
             screens_expanded: false,
             converters_expanded: false,
             recent_files_expanded: false,
-            show_toolbar: true,
-            show_file_info: true,
+            show_toolbar: settings.show_toolbar,
+            show_file_info: settings.show_file_info,
             show_unsaved_dialog: false,
             pending_action: None,
+        }
+    }
+
+    fn is_in_text_editor(&self) -> bool {
+        if let Some(module) = &self.active_module {
+            module.as_any().downcast_ref::<TextEditor>().is_some()
+        } else {
+            false
         }
     }
 
@@ -116,6 +192,9 @@ impl UniversalEditor {
         if let Some(module) = &self.active_module {
             if let Some(text_editor) = module.as_any().downcast_ref::<TextEditor>() {
                 return text_editor.is_dirty();
+            }
+            if let Some(image_editor) = module.as_any().downcast_ref::<ImageEditor>() {
+                return image_editor.is_dirty();
             }
         }
         false
@@ -126,8 +205,26 @@ impl UniversalEditor {
             self.pending_action = Some(PendingAction::OpenFile(path));
             self.show_unsaved_dialog = true;
         } else {
-            self.active_module = Some(Box::new(TextEditor::load(path.clone())));
-            self.recent_files.add_file(path);
+            self.recent_files.add_file(path.clone());
+            
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_lowercase());
+            
+            let module: Box<dyn EditorModule> = match ext.as_deref() {
+                Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
+                Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
+                    let mut editor = ImageEditor::load(path);
+                    editor.set_file_callback(Box::new(move |p: PathBuf| {
+                        let mut recent = RecentFiles::load();
+                        recent.add_file(p);
+                    }));
+                    Box::new(editor)
+                }
+                _ => Box::new(TextEditor::load(path)),
+            };
+            
+            self.active_module = Some(module);
         }
     }
 
@@ -153,8 +250,26 @@ impl UniversalEditor {
         if let Some(action) = self.pending_action.take() {
             match action {
                 PendingAction::OpenFile(path) => {
-                    self.active_module = Some(Box::new(TextEditor::load(path.clone())));
-                    self.recent_files.add_file(path);
+                    self.recent_files.add_file(path.clone());
+                    
+                    let ext = path.extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_lowercase());
+                    
+                    let module: Box<dyn EditorModule> = match ext.as_deref() {
+                        Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
+                        Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
+                            let mut editor = ImageEditor::load(path);
+                            editor.set_file_callback(Box::new(move |p: PathBuf| {
+                                let mut recent = RecentFiles::load();
+                                recent.add_file(p);
+                            }));
+                            Box::new(editor)
+                        }
+                        _ => Box::new(TextEditor::load(path)),
+                    };
+                    
+                    self.active_module = Some(module);
                 }
                 PendingAction::NewFile => {
                     self.active_module = Some(Box::new(TextEditor::new_empty()));
@@ -165,6 +280,24 @@ impl UniversalEditor {
                 PendingAction::Exit => {}
             }
         }
+    }
+
+    fn save_settings(&self) {
+        let settings = AppSettings {
+            theme_preference: self.theme_preference,
+            show_toolbar: self.show_toolbar,
+            show_file_info: self.show_file_info,
+        };
+        settings.save();
+    }
+
+    fn create_image_editor_with_callback(&self) -> Box<dyn EditorModule> {
+        let mut editor = ImageEditor::new();
+        editor.set_file_callback(Box::new(move |path: PathBuf| {
+            let mut recent = RecentFiles::load();
+            recent.add_file(path);
+        }));
+        Box::new(editor)
     }
 
     fn render_unsaved_dialog(&mut self, ctx: &egui::Context) {
@@ -273,7 +406,10 @@ impl UniversalEditor {
                         ui.close();
                     }
                     if ui.button("Open...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
+                            .pick_file() 
+                        {
                             self.open_file(path);
                         }
                         ui.close();
@@ -304,20 +440,60 @@ impl UniversalEditor {
 
                 ui.menu_button("View", |ui| {
                    ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
-                   ui.checkbox(&mut self.show_toolbar, "Show Toolbar");
-                   ui.checkbox(&mut self.show_file_info, "Show File Info");
+                   
+                   if self.is_in_text_editor() {
+                       let toolbar_changed = ui.checkbox(&mut self.show_toolbar, "Show Toolbar").changed();
+                       let file_info_changed = ui.checkbox(&mut self.show_file_info, "Show File Info").changed();
+                       
+                       if toolbar_changed || file_info_changed {
+                           self.save_settings();
+                       }
+                   }
                    
                    ui.separator();
                    
                    ui.label("Theme:");
-                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Light), "Light").clicked() {
-                       self.theme_mode = ThemeMode::Light;
+                   
+                   let system_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::System), 
+                       "System"
+                   ).clicked();
+                   
+                   let light_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::Light), 
+                       "Light"
+                   ).clicked();
+                   
+                   let dark_clicked = ui.selectable_label(
+                       matches!(self.theme_preference, ThemePreference::Dark), 
+                       "Dark"
+                   ).clicked();
+                   
+                   if system_clicked {
+                       self.theme_preference = ThemePreference::System;
+                       let system_theme = match ctx.theme() {
+                           egui::Theme::Dark => ThemeMode::Dark,
+                           egui::Theme::Light => ThemeMode::Light,
+                       };
+                       self.theme_mode = system_theme;
                        style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
                        ui.close();
                    }
-                   if ui.selectable_label(matches!(self.theme_mode, ThemeMode::Dark), "Dark").clicked() {
+                   
+                   if light_clicked {
+                       self.theme_preference = ThemePreference::Light;
+                       self.theme_mode = ThemeMode::Light;
+                       style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
+                       ui.close();
+                   }
+                   
+                   if dark_clicked {
+                       self.theme_preference = ThemePreference::Dark;
                        self.theme_mode = ThemeMode::Dark;
                        style::apply_theme(ctx, self.theme_mode);
+                       self.save_settings();
                        ui.close();
                    }
                 });
@@ -340,6 +516,7 @@ impl UniversalEditor {
                         ui.add_space(8.0);
                         
                         let mut new_text_file_clicked = false;
+                        let mut image_editor_clicked = false;
                         let mut image_converter_clicked = false;
                         
                         let theme_mode = self.theme_mode;
@@ -348,14 +525,20 @@ impl UniversalEditor {
                             if style::sidebar_item(ui, "Text Editor", "T", theme_mode).clicked() {
                                 new_text_file_clicked = true;
                             }
+                            if style::sidebar_item(ui, "Image Editor", "I", theme_mode).clicked() {
+                                image_editor_clicked = true;
+                            }
                         });
                         
                         if new_text_file_clicked {
                             self.new_text_file();
                         }
+                        if image_editor_clicked {
+                            self.switch_to_module(self.create_image_editor_with_callback());
+                        }
                                                 
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, theme_mode, |ui| {
-                            if style::sidebar_item(ui, "Image Converter", "I", theme_mode).clicked() {
+                            if style::sidebar_item(ui, "Image Converter", "C", theme_mode).clicked() {
                                 image_converter_clicked = true;
                             }
                         });
@@ -367,8 +550,9 @@ impl UniversalEditor {
                                                 
                         let recent_files: Vec<RecentFile> = self.recent_files.get_files().to_vec();
                         let mut file_to_open: Option<PathBuf> = None;
+                        let mut file_to_remove: Option<PathBuf> = None;
                         
-                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {
+                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {                 
                             if recent_files.is_empty() {
                                 ui.centered_and_justified(|ui| {
                                     ui.weak("No recent files");
@@ -381,13 +565,31 @@ impl UniversalEditor {
                                             .and_then(|n| n.to_str())
                                             .unwrap_or("Unknown");
                                         
-                                        if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
-                                            file_to_open = Some(recent_file.path.clone());
-                                        }
+                                        ui.horizontal(|ui| {
+                                            if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
+                                                file_to_open = Some(recent_file.path.clone());
+                                            }
+                                            
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                let delete_color = if matches!(theme_mode, ThemeMode::Dark) {
+                                                    ColorPalette::SLATE_100
+                                                } else {
+                                                    ColorPalette::GRAY_600
+                                                };
+                                                
+                                                if ui.button(egui::RichText::new("🗑").color(delete_color).size(14.0)).clicked() {
+                                                    file_to_remove = Some(recent_file.path.clone());
+                                                }
+                                            });
+                                        });
                                     }
                                 }
                             }
                         });
+                        
+                        if let Some(path) = file_to_remove {
+                            self.recent_files.remove_file(&path);
+                        }
                         
                         if let Some(path) = file_to_open {
                             self.open_file(path);
@@ -425,9 +627,16 @@ impl UniversalEditor {
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Open File", self.theme_mode).clicked() {
-                    if let Some(path) = rfd::FileDialog::new().add_filter("Text Files", &["txt", "md"]).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
+                        .pick_file() 
+                    {
                         self.open_file(path);
                     }
+                }
+                ui.add_space(12.0);
+                if style::secondary_button(ui, "Image Editor", self.theme_mode).clicked() {
+                    self.active_module = Some(self.create_image_editor_with_callback());
                 }
                 ui.add_space(12.0);
                 if style::secondary_button(ui, "Image Converter", self.theme_mode).clicked() {
@@ -440,6 +649,18 @@ impl UniversalEditor {
 
 impl eframe::App for UniversalEditor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if matches!(self.theme_preference, ThemePreference::System) {
+            let system_theme = match ctx.theme() {
+                egui::Theme::Dark => ThemeMode::Dark,
+                egui::Theme::Light => ThemeMode::Light,
+            };
+            
+            if self.theme_mode != system_theme {
+                self.theme_mode = system_theme;
+                style::apply_theme(ctx, self.theme_mode);
+            }
+        }
+
         if let Some(PendingAction::Exit) = &self.pending_action {
             if !self.show_unsaved_dialog {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);

@@ -3,6 +3,7 @@ use std::any::Any;
 
 pub mod text_editor;
 pub mod image_converter;
+pub mod image_editor;
 
 #[allow(dead_code)]
 pub trait EditorModule {

@@ -125,6 +125,8 @@ pub struct ImageConverter {
     progress: Arc<Mutex<ConversionProgress>>,
     show_advanced: bool,
     drag_hover: bool,
+    auto_scale_ico: bool,
+    conversion_errors: Arc<Mutex<Vec<String>>>,
 }
 
 impl ImageConverter {
@@ -143,6 +145,8 @@ impl ImageConverter {
             progress: Arc::new(Mutex::new(ConversionProgress::default())),
             show_advanced: false,
             drag_hover: false,
+            auto_scale_ico: true,
+            conversion_errors: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -176,6 +180,8 @@ impl ImageConverter {
             return;
         }
 
+        self.conversion_errors.lock().unwrap().clear();
+
         let output_dir = self.output_directory.clone()
             .unwrap_or_else(|| self.images[0].path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf());
 
@@ -188,6 +194,8 @@ impl ImageConverter {
         let add_suffix = self.add_suffix;
         let suffix = self.custom_suffix.clone();
         let progress = Arc::clone(&self.progress);
+        let errors = Arc::clone(&self.conversion_errors);
+        let auto_scale_ico = self.auto_scale_ico;
 
         thread::spawn(move || {
             {
@@ -218,10 +226,13 @@ impl ImageConverter {
                     overwrite,
                     add_suffix,
                     &suffix,
+                    auto_scale_ico,
                 ) {
                     Ok(_) => success_count += 1,
                     Err(e) => {
-                        eprintln!("Failed to convert {}: {}", image.file_name(), e);
+                        let error_msg = format!("{}: {}", image.file_name(), e);
+                        eprintln!("Failed to convert {}", error_msg);
+                        errors.lock().unwrap().push(error_msg);
                         fail_count += 1;
                     }
                 }
@@ -245,9 +256,19 @@ impl ImageConverter {
         overwrite: bool,
         add_suffix: bool,
         suffix: &str,
+        auto_scale_ico: bool,
     ) -> Result<(), String> {
-        let img = image::open(input_path)
+        let mut img = image::open(input_path)
             .map_err(|e| format!("Failed to open image: {}", e))?;
+
+        if target_format == ImageFormat::Ico && auto_scale_ico {
+            if img.width() > 256 || img.height() > 256 {
+                let scale = 256.0 / img.width().max(img.height()) as f32;
+                let new_width = (img.width() as f32 * scale) as u32;
+                let new_height = (img.height() as f32 * scale) as u32;
+                img = img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
+            }
+        }
 
         let stem = input_path.file_stem()
             .and_then(|s| s.to_str())
@@ -304,6 +325,9 @@ impl ImageConverter {
                     .map_err(|e| format!("Failed to save TIFF: {}", e))?;
             }
             ImageFormat::Ico => {
+                if img.width() > 256 || img.height() > 256 {
+                    return Err(format!("ICO format requires dimensions ≤256px. Image is {}x{}. Enable auto-scaling in settings.", img.width(), img.height()));
+                }
                 img.save_with_format(&output_path, image::ImageFormat::Ico)
                     .map_err(|e| format!("Failed to save ICO: {}", e))?;
             }
@@ -454,6 +478,10 @@ impl ImageConverter {
                                 ui.label(egui::RichText::new("WebP Quality:").color(label_color));
                                 ui.add(egui::Slider::new(&mut self.webp_quality, 0.0..=100.0).suffix("%"));
                             });
+                        }
+                        ImageFormat::Ico => {
+                            ui.checkbox(&mut self.auto_scale_ico, 
+                                egui::RichText::new("Auto-scale to 256px (maintains aspect ratio, only if width > 256px)").color(label_color));
                         }
                         _ => {}
                     }
@@ -680,6 +708,59 @@ impl ImageConverter {
             });
     }
 
+    fn render_errors(&self, ui: &mut egui::Ui, theme: ThemeMode) {
+        let errors_vec = {
+            let errors = self.conversion_errors.lock().unwrap();
+            if errors.is_empty() {
+                return;
+            }
+            errors.clone()
+        };
+
+        let (panel_bg, border_color, text_color) = if matches!(theme, ThemeMode::Dark) {
+            (ColorPalette::ZINC_800, ColorPalette::RED_900, ColorPalette::RED_300)
+        } else {
+            (ColorPalette::RED_50, ColorPalette::RED_400, ColorPalette::RED_800)
+        };
+
+        egui::Frame::new()
+            .fill(panel_bg)
+            .stroke(egui::Stroke::new(1.0, border_color))
+            .corner_radius(8.0)
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Errors ({})", errors_vec.len()))
+                            .size(14.0)
+                            .color(text_color)
+                    );
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Clear").clicked() {
+                            self.conversion_errors.lock().unwrap().clear();
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+
+                egui::ScrollArea::vertical()
+                    .id_salt("error_scroll")
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        for error in errors_vec.iter() {
+                            ui.label(
+                                egui::RichText::new(error)
+                                    .size(12.0)
+                                    .color(text_color)
+                            );
+                            ui.add_space(4.0);
+                        }
+                    });
+            });
+    }
+
     fn render_progress(&self, ui: &mut egui::Ui, theme: ThemeMode) {
         let progress = self.progress.lock().unwrap();
 
@@ -831,6 +912,9 @@ impl EditorModule for ImageConverter {
 
                 ui.add_space(12.0);
                 self.render_image_list(ui, theme);
+
+                ui.add_space(12.0);
+                self.render_errors(ui, theme);
 
                 ui.add_space(12.0);
                 self.render_progress(ui, theme);
