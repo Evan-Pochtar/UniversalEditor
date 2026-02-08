@@ -1,5 +1,6 @@
 use eframe::egui;
-use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageEncoder, Rgba};
+use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
+use crate::modules::image_export::{ExportFormat, export_image};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -141,51 +142,6 @@ enum FilterPanel {
     Sharpen,
     Resize,
     Export,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ExportFormat {
-    Jpeg,
-    Png,
-    Webp,
-    Bmp,
-    Tiff,
-    Ico,
-}
-
-impl ExportFormat {
-    fn as_str(&self) -> &str {
-        match self {
-            ExportFormat::Jpeg => "JPEG",
-            ExportFormat::Png => "PNG",
-            ExportFormat::Webp => "WebP",
-            ExportFormat::Bmp => "BMP",
-            ExportFormat::Tiff => "TIFF",
-            ExportFormat::Ico => "ICO",
-        }
-    }
-
-    fn extension(&self) -> &str {
-        match self {
-            ExportFormat::Jpeg => "jpg",
-            ExportFormat::Png => "png",
-            ExportFormat::Webp => "webp",
-            ExportFormat::Bmp => "bmp",
-            ExportFormat::Tiff => "tiff",
-            ExportFormat::Ico => "ico",
-        }
-    }
-
-    fn all() -> Vec<ExportFormat> {
-        vec![
-            ExportFormat::Jpeg,
-            ExportFormat::Png,
-            ExportFormat::Webp,
-            ExportFormat::Bmp,
-            ExportFormat::Tiff,
-            ExportFormat::Ico,
-        ]
-    }
 }
 
 struct TextState {
@@ -871,62 +827,15 @@ impl ImageEditor {
             None => return Err("Export cancelled".to_string()),
         };
 
-        let mut export_img = img.clone();
-        
-        if self.export_format == ExportFormat::Ico && self.export_auto_scale_ico {
-            if export_img.width() > 256 || export_img.height() > 256 {
-                let scale = 256.0 / export_img.width().max(export_img.height()) as f32;
-                let new_width = (export_img.width() as f32 * scale) as u32;
-                let new_height = (export_img.height() as f32 * scale) as u32;
-                export_img = export_img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
-            }
-        }
-
-        match self.export_format {
-            ExportFormat::Jpeg => {
-                let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-                    std::fs::File::create(&path).map_err(|e| e.to_string())?,
-                    self.export_jpeg_quality,
-                );
-                encoder.encode_image(&export_img).map_err(|e| e.to_string())?;
-            }
-            ExportFormat::Png => {
-                let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
-                let encoder = image::codecs::png::PngEncoder::new_with_quality(
-                    file,
-                    image::codecs::png::CompressionType::Default,
-                    image::codecs::png::FilterType::Adaptive,
-                );
-                encoder.write_image(
-                    export_img.as_bytes(),
-                    export_img.width(),
-                    export_img.height(),
-                    export_img.color().into(),
-                ).map_err(|e| e.to_string())?;
-            }
-            ExportFormat::Webp => {
-                export_img.save_with_format(&path, image::ImageFormat::WebP)
-                    .map_err(|e| e.to_string())?;
-            }
-            ExportFormat::Bmp => {
-                export_img.save_with_format(&path, image::ImageFormat::Bmp)
-                    .map_err(|e| e.to_string())?;
-            }
-            ExportFormat::Tiff => {
-                export_img.save_with_format(&path, image::ImageFormat::Tiff)
-                    .map_err(|e| e.to_string())?;
-            }
-            ExportFormat::Ico => {
-                if export_img.width() > 256 || export_img.height() > 256 {
-                    return Err(format!(
-                        "ICO format requires dimensions â‰¤256px. Image is {}x{}. Enable auto-scaling in export settings.",
-                        export_img.width(), export_img.height()
-                    ));
-                }
-                export_img.save_with_format(&path, image::ImageFormat::Ico)
-                    .map_err(|e| e.to_string())?;
-            }
-        }
+        export_image(
+            img, 
+            &path, 
+            self.export_format, 
+            self.export_jpeg_quality,
+            6,  // Default PNG compression (medium)
+            100.0,  // Default WebP quality
+            self.export_auto_scale_ico
+        )?;
 
         self.filter_panel = FilterPanel::None;
         Ok(path)
@@ -1022,64 +931,64 @@ impl ImageEditor {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             ui.label(egui::RichText::new("File").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "New", theme).clicked() { self.new_image(800, 600); }
-                            if self.toolbar_btn(ui, "Open", theme).clicked() { self.open_image(); }
-                            if self.toolbar_btn(ui, "Save", theme).clicked() { let _ = self.save_impl(); }
-                            if self.toolbar_btn(ui, "Export", theme).clicked() { self.filter_panel = FilterPanel::Export; }
+                            if self.toolbar_btn(ui, "New", None, theme).clicked() { self.new_image(800, 600); }
+                            if self.toolbar_btn(ui, "Open", None, theme).clicked() { self.open_image(); }
+                            if self.toolbar_btn(ui, "Save", Some("Ctrl+S"), theme).clicked() { let _ = self.save_impl(); }
+                            if self.toolbar_btn(ui, "Export", None, theme).clicked() { self.filter_panel = FilterPanel::Export; }
 
                             ui.separator();
                             ui.label(egui::RichText::new("Edit").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Undo", theme).clicked() { self.undo(); }
-                            if self.toolbar_btn(ui, "Redo", theme).clicked() { self.redo(); }
+                            if self.toolbar_btn(ui, "Undo", Some("Ctrl+Z"), theme).clicked() { self.undo(); }
+                            if self.toolbar_btn(ui, "Redo", Some("Ctrl+Y"), theme).clicked() { self.redo(); }
 
                             ui.separator();
                             ui.label(egui::RichText::new("Tools").size(12.0).color(ColorPalette::ZINC_500));
-                            self.tool_btn(ui, "Brush", Tool::Brush, theme);
-                            self.tool_btn(ui, "Eraser", Tool::Eraser, theme);
-                            self.tool_btn(ui, "Fill", Tool::Fill, theme);
-                            self.tool_btn(ui, "Text", Tool::Text, theme);
-                            self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, theme);
-                            self.tool_btn(ui, "Crop", Tool::Crop, theme);
-                            self.tool_btn(ui, "Pan", Tool::Pan, theme);
+                            self.tool_btn(ui, "Brush", Tool::Brush, Some("B"), theme);
+                            self.tool_btn(ui, "Eraser", Tool::Eraser, Some("E"), theme);
+                            self.tool_btn(ui, "Fill", Tool::Fill, Some("F"), theme);
+                            self.tool_btn(ui, "Text", Tool::Text, Some("T"), theme);
+                            self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, Some("D"), theme);
+                            self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
+                            self.tool_btn(ui, "Pan", Tool::Pan, Some("P"), theme);
 
                             ui.separator();
                             ui.label(egui::RichText::new("Transform").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Flip H", theme).clicked() { self.push_undo(); self.apply_flip_h(); }
-                            if self.toolbar_btn(ui, "Flip V", theme).clicked() { self.push_undo(); self.apply_flip_v(); }
-                            if self.toolbar_btn(ui, "Rot CW", theme).clicked() { self.push_undo(); self.apply_rotate_cw(); }
-                            if self.toolbar_btn(ui, "Rot CCW", theme).clicked() { self.push_undo(); self.apply_rotate_ccw(); }
+                            if self.toolbar_btn(ui, "Flip H", None, theme).clicked() { self.push_undo(); self.apply_flip_h(); }
+                            if self.toolbar_btn(ui, "Flip V", None, theme).clicked() { self.push_undo(); self.apply_flip_v(); }
+                            if self.toolbar_btn(ui, "Rot CW", None, theme).clicked() { self.push_undo(); self.apply_rotate_cw(); }
+                            if self.toolbar_btn(ui, "Rot CCW", None, theme).clicked() { self.push_undo(); self.apply_rotate_ccw(); }
 
                             ui.separator();
                             ui.label(egui::RichText::new("Filters").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "B/C", theme).clicked() { self.filter_panel = FilterPanel::BrightnessContrast; }
-                            if self.toolbar_btn(ui, "H/S", theme).clicked() { self.filter_panel = FilterPanel::HueSaturation; }
-                            if self.toolbar_btn(ui, "Blur", theme).clicked() { self.filter_panel = FilterPanel::Blur; }
-                            if self.toolbar_btn(ui, "Sharpen", theme).clicked() { self.filter_panel = FilterPanel::Sharpen; }
-                            if self.toolbar_btn(ui, "Gray", theme).clicked() { self.push_undo(); self.apply_grayscale(); }
-                            if self.toolbar_btn(ui, "Invert", theme).clicked() { self.push_undo(); self.apply_invert(); }
-                            if self.toolbar_btn(ui, "Sepia", theme).clicked() { self.push_undo(); self.apply_sepia(); }
+                            if self.toolbar_btn(ui, "B/C", None, theme).clicked() { self.filter_panel = FilterPanel::BrightnessContrast; }
+                            if self.toolbar_btn(ui, "H/S", None, theme).clicked() { self.filter_panel = FilterPanel::HueSaturation; }
+                            if self.toolbar_btn(ui, "Blur", None, theme).clicked() { self.filter_panel = FilterPanel::Blur; }
+                            if self.toolbar_btn(ui, "Sharpen", None, theme).clicked() { self.filter_panel = FilterPanel::Sharpen; }
+                            if self.toolbar_btn(ui, "Gray", None, theme).clicked() { self.push_undo(); self.apply_grayscale(); }
+                            if self.toolbar_btn(ui, "Invert", None, theme).clicked() { self.push_undo(); self.apply_invert(); }
+                            if self.toolbar_btn(ui, "Sepia", None, theme).clicked() { self.push_undo(); self.apply_sepia(); }
 
                             ui.separator();
                             ui.label(egui::RichText::new("View").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Fit", theme).clicked() { self.fit_image(); }
-                            if self.toolbar_btn(ui, "+", theme).clicked() { self.zoom *= 1.25; }
-                            if self.toolbar_btn(ui, "-", theme).clicked() { self.zoom = (self.zoom / 1.25).max(0.01); }
-                            if self.toolbar_btn(ui, "1:1", theme).clicked() { self.zoom = 1.0; self.pan = egui::Vec2::ZERO; }
+                            if self.toolbar_btn(ui, "Fit", Some("0"), theme).clicked() { self.fit_image(); }
+                            if self.toolbar_btn(ui, "+", Some("+"), theme).clicked() { self.zoom *= 1.25; }
+                            if self.toolbar_btn(ui, "-", Some("-"), theme).clicked() { self.zoom = (self.zoom / 1.25).max(0.01); }
+                            if self.toolbar_btn(ui, "1:1", None, theme).clicked() { self.zoom = 1.0; self.pan = egui::Vec2::ZERO; }
 
                             ui.separator();
-                            if self.toolbar_btn(ui, "Resize", theme).clicked() { self.filter_panel = FilterPanel::Resize; }
+                            if self.toolbar_btn(ui, "Resize", None, theme).clicked() { self.filter_panel = FilterPanel::Resize; }
                         });
                     });
             });
     }
 
-    fn toolbar_btn(&self, ui: &mut egui::Ui, label: &str, theme: ThemeMode) -> egui::Response {
+    fn toolbar_btn(&self, ui: &mut egui::Ui, label: &str, shortcut: Option<&str>, theme: ThemeMode) -> egui::Response {
         let (bg, hover, txt) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_700, ColorPalette::ZINC_600, ColorPalette::ZINC_200)
         } else {
             (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
         };
-        ui.scope(|ui| {
+        let response = ui.scope(|ui| {
             let s = ui.style_mut();
             s.visuals.widgets.inactive.bg_fill = bg;
             s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
@@ -1087,10 +996,16 @@ impl ImageEditor {
             s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
             s.visuals.widgets.active.bg_fill = hover;
             ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0)))
-        }).inner
+        }).inner;
+        
+        if let Some(sc) = shortcut {
+            response.on_hover_text(sc)
+        } else {
+            response
+        }
     }
 
-    fn tool_btn(&mut self, ui: &mut egui::Ui, label: &str, tool: Tool, theme: ThemeMode) {
+    fn tool_btn(&mut self, ui: &mut egui::Ui, label: &str, tool: Tool, shortcut: Option<&str>, theme: ThemeMode) {
         let active = self.tool == tool;
         let (bg, hover, txt) = if active {
             (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE)
@@ -1099,16 +1014,21 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
         };
-        let clicked = ui.scope(|ui| {
+        let response = ui.scope(|ui| {
             let s = ui.style_mut();
             s.visuals.widgets.inactive.bg_fill = bg;
             s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
             s.visuals.widgets.hovered.bg_fill = hover;
             s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
             s.visuals.widgets.active.bg_fill = hover;
-            ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0))).clicked()
+            let btn = ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0)));
+            if let Some(sc) = shortcut {
+                btn.on_hover_text(sc)
+            } else {
+                btn
+            }
         }).inner;
-        if clicked { self.tool = tool; }
+        if response.clicked() { self.tool = tool; }
     }
 
     fn render_options_bar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
@@ -1755,6 +1675,19 @@ impl ImageEditor {
         if response.clicked_by(egui::PointerButton::Primary) {
             let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
             match self.tool {
+                Tool::Brush | Tool::Eraser => {
+                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.push_undo();
+                        self.stroke_points.clear();
+                        self.stroke_points.push((ix as f32, iy as f32));
+                        self.stroke_points.push((ix as f32 + 0.1, iy as f32 + 0.1));
+                        self.apply_brush_stroke();
+                        self.stroke_points.clear();
+                        if self.tool == Tool::Brush {
+                            self.add_color_to_history();
+                        }
+                    }
+                }
                 Tool::Fill => {
                     if let Some((ix, iy)) = self.screen_to_image(pos) {
                         self.push_undo();

@@ -4,6 +4,7 @@ use std::any::Any;
 pub mod text_editor;
 pub mod image_converter;
 pub mod image_editor;
+pub mod image_export;
 
 #[allow(dead_code)]
 pub trait EditorModule {

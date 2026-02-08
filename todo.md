@@ -55,7 +55,7 @@
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
 #### Image Editor
-- [ ] Can't just click to color for brush, must drag
+- [x] Can't just click to color for brush, must drag
 - [x] Color picker
   - [x] Hexcode Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
@@ -115,6 +115,7 @@
   - [ ] Add opacity to color picker
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
+- [x] Keyboard Shortcuts
 - [ ] Copy/paste/cut within selection
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
@@ -131,7 +132,7 @@
 - [ ] Images show up in recent files
 - [ ] Better text selection/writing tool
   - [ ] Resize text, easy selection of text
-- [ ] Make image converter and image editor use the same export function
+- [x] Make image converter and image editor use the same export function
 - [ ] Add different cursors for different functions/tools
 
 #### CONVERTER: Img 2 Img

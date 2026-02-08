@@ -35,3 +35,11 @@
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
 - **GENERAL**: Images now show up in recent files when opened from main menu
+
+## V0.0.3
+
+#### Features
+- **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
+  
+#### Debugging
+- **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
