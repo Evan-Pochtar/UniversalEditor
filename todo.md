@@ -11,7 +11,8 @@
   - [x] Converter/Screen List
   - [ ] Change checkmark close/open sidebar to a small arrow.
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
-- [ ] Unified Top Bar Handling
+- [x] Unified Top Bar Handling
+- [ ] Better File System
 
 ## Screens
 

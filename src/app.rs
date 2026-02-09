@@ -397,6 +397,12 @@ impl UniversalEditor {
     }
 
     fn top_bar(&mut self, ctx: &egui::Context) {
+        let contributions = if let Some(module) = &self.active_module {
+            module.get_menu_contributions()
+        } else {
+            Default::default()
+        };
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.add_space(4.0);
             egui::MenuBar::new().ui(ui, |ui| {
@@ -415,18 +421,39 @@ impl UniversalEditor {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Save (Ctrl+S)").clicked() {
+                    
+                    let has_module = self.active_module.is_some();
+                    if ui.add_enabled(has_module, egui::Button::new("Save (Ctrl+S)")).clicked() {
                         if let Some(module) = &mut self.active_module {
                             let _ = module.save();
                         }
                         ui.close();
                     }
-                    if ui.button("Save As...").clicked() {
+                    if ui.add_enabled(has_module, egui::Button::new("Save As...")).clicked() {
                         if let Some(module) = &mut self.active_module {
                             let _ = module.save_as();
                         }
                         ui.close();
                     }
+                    
+                    if !contributions.file_items.is_empty() {
+                        ui.separator();
+                        for (item, action) in &contributions.file_items {
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    }
+                    
                     ui.separator();
                     if ui.button("Exit").clicked() {
                         if self.has_unsaved_changes() {
@@ -435,8 +462,28 @@ impl UniversalEditor {
                         } else {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
+                        ui.close();
                     }
                 });
+
+                if !contributions.edit_items.is_empty() {
+                    ui.menu_button("Edit", |ui| {
+                        for (item, action) in &contributions.edit_items {
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
 
                 ui.menu_button("View", |ui| {
                    ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
@@ -666,6 +713,8 @@ impl eframe::App for UniversalEditor {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
+
+        self.render_unsaved_dialog(ctx);
 
         self.top_bar(ctx);
         self.sidebar(ctx);

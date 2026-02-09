@@ -52,7 +52,7 @@ pub fn export_image(
     format: ExportFormat,
     jpeg_quality: u8,
     png_compression: u8,
-    _webp_quality: f32,  // Not used but kept for API consistency
+    _webp_quality: f32,
     auto_scale_ico: bool,
 ) -> Result<(), String> {
     let mut export_img = img.clone();

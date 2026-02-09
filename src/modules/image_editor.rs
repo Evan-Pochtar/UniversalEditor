@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
-use super::EditorModule;
+use super::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -929,19 +929,6 @@ impl ImageEditor {
                     .min_scrolled_height(32.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            ui.label(egui::RichText::new("File").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "New", None, theme).clicked() { self.new_image(800, 600); }
-                            if self.toolbar_btn(ui, "Open", None, theme).clicked() { self.open_image(); }
-                            if self.toolbar_btn(ui, "Save", Some("Ctrl+S"), theme).clicked() { let _ = self.save_impl(); }
-                            if self.toolbar_btn(ui, "Export", None, theme).clicked() { self.filter_panel = FilterPanel::Export; }
-
-                            ui.separator();
-                            ui.label(egui::RichText::new("Edit").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Undo", Some("Ctrl+Z"), theme).clicked() { self.undo(); }
-                            if self.toolbar_btn(ui, "Redo", Some("Ctrl+Y"), theme).clicked() { self.redo(); }
-
-                            ui.separator();
                             ui.label(egui::RichText::new("Tools").size(12.0).color(ColorPalette::ZINC_500));
                             self.tool_btn(ui, "Brush", Tool::Brush, Some("B"), theme);
                             self.tool_btn(ui, "Eraser", Tool::Eraser, Some("E"), theme);
@@ -1906,6 +1893,52 @@ impl EditorModule for ImageEditor {
 
     fn save(&mut self) -> Result<(), String> { self.save_impl() }
     fn save_as(&mut self) -> Result<(), String> { self.save_as_impl() }
+
+    fn get_menu_contributions(&self) -> MenuContribution {
+        let has_image = self.image.is_some();
+        let has_undo = !self.undo_stack.is_empty();
+        let has_redo = !self.redo_stack.is_empty();
+        
+        MenuContribution {
+            file_items: vec![
+                (MenuItem {
+                    label: "Export...".to_string(),
+                    shortcut: None,
+                    enabled: has_image,
+                }, MenuAction::Export),
+            ],
+            edit_items: vec![
+                (MenuItem {
+                    label: "Undo".to_string(),
+                    shortcut: Some("Ctrl+Z".to_string()),
+                    enabled: has_undo,
+                }, MenuAction::Undo),
+                (MenuItem {
+                    label: "Redo".to_string(),
+                    shortcut: Some("Ctrl+Y".to_string()),
+                    enabled: has_redo,
+                }, MenuAction::Redo),
+            ],
+        }
+    }
+    
+    fn handle_menu_action(&mut self, action: MenuAction) -> bool {
+        match action {
+            MenuAction::Undo => {
+                self.undo();
+                true
+            }
+            MenuAction::Redo => {
+                self.redo();
+                true
+            }
+            MenuAction::Export => {
+                self.filter_panel = FilterPanel::Export;
+                true
+            }
+            _ => false,
+        }
+    }
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };

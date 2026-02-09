@@ -40,6 +40,7 @@
 
 #### Features
 - **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
+- **GENERAL**: Top panel now customized to each page
   
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
