@@ -61,6 +61,7 @@
   - [x] Hexcode Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
+- [ ] Resize does not work if not aspect ratio locked
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
@@ -130,7 +131,7 @@
 - [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
-- [ ] Images show up in recent files
+- [x] Images show up in recent files
 - [ ] Better text selection/writing tool
   - [ ] Resize text, easy selection of text
 - [x] Make image converter and image editor use the same export function

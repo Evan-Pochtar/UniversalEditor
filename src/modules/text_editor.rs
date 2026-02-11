@@ -1315,6 +1315,7 @@ impl EditorModule for TextEditor {
                     enabled: false,
                 }, MenuAction::Redo),
             ],
+            view_items: Vec::new(),
         }
     }
     

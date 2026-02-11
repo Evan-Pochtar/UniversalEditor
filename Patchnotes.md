@@ -44,3 +44,4 @@
   
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
+- **IMG EDITOR**: Images now show up in "Recent Files" properly

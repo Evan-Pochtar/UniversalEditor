@@ -7,7 +7,6 @@ pub mod image_editor;
 pub mod image_export;
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub enum MenuAction {
     Undo,
     Redo,
@@ -26,6 +25,7 @@ pub struct MenuItem {
 pub struct MenuContribution {
     pub file_items: Vec<(MenuItem, MenuAction)>,
     pub edit_items: Vec<(MenuItem, MenuAction)>,
+    pub view_items: Vec<(MenuItem, MenuAction)>,
 }
 
 #[allow(dead_code)]

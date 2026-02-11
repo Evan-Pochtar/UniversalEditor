@@ -4,6 +4,7 @@ use super::style::{self, ThemeMode};
 use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_editor::ImageEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::fs;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -145,6 +146,8 @@ pub struct UniversalEditor {
     show_file_info: bool,
     show_unsaved_dialog: bool,
     pending_action: Option<PendingAction>,
+    recent_file_tx: SyncSender<PathBuf>,
+    recent_file_rx: Receiver<PathBuf>,
 }
 
 impl UniversalEditor {
@@ -164,6 +167,8 @@ impl UniversalEditor {
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
         
+        let (tx, rx) = sync_channel(20);
+        
         Self {
             active_module: None,
             sidebar_open: true,
@@ -177,6 +182,8 @@ impl UniversalEditor {
             show_file_info: settings.show_file_info,
             show_unsaved_dialog: false,
             pending_action: None,
+            recent_file_tx: tx,
+            recent_file_rx: rx,
         }
     }
 
@@ -215,9 +222,9 @@ impl UniversalEditor {
                 Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
                 Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
                     let mut editor = ImageEditor::load(path);
+                    let tx = self.recent_file_tx.clone();
                     editor.set_file_callback(Box::new(move |p: PathBuf| {
-                        let mut recent = RecentFiles::load();
-                        recent.add_file(p);
+                        let _ = tx.send(p);
                     }));
                     Box::new(editor)
                 }
@@ -293,9 +300,10 @@ impl UniversalEditor {
 
     fn create_image_editor_with_callback(&self) -> Box<dyn EditorModule> {
         let mut editor = ImageEditor::new();
+        let tx = self.recent_file_tx.clone();
+        
         editor.set_file_callback(Box::new(move |path: PathBuf| {
-            let mut recent = RecentFiles::load();
-            recent.add_file(path);
+            let _ = tx.send(path);
         }));
         Box::new(editor)
     }
@@ -484,65 +492,83 @@ impl UniversalEditor {
                         }
                     });
                 }
-
+                
                 ui.menu_button("View", |ui| {
-                   ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
+                    ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
                    
-                   if self.is_in_text_editor() {
-                       let toolbar_changed = ui.checkbox(&mut self.show_toolbar, "Show Toolbar").changed();
-                       let file_info_changed = ui.checkbox(&mut self.show_file_info, "Show File Info").changed();
+                    if self.is_in_text_editor() {
+                        let toolbar_changed = ui.checkbox(&mut self.show_toolbar, "Show Toolbar").changed();
+                        let file_info_changed = ui.checkbox(&mut self.show_file_info, "Show File Info").changed();
                        
-                       if toolbar_changed || file_info_changed {
-                           self.save_settings();
-                       }
-                   }
+                        if toolbar_changed || file_info_changed {
+                            self.save_settings();
+                        }
+                    }
+
+                    if !contributions.view_items.is_empty() {
+                        ui.separator();
+                        for (item, action) in &contributions.view_items {
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    }
+
+                    ui.separator();
                    
-                   ui.separator();
+                    ui.label("Theme:");
                    
-                   ui.label("Theme:");
+                    let system_clicked = ui.selectable_label(
+                        matches!(self.theme_preference, ThemePreference::System), 
+                        "System"
+                    ).clicked();
                    
-                   let system_clicked = ui.selectable_label(
-                       matches!(self.theme_preference, ThemePreference::System), 
-                       "System"
-                   ).clicked();
+                    let light_clicked = ui.selectable_label(
+                        matches!(self.theme_preference, ThemePreference::Light), 
+                        "Light"
+                    ).clicked();
                    
-                   let light_clicked = ui.selectable_label(
-                       matches!(self.theme_preference, ThemePreference::Light), 
-                       "Light"
-                   ).clicked();
+                    let dark_clicked = ui.selectable_label(
+                        matches!(self.theme_preference, ThemePreference::Dark), 
+                        "Dark"
+                    ).clicked();
                    
-                   let dark_clicked = ui.selectable_label(
-                       matches!(self.theme_preference, ThemePreference::Dark), 
-                       "Dark"
-                   ).clicked();
+                    if system_clicked {
+                        self.theme_preference = ThemePreference::System;
+                        let system_theme = match ctx.theme() {
+                            egui::Theme::Dark => ThemeMode::Dark,
+                            egui::Theme::Light => ThemeMode::Light,
+                        };
+                        self.theme_mode = system_theme;
+                        style::apply_theme(ctx, self.theme_mode);
+                        self.save_settings();
+                        ui.close();
+                    }
                    
-                   if system_clicked {
-                       self.theme_preference = ThemePreference::System;
-                       let system_theme = match ctx.theme() {
-                           egui::Theme::Dark => ThemeMode::Dark,
-                           egui::Theme::Light => ThemeMode::Light,
-                       };
-                       self.theme_mode = system_theme;
-                       style::apply_theme(ctx, self.theme_mode);
-                       self.save_settings();
-                       ui.close();
-                   }
+                    if light_clicked {
+                        self.theme_preference = ThemePreference::Light;
+                        self.theme_mode = ThemeMode::Light;
+                        style::apply_theme(ctx, self.theme_mode);
+                        self.save_settings();
+                        ui.close();
+                    }
                    
-                   if light_clicked {
-                       self.theme_preference = ThemePreference::Light;
-                       self.theme_mode = ThemeMode::Light;
-                       style::apply_theme(ctx, self.theme_mode);
-                       self.save_settings();
-                       ui.close();
-                   }
-                   
-                   if dark_clicked {
-                       self.theme_preference = ThemePreference::Dark;
-                       self.theme_mode = ThemeMode::Dark;
-                       style::apply_theme(ctx, self.theme_mode);
-                       self.save_settings();
-                       ui.close();
-                   }
+                    if dark_clicked {
+                        self.theme_preference = ThemePreference::Dark;
+                        self.theme_mode = ThemeMode::Dark;
+                        style::apply_theme(ctx, self.theme_mode);
+                        self.save_settings();
+                        ui.close();
+                    }
                 });
             });
             ui.add_space(4.0);
@@ -708,6 +734,10 @@ impl eframe::App for UniversalEditor {
             }
         }
 
+        while let Ok(path) = self.recent_file_rx.try_recv() {
+            self.recent_files.add_file(path);
+        }
+
         if let Some(PendingAction::Exit) = &self.pending_action {
             if !self.show_unsaved_dialog {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -715,7 +745,6 @@ impl eframe::App for UniversalEditor {
         }
 
         self.render_unsaved_dialog(ctx);
-
         self.top_bar(ctx);
         self.sidebar(ctx);
 
