@@ -929,7 +929,6 @@ impl ImageEditor {
                     .min_scrolled_height(32.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Tools").size(12.0).color(ColorPalette::ZINC_500));
                             self.tool_btn(ui, "Brush", Tool::Brush, Some("B"), theme);
                             self.tool_btn(ui, "Eraser", Tool::Eraser, Some("E"), theme);
                             self.tool_btn(ui, "Fill", Tool::Fill, Some("F"), theme);
@@ -954,13 +953,6 @@ impl ImageEditor {
                             if self.toolbar_btn(ui, "Gray", None, theme).clicked() { self.push_undo(); self.apply_grayscale(); }
                             if self.toolbar_btn(ui, "Invert", None, theme).clicked() { self.push_undo(); self.apply_invert(); }
                             if self.toolbar_btn(ui, "Sepia", None, theme).clicked() { self.push_undo(); self.apply_sepia(); }
-
-                            ui.separator();
-                            ui.label(egui::RichText::new("View").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Fit", Some("0"), theme).clicked() { self.fit_image(); }
-                            if self.toolbar_btn(ui, "+", Some("+"), theme).clicked() { self.zoom *= 1.25; }
-                            if self.toolbar_btn(ui, "-", Some("-"), theme).clicked() { self.zoom = (self.zoom / 1.25).max(0.01); }
-                            if self.toolbar_btn(ui, "1:1", None, theme).clicked() { self.zoom = 1.0; self.pan = egui::Vec2::ZERO; }
 
                             ui.separator();
                             if self.toolbar_btn(ui, "Resize", None, theme).clicked() { self.filter_panel = FilterPanel::Resize; }
@@ -1919,6 +1911,23 @@ impl EditorModule for ImageEditor {
                     enabled: has_redo,
                 }, MenuAction::Redo),
             ],
+            view_items: vec![
+                (MenuItem {
+                    label: "Zoom In".to_string(),
+                    shortcut: Some("+".to_string()),
+                    enabled: true,
+                }, MenuAction::Custom("Zoom In".to_string())),
+                (MenuItem {
+                    label: "Zoom Out".to_string(),
+                    shortcut: Some("-".to_string()),
+                    enabled: true,
+                }, MenuAction::Custom("Zoom Out".to_string())),
+                (MenuItem {
+                    label: "Fit".to_string(),
+                    shortcut: Some("0".to_string()),
+                    enabled: true,
+                }, MenuAction::Custom("Fit".to_string())),
+            ],
         }
     }
     
@@ -1934,6 +1943,18 @@ impl EditorModule for ImageEditor {
             }
             MenuAction::Export => {
                 self.filter_panel = FilterPanel::Export;
+                true
+            }
+            MenuAction::Custom(val) if val == "Zoom In".to_string() => {
+                self.zoom *= 1.25;
+                true
+            }
+            MenuAction::Custom(val) if val == "Zoom Out".to_string() => {
+                self.zoom = (self.zoom / 1.25).max(0.01);
+                true
+            }
+            MenuAction::Custom(val) if val == "Fit".to_string() => {
+                self.fit_image();
                 true
             }
             _ => false,
