@@ -61,7 +61,7 @@
   - [x] Hexcode Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
-- [ ] Resize does not work if not aspect ratio locked
+- [x] Resize does not work if not aspect ratio locked
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
@@ -127,8 +127,6 @@
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
 - [ ] Filter preview before apply
-- [ ] Better toolbar organization
-- [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files
@@ -136,6 +134,7 @@
   - [ ] Resize text, easy selection of text
 - [x] Make image converter and image editor use the same export function
 - [ ] Add different cursors for different functions/tools
+- [ ] Crop should show preview of the size of the image
 
 #### CONVERTER: Img 2 Img
 - [ ] Keyboard Shortcuts

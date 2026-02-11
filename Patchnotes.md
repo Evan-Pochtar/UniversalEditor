@@ -40,6 +40,7 @@
 
 #### Features
 - **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
+- **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
 - **GENERAL**: Top panel now customized to each page
   
 #### Debugging

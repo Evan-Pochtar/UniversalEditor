@@ -13,7 +13,6 @@ use std::fs;
 const MAX_UNDO: usize = 20;
 const MAX_COLOR_HISTORY: usize = 20;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 struct RgbaColor {
     r: u8,
@@ -204,6 +203,7 @@ pub struct ImageEditor {
     resize_w: u32,
     resize_h: u32,
     resize_locked: bool,
+    resize_stretch: bool,
 
     export_format: ExportFormat,
     export_jpeg_quality: u8,
@@ -254,6 +254,7 @@ impl ImageEditor {
             resize_w: 0,
             resize_h: 0,
             resize_locked: true,
+            resize_stretch: false,
             export_format: ExportFormat::Png,
             export_jpeg_quality: 90,
             export_preserve_metadata: true,
@@ -791,6 +792,7 @@ impl ImageEditor {
         
         let w = self.resize_w;
         let h = self.resize_h;
+        let stretch = self.resize_stretch;
         let progress = Arc::clone(&self.filter_progress);
         let result = Arc::clone(&self.pending_filter_result);
         
@@ -799,8 +801,16 @@ impl ImageEditor {
         
         thread::spawn(move || {
             *progress.lock().unwrap() = 0.5;
-            let resized = img.resize(w, h, image::imageops::FilterType::Lanczos3);
-            *result.lock().unwrap() = Some(resized);
+            
+            let final_img = if stretch {
+                 img.resize_exact(w, h, image::imageops::FilterType::Lanczos3)
+            } else {
+                let mut new_buf = ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]));
+                image::imageops::overlay(&mut new_buf, &img, 0, 0);
+                DynamicImage::ImageRgba8(new_buf)
+            };
+            
+            *result.lock().unwrap() = Some(final_img);
             *progress.lock().unwrap() = 1.0;
         });
     }
@@ -832,8 +842,8 @@ impl ImageEditor {
             &path, 
             self.export_format, 
             self.export_jpeg_quality,
-            6,  // Default PNG compression (medium)
-            100.0,  // Default WebP quality
+            6,
+            100.0,
             self.export_auto_scale_ico
         )?;
 
@@ -1189,24 +1199,27 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::Resize => {
-                        ui.label(egui::RichText::new("Resize").size(13.0).color(text_col));
+                        ui.label(egui::RichText::new("Resize").size(16.0).color(text_col));
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("W:").size(12.0).color(label_col));
+                            ui.label(egui::RichText::new("Width:").size(12.0).color(label_col));
                             let old_w = self.resize_w;
                             ui.add(egui::DragValue::new(&mut self.resize_w).range(1..=8192));
                             if self.resize_locked && self.resize_w != old_w && old_w > 0 {
                                 let ratio = self.resize_w as f64 / old_w as f64;
                                 self.resize_h = (self.resize_h as f64 * ratio).max(1.0) as u32;
                             }
-                            ui.label(egui::RichText::new("H:").size(12.0).color(label_col));
+                            ui.label(egui::RichText::new("Height:").size(12.0).color(label_col));
                             let old_h = self.resize_h;
                             ui.add(egui::DragValue::new(&mut self.resize_h).range(1..=8192));
                             if self.resize_locked && self.resize_h != old_h && old_h > 0 {
                                 let ratio = self.resize_h as f64 / old_h as f64;
                                 self.resize_w = (self.resize_w as f64 * ratio).max(1.0) as u32;
                             }
-                            if ui.checkbox(&mut self.resize_locked, "Lock").changed() {}
                         });
+                        if ui.checkbox(&mut self.resize_locked, "Lock Aspect Ratio").changed() {}
+                        ui.checkbox(&mut self.resize_stretch, "Stretch Image")
+                            .on_hover_text("If unchecked, resizes canvas and pads with white/crops");
+
                         ui.horizontal(|ui| {
                             if ui.button("Apply").clicked() { self.push_undo(); self.apply_resize(); }
                             if ui.button("Cancel").clicked() {
