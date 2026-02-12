@@ -133,6 +133,22 @@ enum PendingAction {
     Exit,
 }
 
+#[derive(PartialEq)]
+enum HomeAction {
+    NewTextFile,
+    OpenFile,
+    ImageEditor,
+    ImageConverter,
+    ShowSettings,
+    ShowPatchNotes,
+}
+
+struct PatchVersion {
+    version: String,
+    tag: String,
+    notes: Vec<String>,
+}
+
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
     sidebar_open: bool,
@@ -145,9 +161,13 @@ pub struct UniversalEditor {
     show_toolbar: bool,
     show_file_info: bool,
     show_unsaved_dialog: bool,
+    show_patch_notes: bool,
+    show_settings: bool,
     pending_action: Option<PendingAction>,
     recent_file_tx: SyncSender<PathBuf>,
     recent_file_rx: Receiver<PathBuf>,
+    patch_notes: Vec<PatchVersion>,
+    patch_notes_page: usize,
 }
 
 impl UniversalEditor {
@@ -168,6 +188,43 @@ impl UniversalEditor {
         style::apply_theme(&cc.egui_ctx, initial_theme);
         
         let (tx, rx) = sync_channel(20);
+
+        let patch_content = include_str!("../Patchnotes.md");
+        let mut patch_notes = Vec::new();
+        let mut current_version: Option<PatchVersion> = None;
+        let mut current_category = String::new();
+
+        for line in patch_content.lines() {
+            let line = line.trim();
+            if line.starts_with("## V") {
+                if let Some(v) = current_version.take() {
+                    patch_notes.push(v);
+                }
+                let ver_str = line.trim_start_matches("## ").trim().to_string();
+                current_version = Some(PatchVersion {
+                    version: ver_str,
+                    tag: "Update".to_string(),
+                    notes: Vec::new(),
+                });
+                current_category.clear();
+            } else if line.starts_with("#### ") {
+                current_category = line.trim_start_matches("#### ").trim().to_string();
+            } else if line.starts_with("- ") || line.starts_with("* ") {
+                if let Some(v) = &mut current_version {
+                    let text = line[2..].trim();
+                    let note = if !current_category.is_empty() {
+                        format!("**{}**: {}", current_category, text)
+                    } else {
+                        text.to_string()
+                    };
+                    v.notes.push(note);
+                }
+            }
+        }
+        if let Some(v) = current_version {
+            patch_notes.push(v);
+        }
+        patch_notes.reverse(); 
         
         Self {
             active_module: None,
@@ -181,9 +238,13 @@ impl UniversalEditor {
             show_toolbar: settings.show_toolbar,
             show_file_info: settings.show_file_info,
             show_unsaved_dialog: false,
+            show_patch_notes: false,
+            show_settings: false,
             pending_action: None,
             recent_file_tx: tx,
             recent_file_rx: rx,
+            patch_notes,
+            patch_notes_page: 0,
         }
     }
 
@@ -685,38 +746,445 @@ impl UniversalEditor {
     }
 
     fn landing_page(&mut self, ui: &mut egui::Ui) {
-        ui.centered_and_justified(|ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(40.0);
-                
-                ui.heading(egui::RichText::new("UNIVERSAL EDITOR").size(32.0));
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("A modern, modular editor").size(14.0));
-                
-                ui.add_space(40.0);
+        let theme = self.theme_mode;
 
-                if style::primary_button(ui, "New Text File", self.theme_mode).clicked() {
-                    self.active_module = Some(Box::new(TextEditor::new_empty()));
-                }
-                ui.add_space(12.0);
-                if style::secondary_button(ui, "Open File", self.theme_mode).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
-                        .pick_file() 
-                    {
-                        self.open_file(path);
-                    }
-                }
-                ui.add_space(12.0);
-                if style::secondary_button(ui, "Image Editor", self.theme_mode).clicked() {
-                    self.active_module = Some(self.create_image_editor_with_callback());
-                }
-                ui.add_space(12.0);
-                if style::secondary_button(ui, "Image Converter", self.theme_mode).clicked() {
-                    self.active_module = Some(Box::new(ImageConverter::new()));
-                }
+        let (title_col, sub_col, accent_line, ver_bg, ver_text_col) = match theme {
+            ThemeMode::Dark => (
+                egui::Color32::WHITE,
+                ColorPalette::ZINC_400,
+                ColorPalette::ZINC_800,
+                egui::Color32::from_rgb(32, 32, 40),
+                ColorPalette::ZINC_400,
+            ),
+            ThemeMode::Light => (
+                ColorPalette::GRAY_900,
+                ColorPalette::GRAY_500,
+                ColorPalette::GRAY_200,
+                ColorPalette::GRAY_100,
+                ColorPalette::GRAY_500,
+            ),
+        };
+
+        let mut action: Option<HomeAction> = None;
+
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let avail_w = ui.available_width();
+                let h_pad   = 48.0_f32.max((avail_w - 960.0) / 2.0);
+                let margin  = egui::Margin { left: h_pad as i8, right: h_pad as i8, ..Default::default() };
+
+                ui.add_space(36.0);
+
+                egui::Frame::new().inner_margin(margin).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Universal Editor")
+                                        .size(38.0)
+                                        .strong()
+                                        .color(title_col),
+                                );
+                                ui.add_space(10.0);
+                                egui::Frame::new()
+                                    .fill(ver_bg)
+                                    .corner_radius(10.0)
+                                    .inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 })
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new("v0.0.3")
+                                                .size(11.0)
+                                                .color(ver_text_col),
+                                        );
+                                    });
+                            });
+                            ui.label(
+                                egui::RichText::new("A modular suite for text and media")
+                                    .size(14.0)
+                                    .color(sub_col),
+                            );
+                        });
+
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if style::ghost_button(ui, "About", true, theme).clicked() {}
+                                ui.add_space(4.0);
+                                if style::ghost_button(ui, "Patch Notes", false, theme).clicked() {
+                                    action = Some(HomeAction::ShowPatchNotes);
+                                }
+                                ui.add_space(4.0);
+                                if style::ghost_button(ui, "Settings", false, theme).clicked() {
+                                    action = Some(HomeAction::ShowSettings);
+                                }
+                            },
+                        );
+                    });
+                });
+
+                ui.add_space(20.0);
+
+                let start_x = ui.cursor().min.x;
+                let sep_y    = ui.cursor().min.y;
+                let sep_rect = egui::Rect::from_min_size(
+                    egui::pos2(start_x, sep_y),
+                    egui::vec2(avail_w, 1.0),
+                );
+                ui.allocate_rect(sep_rect, egui::Sense::hover());
+                ui.painter().rect_filled(sep_rect, 0.0, accent_line);
+                
+                let accent_rect = egui::Rect::from_min_size(
+                    egui::pos2(start_x + h_pad, sep_y),
+                    egui::vec2(100.0, 1.0),
+                );
+                ui.painter().rect_filled(accent_rect, 0.0, ColorPalette::BLUE_500);
+
+                ui.add_space(36.0);
+                egui::Frame::new().inner_margin(margin).show(ui, |ui| {
+                    style::home_section_header(ui, "Quick Start", theme);
+                    ui.add_space(12.0);
+
+                    let mut open_new  = false;
+                    let mut open_file = false;
+                    ui.columns(2, |cols| {
+                        if style::tool_card(
+                            &mut cols[0],
+                            "New Text File",
+                            "Start with a blank document",
+                            ColorPalette::BLUE_500,
+                            theme,
+                        ).clicked() { open_new = true; }
+
+                        if style::tool_card(
+                            &mut cols[1],
+                            "Open File",
+                            "Load an existing text or image file",
+                            ColorPalette::TEAL_500,
+                            theme,
+                        ).clicked() { open_file = true; }
+                    });
+                    if open_new  { action = Some(HomeAction::NewTextFile); }
+                    if open_file { action = Some(HomeAction::OpenFile); }
+
+                    ui.add_space(32.0);
+
+                    style::home_section_header(ui, "Editors", theme);
+                    ui.add_space(12.0);
+
+                    let mut open_text_ed  = false;
+                    let mut open_image_ed = false;
+                    ui.columns(3, |cols| {
+                        if style::tool_card(
+                            &mut cols[0],
+                            "Text Editor",
+                            "Rich editing with undo history",
+                            ColorPalette::BLUE_500,
+                            theme,
+                        ).clicked() { open_text_ed = true; }
+
+                        if style::tool_card(
+                            &mut cols[1],
+                            "Image Editor",
+                            "Edit, crop, and transform images",
+                            ColorPalette::PURPLE_500,
+                            theme,
+                        ).clicked() { open_image_ed = true; }
+
+                        style::tool_card_placeholder(&mut cols[2], "More Coming Soon", theme);
+                    });
+                    if open_text_ed  { action = Some(HomeAction::NewTextFile); }
+                    if open_image_ed { action = Some(HomeAction::ImageEditor); }
+
+                    ui.add_space(32.0);
+
+                    style::home_section_header(ui, "Converters", theme);
+                    ui.add_space(12.0);
+
+                    let mut open_img_conv = false;
+                    ui.columns(3, |cols| {
+                        if style::tool_card(
+                            &mut cols[0],
+                            "Image Converter",
+                            "Batch-convert between image formats",
+                            ColorPalette::TEAL_500,
+                            theme,
+                        ).clicked() { open_img_conv = true; }
+
+                        style::tool_card_placeholder(&mut cols[1], "More Coming Soon", theme);
+                        style::tool_card_placeholder(&mut cols[2], "More Coming Soon", theme);
+                    });
+                    if open_img_conv { action = Some(HomeAction::ImageConverter); }
+                });
             });
-        });
+
+        match action {
+            Some(HomeAction::NewTextFile) => self.new_text_file(),
+
+            Some(HomeAction::OpenFile) => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("All Files", &[
+                        "txt", "md", "jpg", "jpeg", "png",
+                        "webp", "bmp", "tiff", "tif", "gif", "ico",
+                    ])
+                    .pick_file()
+                {
+                    self.open_file(path);
+                }
+            }
+
+            Some(HomeAction::ImageEditor) => {
+                let m = self.create_image_editor_with_callback();
+                self.switch_to_module(m);
+            }
+
+            Some(HomeAction::ImageConverter) => {
+                self.switch_to_module(Box::new(ImageConverter::new()));
+            }
+
+            Some(HomeAction::ShowSettings)   => self.show_settings    = true,
+            Some(HomeAction::ShowPatchNotes) => self.show_patch_notes = true,
+            None => {}
+        }
+    }
+
+    fn render_settings_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_settings { return; }
+
+        let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
+        egui::Area::new(egui::Id::new("settings_overlay"))
+            .fixed_pos(egui::pos2(0.0, 0.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
+            });
+
+        let (bg, border, heading, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (
+                egui::Color32::from_rgb(22, 22, 27),
+                ColorPalette::ZINC_700,
+                egui::Color32::WHITE,
+                ColorPalette::ZINC_500,
+                ColorPalette::SLATE_200,
+            )
+        } else {
+            (
+                egui::Color32::WHITE,
+                ColorPalette::GRAY_200,
+                ColorPalette::GRAY_900,
+                ColorPalette::GRAY_400,
+                ColorPalette::GRAY_700,
+            )
+        };
+
+        let mut sys_clicked   = false;
+        let mut light_clicked = false;
+        let mut dark_clicked  = false;
+        let mut prefs_changed = false;
+        let mut open          = self.show_settings;
+
+        egui::Window::new("Settings")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .min_width(400.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .stroke(egui::Stroke::new(1.0, border))
+                    .corner_radius(10.0)
+                    .inner_margin(28.0),
+            )
+            .open(&mut open)
+            .order(egui::Order::Tooltip)
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("Settings").size(20.0).strong().color(heading));
+                ui.add_space(20.0);
+
+                ui.label(egui::RichText::new("APPEARANCE").size(11.0).color(muted));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Theme").size(14.0).color(text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        dark_clicked  = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark),   "Dark").clicked();
+                        light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light),  "Light").clicked();
+                        sys_clicked   = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
+                    });
+                });
+
+                ui.add_space(16.0);
+                ui.separator();
+                ui.add_space(16.0);
+
+                ui.label(egui::RichText::new("EDITOR").size(11.0).color(muted));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.checkbox(&mut self.show_toolbar, "").changed() { prefs_changed = true; }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
+                    });
+                });
+            });
+
+        self.show_settings = open;
+
+        if sys_clicked {
+            self.theme_preference = ThemePreference::System;
+            self.theme_mode = match ctx.theme() {
+                egui::Theme::Dark  => ThemeMode::Dark,
+                egui::Theme::Light => ThemeMode::Light,
+            };
+            style::apply_theme(ctx, self.theme_mode);
+            self.save_settings();
+        }
+        if light_clicked {
+            self.theme_preference = ThemePreference::Light;
+            self.theme_mode = ThemeMode::Light;
+            style::apply_theme(ctx, self.theme_mode);
+            self.save_settings();
+        }
+        if dark_clicked {
+            self.theme_preference = ThemePreference::Dark;
+            self.theme_mode = ThemeMode::Dark;
+            style::apply_theme(ctx, self.theme_mode);
+            self.save_settings();
+        }
+        if prefs_changed {
+            self.save_settings();
+        }
+    }
+
+    fn render_patch_notes_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_patch_notes { return; }
+
+        let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
+        egui::Area::new(egui::Id::new("patchnotes_overlay"))
+            .fixed_pos(egui::pos2(0.0, 0.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
+            });
+
+        let (bg, border, heading, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (
+                egui::Color32::from_rgb(22, 22, 27),
+                ColorPalette::ZINC_700,
+                egui::Color32::WHITE,
+                ColorPalette::ZINC_500,
+                ColorPalette::SLATE_200,
+                egui::Color32::from_rgb(30, 40, 60),
+            )
+        } else {
+            (
+                egui::Color32::WHITE,
+                ColorPalette::GRAY_200,
+                ColorPalette::GRAY_900,
+                ColorPalette::GRAY_400,
+                ColorPalette::GRAY_700,
+                ColorPalette::BLUE_50,
+            )
+        };
+
+        let mut open = self.show_patch_notes;
+        egui::Window::new("Patch Notes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .min_width(480.0)
+            .max_width(560.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(bg)
+                    .stroke(egui::Stroke::new(1.0, border))
+                    .corner_radius(10.0)
+                    .inner_margin(28.0),
+            )
+            .open(&mut open)
+            .order(egui::Order::Tooltip)
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("Patch Notes").size(20.0).strong().color(heading));
+                ui.add_space(20.0);
+                
+                let total_pages = self.patch_notes.len().max(1);
+                if self.patch_notes_page >= total_pages {
+                    self.patch_notes_page = total_pages - 1;
+                }
+
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        if let Some(entry) = self.patch_notes.get(self.patch_notes_page) {
+                             ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(&entry.version).size(16.0).strong().color(text),
+                                );
+                                ui.add_space(6.0);
+                                if !entry.tag.is_empty() {
+                                    egui::Frame::new()
+                                        .fill(tag_bg)
+                                        .corner_radius(4.0)
+                                        .inner_margin(egui::Margin { left: 6, right: 6, top: 2, bottom: 2 })
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                egui::RichText::new(&entry.tag).size(10.0).color(muted),
+                                            );
+                                        });
+                                }
+                            });
+                            ui.add_space(8.0);
+
+                            for note in &entry.notes {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    ui.painter().circle_filled(
+                                        egui::pos2(
+                                            ui.cursor().min.x + 4.0,
+                                            ui.cursor().min.y + 8.0,
+                                        ),
+                                        2.0,
+                                        ColorPalette::BLUE_500,
+                                    );
+                                    ui.add_space(12.0);
+                                    ui.label(egui::RichText::new(note).size(13.0).color(text));
+                                });
+                                ui.add_space(3.0);
+                            }
+                            ui.add_space(20.0);
+                        } else {
+                            ui.label("No patch notes available.");
+                        }
+                    });
+                
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(10.0);
+                
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(self.patch_notes_page > 0, egui::Button::new("< Prev")).clicked() {
+                        self.patch_notes_page -= 1;
+                    }
+                    
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add_enabled(self.patch_notes_page < total_pages - 1, egui::Button::new("Next >")).clicked() {
+                            self.patch_notes_page += 1;
+                        }
+                        
+                        ui.label(egui::RichText::new(format!("Page {} of {}", self.patch_notes_page + 1, total_pages)).color(muted));
+                    });
+                });
+            });
+
+        self.show_patch_notes = open;
     }
 }
 
@@ -745,6 +1213,8 @@ impl eframe::App for UniversalEditor {
         }
 
         self.render_unsaved_dialog(ctx);
+        self.render_settings_modal(ctx);
+        self.render_patch_notes_modal(ctx);
         self.top_bar(ctx);
         self.sidebar(ctx);
 

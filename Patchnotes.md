@@ -43,6 +43,7 @@
 - **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
 - **GENERAL**: Top panel now customized to each page
 - **GENERAL**: Adding icon to release build executable
+- **GENERAL**: Improved Home Page
   
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
