@@ -1,7 +1,11 @@
 [package]
 name = "universal_editor"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
+build = "build.rs"
+
+[build-dependencies]
+winresource = "0.1.30"
 
 [dependencies]
 eframe = "0.33.3"
