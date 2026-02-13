@@ -44,6 +44,8 @@
 - **GENERAL**: Top panel now customized to each page
 - **GENERAL**: Adding icon to release build executable
 - **GENERAL**: Improved Home Page
+- **GENERAL**: Can now navigate to home page from any screen or converter
+- **GENERAL**: Improved Settings Menu and Patchnotes Parsing
   
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging

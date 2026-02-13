@@ -130,6 +130,7 @@ enum PendingAction {
     OpenFile(PathBuf),
     NewFile,
     SwitchModule(Box<dyn EditorModule>),
+    GoHome,
     Exit,
 }
 
@@ -143,10 +144,26 @@ enum HomeAction {
     ShowPatchNotes,
 }
 
+struct PatchNote {
+    module_tag: String,
+    text: String,
+}
+
+struct PatchCategory {
+    name: String,
+    notes: Vec<PatchNote>,
+}
+
 struct PatchVersion {
     version: String,
     tag: String,
-    notes: Vec<String>,
+    categories: Vec<PatchCategory>,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum SettingsTab {
+    General,
+    TextEditor,
 }
 
 pub struct UniversalEditor {
@@ -163,6 +180,7 @@ pub struct UniversalEditor {
     show_unsaved_dialog: bool,
     show_patch_notes: bool,
     show_settings: bool,
+    settings_tab: SettingsTab,
     pending_action: Option<PendingAction>,
     recent_file_tx: SyncSender<PathBuf>,
     recent_file_rx: Receiver<PathBuf>,
@@ -190,41 +208,58 @@ impl UniversalEditor {
         let (tx, rx) = sync_channel(20);
 
         let patch_content = include_str!("../Patchnotes.md");
-        let mut patch_notes = Vec::new();
+        let mut patch_notes: Vec<PatchVersion> = Vec::new();
         let mut current_version: Option<PatchVersion> = None;
-        let mut current_category = String::new();
+        let mut current_category: Option<usize> = None;
+
+        fn parse_note(raw: &str) -> PatchNote {
+            let raw = raw.trim();
+            if raw.starts_with("**") {
+                if let Some(end) = raw[2..].find("**") {
+                    let tag = raw[2..end + 2].to_string();
+                    let rest = raw[end + 4..].trim_start_matches(':').trim().to_string();
+                    return PatchNote { module_tag: tag, text: rest };
+                }
+            }
+            PatchNote { module_tag: String::new(), text: raw.to_string() }
+        }
 
         for line in patch_content.lines() {
             let line = line.trim();
             if line.starts_with("## V") {
-                if let Some(v) = current_version.take() {
-                    patch_notes.push(v);
-                }
+                if let Some(v) = current_version.take() { patch_notes.push(v); }
                 let ver_str = line.trim_start_matches("## ").trim().to_string();
-                current_version = Some(PatchVersion {
-                    version: ver_str,
-                    tag: "Update".to_string(),
-                    notes: Vec::new(),
-                });
-                current_category.clear();
+                current_version = Some(PatchVersion { version: ver_str, tag: String::new(), categories: Vec::new() });
+                current_category = None;
             } else if line.starts_with("#### ") {
-                current_category = line.trim_start_matches("#### ").trim().to_string();
+                let cat_name = line.trim_start_matches("#### ").trim().to_string();
+                if let Some(v) = &mut current_version {
+                    v.categories.push(PatchCategory { name: cat_name, notes: Vec::new() });
+                    current_category = Some(v.categories.len() - 1);
+                }
             } else if line.starts_with("- ") || line.starts_with("* ") {
                 if let Some(v) = &mut current_version {
-                    let text = line[2..].trim();
-                    let note = if !current_category.is_empty() {
-                        format!("**{}**: {}", current_category, text)
+                    let note = parse_note(&line[2..]);
+                    if let Some(idx) = current_category {
+                        v.categories[idx].notes.push(note);
                     } else {
-                        text.to_string()
-                    };
-                    v.notes.push(note);
+                        if v.categories.is_empty() {
+                            v.categories.push(PatchCategory { name: String::new(), notes: Vec::new() });
+                        }
+                        let last = v.categories.len() - 1;
+                        v.categories[last].notes.push(note);
+                    }
                 }
             }
         }
-        if let Some(v) = current_version {
-            patch_notes.push(v);
+        if let Some(v) = current_version { patch_notes.push(v); }
+        patch_notes.reverse();
+        let total = patch_notes.len();
+        for (i, v) in patch_notes.iter_mut().enumerate() {
+            v.tag = if i == 0 { "Current".to_string() }
+                    else if i == total - 1 { "Initial Release".to_string() }
+                    else { "Update".to_string() };
         }
-        patch_notes.reverse(); 
         
         Self {
             active_module: None,
@@ -240,6 +275,7 @@ impl UniversalEditor {
             show_unsaved_dialog: false,
             show_patch_notes: false,
             show_settings: false,
+            settings_tab: SettingsTab::General,
             pending_action: None,
             recent_file_tx: tx,
             recent_file_rx: rx,
@@ -314,6 +350,15 @@ impl UniversalEditor {
         }
     }
 
+    fn go_home(&mut self) {
+        if self.has_unsaved_changes() {
+            self.pending_action = Some(PendingAction::GoHome);
+            self.show_unsaved_dialog = true;
+        } else {
+            self.active_module = None;
+        }
+    }
+
     fn execute_pending_action(&mut self) {
         if let Some(action) = self.pending_action.take() {
             match action {
@@ -344,6 +389,9 @@ impl UniversalEditor {
                 }
                 PendingAction::SwitchModule(module) => {
                     self.active_module = Some(module);
+                }
+                PendingAction::GoHome => {
+                    self.active_module = None;
                 }
                 PendingAction::Exit => {}
             }
@@ -475,6 +523,15 @@ impl UniversalEditor {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.add_space(4.0);
             egui::MenuBar::new().ui(ui, |ui| {
+                let has_module = self.active_module.is_some();
+                let mut go_home = false;
+                if has_module {
+                    if ui.button("Home").clicked() {
+                        go_home = true;
+                    }
+                    ui.separator();
+                }
+                if go_home { self.go_home(); return; }
                 ui.menu_button("File", |ui| {
                     if ui.button("New Text File").clicked() {
                         self.new_text_file();
@@ -1000,38 +1057,69 @@ impl UniversalEditor {
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
                 ui.label(egui::RichText::new("Settings").size(20.0).strong().color(heading));
-                ui.add_space(20.0);
+                ui.add_space(16.0);
 
-                ui.label(egui::RichText::new("APPEARANCE").size(11.0).color(muted));
-                ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Theme").size(14.0).color(text));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        dark_clicked  = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark),   "Dark").clicked();
-                        light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light),  "Light").clicked();
-                        sys_clicked   = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
-                    });
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let tabs = [
+                        (SettingsTab::General,    "General"),
+                        (SettingsTab::TextEditor, "Text Editor"),
+                    ];
+                    for (tab, label) in &tabs {
+                        let selected = self.settings_tab == *tab;
+                        let (fill, text_col) = if selected {
+                            (if matches!(self.theme_mode, ThemeMode::Dark) {
+                                egui::Color32::from_rgb(40, 40, 50)
+                            } else {
+                                ColorPalette::GRAY_100
+                            }, text)
+                        } else {
+                            (egui::Color32::TRANSPARENT, muted)
+                        };
+                        let btn = egui::Button::new(egui::RichText::new(*label).size(13.0).color(text_col))
+                            .fill(fill)
+                            .corner_radius(6.0);
+                        if ui.add(btn).clicked() {
+                            self.settings_tab = *tab;
+                        }
+                        ui.add_space(4.0);
+                    }
                 });
-
                 ui.add_space(16.0);
                 ui.separator();
                 ui.add_space(16.0);
 
-                ui.label(egui::RichText::new("EDITOR").size(11.0).color(muted));
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.checkbox(&mut self.show_toolbar, "").changed() { prefs_changed = true; }
-                    });
-                });
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
-                    });
-                });
+                match self.settings_tab {
+                    SettingsTab::General => {
+                        ui.label(egui::RichText::new("APPEARANCE").size(11.0).color(muted));
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Theme").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                dark_clicked  = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark),   "Dark").clicked();
+                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light),  "Light").clicked();
+                                sys_clicked   = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
+                            });
+                        });
+                    }
+                    SettingsTab::TextEditor => {
+                        ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.checkbox(&mut self.show_toolbar, "").changed() { prefs_changed = true; }
+                            });
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
+                            });
+                        });
+                    }
+                }
             });
 
         self.show_settings = open;
@@ -1124,7 +1212,7 @@ impl UniversalEditor {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         if let Some(entry) = self.patch_notes.get(self.patch_notes_page) {
-                             ui.horizontal(|ui| {
+                            ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(&entry.version).size(16.0).strong().color(text),
                                 );
@@ -1141,24 +1229,81 @@ impl UniversalEditor {
                                         });
                                 }
                             });
-                            ui.add_space(8.0);
+                            ui.add_space(12.0);
 
-                            for note in &entry.notes {
-                                ui.horizontal(|ui| {
+                            let cat_colors = [
+                                ColorPalette::BLUE_500,
+                                ColorPalette::TEAL_500,
+                                ColorPalette::PURPLE_500,
+                            ];
+
+                            for (ci, category) in entry.categories.iter().enumerate() {
+                                if !category.name.is_empty() {
+                                    let cat_color = cat_colors[ci % cat_colors.len()];
+                                    ui.horizontal(|ui| {
+                                        let rect_min = ui.cursor().min;
+                                        ui.painter().rect_filled(
+                                            egui::Rect::from_min_size(
+                                                egui::pos2(rect_min.x, rect_min.y + 2.0),
+                                                egui::vec2(3.0, 14.0),
+                                            ),
+                                            1.5,
+                                            cat_color,
+                                        );
+                                        ui.add_space(8.0);
+                                        ui.label(
+                                            egui::RichText::new(&category.name)
+                                                .size(12.0)
+                                                .strong()
+                                                .color(muted),
+                                        );
+                                    });
+                                    ui.add_space(6.0);
+                                }
+
+                                for note in &category.notes {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.add_space(14.0);
+                                        ui.painter().circle_filled(
+                                            egui::pos2(
+                                                ui.cursor().min.x + 3.0,
+                                                ui.cursor().min.y + 8.0,
+                                            ),
+                                            2.0,
+                                            ColorPalette::BLUE_500,
+                                        );
+                                        ui.add_space(10.0);
+
+                                        if !note.module_tag.is_empty() {
+                                            let (chip_bg, chip_text) = if matches!(self.theme_mode, ThemeMode::Dark) {
+                                                (egui::Color32::from_rgb(35, 40, 55), ColorPalette::BLUE_400)
+                                            } else {
+                                                (ColorPalette::BLUE_50, ColorPalette::BLUE_600)
+                                            };
+                                            egui::Frame::new()
+                                                .fill(chip_bg)
+                                                .corner_radius(3.0)
+                                                .inner_margin(egui::Margin { left: 5, right: 5, top: 1, bottom: 1 })
+                                                .show(ui, |ui| {
+                                                    ui.label(
+                                                        egui::RichText::new(&note.module_tag)
+                                                            .size(11.0)
+                                                            .color(chip_text),
+                                                    );
+                                                });
+                                            ui.add_space(4.0);
+                                        }
+
+                                        ui.label(egui::RichText::new(&note.text).size(13.0).color(text));
+                                    });
                                     ui.add_space(4.0);
-                                    ui.painter().circle_filled(
-                                        egui::pos2(
-                                            ui.cursor().min.x + 4.0,
-                                            ui.cursor().min.y + 8.0,
-                                        ),
-                                        2.0,
-                                        ColorPalette::BLUE_500,
-                                    );
-                                    ui.add_space(12.0);
-                                    ui.label(egui::RichText::new(note).size(13.0).color(text));
-                                });
-                                ui.add_space(3.0);
+                                }
+
+                                if ci < entry.categories.len() - 1 {
+                                    ui.add_space(10.0);
+                                }
                             }
+
                             ui.add_space(20.0);
                         } else {
                             ui.label("No patch notes available.");
