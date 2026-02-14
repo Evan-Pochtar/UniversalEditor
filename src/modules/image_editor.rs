@@ -14,141 +14,82 @@ const MAX_UNDO: usize = 20;
 const MAX_COLOR_HISTORY: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-struct RgbaColor {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-}
+struct RgbaColor { r: u8, g: u8, b: u8, a: u8 }
 
 impl RgbaColor {
     fn to_egui(&self) -> egui::Color32 {
         egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
     }
-    
     fn from_egui(c: egui::Color32) -> Self {
         Self { r: c.r(), g: c.g(), b: c.b(), a: c.a() }
     }
-    
     fn to_hex(&self) -> String {
-        if self.a == 255 {
-            format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
-        } else {
-            format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
-        }
+        if self.a == 255 { format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b) }
+        else { format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a) }
     }
-    
     fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.trim_start_matches('#');
         match hex.len() {
-            6 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-                Some(Self { r, g, b, a: 255 })
-            }
-            8 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-                let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
-                Some(Self { r, g, b, a })
-            }
+            6 => Some(Self {
+                r: u8::from_str_radix(&hex[0..2], 16).ok()?,
+                g: u8::from_str_radix(&hex[2..4], 16).ok()?,
+                b: u8::from_str_radix(&hex[4..6], 16).ok()?,
+                a: 255,
+            }),
+            8 => Some(Self {
+                r: u8::from_str_radix(&hex[0..2], 16).ok()?,
+                g: u8::from_str_radix(&hex[2..4], 16).ok()?,
+                b: u8::from_str_radix(&hex[4..6], 16).ok()?,
+                a: u8::from_str_radix(&hex[6..8], 16).ok()?,
+            }),
             _ => None,
         }
     }
-    
     fn to_rgb_string(&self) -> String {
-        if self.a == 255 {
-            format!("rgb({}, {}, {})", self.r, self.g, self.b)
-        } else {
-            format!("rgba({}, {}, {}, {:.2})", self.r, self.g, self.b, self.a as f32 / 255.0)
-        }
+        if self.a == 255 { format!("rgb({}, {}, {})", self.r, self.g, self.b) }
+        else { format!("rgba({}, {}, {}, {:.2})", self.r, self.g, self.b, self.a as f32 / 255.0) }
     }
 }
 
 #[derive(Serialize, Deserialize)]
-struct ColorHistory {
-    colors: VecDeque<RgbaColor>,
-}
+struct ColorHistory { colors: VecDeque<RgbaColor> }
 
 impl ColorHistory {
-    fn new() -> Self {
-        Self { colors: VecDeque::new() }
-    }
-    
+    fn new() -> Self { Self { colors: VecDeque::new() } }
     fn load() -> Self {
         let path = Self::get_config_path();
-        if let Ok(contents) = fs::read_to_string(&path) {
-            if let Ok(history) = serde_json::from_str(&contents) {
-                return history;
-            }
+        if let Ok(s) = fs::read_to_string(&path) {
+            if let Ok(h) = serde_json::from_str(&s) { return h; }
         }
         Self::new()
     }
-    
     fn save(&self) {
         let path = Self::get_config_path();
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string(self) {
-            let _ = fs::write(path, json);
-        }
+        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
+        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
     }
-    
     fn get_config_path() -> PathBuf {
-        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("universal_editor");
-        path.push("color_history.json");
-        path
+        let mut p = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        p.push("universal_editor");
+        p.push("color_history.json");
+        p
     }
-    
     fn add_color(&mut self, color: RgbaColor) {
-        if let Some(pos) = self.colors.iter().position(|c| *c == color) {
-            self.colors.remove(pos);
-        }
+        if let Some(pos) = self.colors.iter().position(|c| *c == color) { self.colors.remove(pos); }
         self.colors.push_front(color);
-        if self.colors.len() > MAX_COLOR_HISTORY {
-            self.colors.pop_back();
-        }
+        if self.colors.len() > MAX_COLOR_HISTORY { self.colors.pop_back(); }
         self.save();
     }
-    
-    fn get_colors(&self) -> &VecDeque<RgbaColor> {
-        &self.colors
-    }
-}
-
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Tool {
-    Brush,
-    Eraser,
-    Fill,
-    Text,
-    Eyedropper,
-    Crop,
-    Pan,
+    fn get_colors(&self) -> &VecDeque<RgbaColor> { &self.colors }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum FilterPanel {
-    None,
-    BrightnessContrast,
-    HueSaturation,
-    Blur,
-    Sharpen,
-    Resize,
-    Export,
-}
+pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan }
 
-struct TextState {
-    content: String,
-    font_size: u32,
-    placing: bool,
-    pos: Option<(u32, u32)>,
-}
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FilterPanel { None, BrightnessContrast, HueSaturation, Blur, Sharpen, Resize, Export }
+
+struct TextState { content: String, font_size: u32, placing: bool, pos: Option<(u32, u32)> }
 
 impl Default for TextState {
     fn default() -> Self {
@@ -156,10 +97,7 @@ impl Default for TextState {
     }
 }
 
-struct CropState {
-    start: Option<(f32, f32)>,
-    end: Option<(f32, f32)>,
-}
+struct CropState { start: Option<(f32, f32)>, end: Option<(f32, f32)> }
 
 impl Default for CropState {
     fn default() -> Self {
@@ -271,7 +209,6 @@ impl ImageEditor {
         }
     }
 
-    #[allow(dead_code)]
     pub fn load(path: PathBuf) -> Self {
         let mut editor = Self::new();
         if let Ok(img) = image::open(&path) {
@@ -284,35 +221,27 @@ impl ImageEditor {
         editor
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
+    pub fn is_dirty(&self) -> bool { self.dirty }
 
     pub fn set_file_callback(&mut self, callback: Box<dyn Fn(PathBuf) + Send + Sync>) {
         self.export_callback = Some(callback);
     }
 
     fn add_color_to_history(&mut self) {
-        let rgba = RgbaColor::from_egui(self.color);
-        self.color_history.add_color(rgba);
+        self.color_history.add_color(RgbaColor::from_egui(self.color));
     }
-
 
     fn push_undo(&mut self) {
         if let Some(img) = &self.image {
             self.undo_stack.push_back(img.clone());
-            if self.undo_stack.len() > MAX_UNDO {
-                self.undo_stack.pop_front();
-            }
+            if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
             self.redo_stack.clear();
         }
     }
 
     fn undo(&mut self) {
         if let Some(prev) = self.undo_stack.pop_back() {
-            if let Some(current) = self.image.take() {
-                self.redo_stack.push_back(current);
-            }
+            if let Some(cur) = self.image.take() { self.redo_stack.push_back(cur); }
             self.resize_w = prev.width();
             self.resize_h = prev.height();
             self.image = Some(prev);
@@ -323,9 +252,7 @@ impl ImageEditor {
 
     fn redo(&mut self) {
         if let Some(next) = self.redo_stack.pop_back() {
-            if let Some(current) = self.image.take() {
-                self.undo_stack.push_back(current);
-            }
+            if let Some(cur) = self.image.take() { self.undo_stack.push_back(cur); }
             self.resize_w = next.width();
             self.resize_h = next.height();
             self.image = Some(next);
@@ -337,39 +264,33 @@ impl ImageEditor {
     fn screen_to_image(&self, screen_pos: egui::Pos2) -> Option<(u32, u32)> {
         let canvas = self.canvas_rect?;
         let img = self.image.as_ref()?;
-        let img_w = img.width() as f32;
-        let img_h = img.height() as f32;
-        let scaled_w = img_w * self.zoom;
-        let scaled_h = img_h * self.zoom;
-        let offset_x = canvas.center().x - scaled_w / 2.0 + self.pan.x;
-        let offset_y = canvas.center().y - scaled_h / 2.0 + self.pan.y;
-        let rel_x = (screen_pos.x - offset_x) / self.zoom;
-        let rel_y = (screen_pos.y - offset_y) / self.zoom;
-        if rel_x < 0.0 || rel_y < 0.0 || rel_x >= img_w || rel_y >= img_h {
-            return None;
-        }
-        Some((rel_x as u32, rel_y as u32))
+        let (img_w, img_h) = (img.width() as f32, img.height() as f32);
+        let sw = img_w * self.zoom;
+        let sh = img_h * self.zoom;
+        let ox = canvas.center().x - sw / 2.0 + self.pan.x;
+        let oy = canvas.center().y - sh / 2.0 + self.pan.y;
+        let rx = (screen_pos.x - ox) / self.zoom;
+        let ry = (screen_pos.y - oy) / self.zoom;
+        if rx < 0.0 || ry < 0.0 || rx >= img_w || ry >= img_h { return Option::None; }
+        Some((rx as u32, ry as u32))
     }
 
     fn image_to_screen(&self, ix: f32, iy: f32) -> egui::Pos2 {
         let canvas = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
-        let img = self.image.as_ref();
-        let (img_w, img_h) = img.map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
-        let scaled_w = img_w * self.zoom;
-        let scaled_h = img_h * self.zoom;
-        let offset_x = canvas.center().x - scaled_w / 2.0 + self.pan.x;
-        let offset_y = canvas.center().y - scaled_h / 2.0 + self.pan.y;
-        egui::pos2(offset_x + ix * self.zoom, offset_y + iy * self.zoom)
+        let (img_w, img_h) = self.image.as_ref()
+            .map(|i| (i.width() as f32, i.height() as f32))
+            .unwrap_or((1.0, 1.0));
+        let ox = canvas.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+        let oy = canvas.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+        egui::pos2(ox + ix * self.zoom, oy + iy * self.zoom)
     }
 
     fn fit_image(&mut self) {
-        if let Some(img) = &self.image {
-            if let Some(canvas) = self.canvas_rect {
-                let scale_x = canvas.width() / img.width() as f32;
-                let scale_y = canvas.height() / img.height() as f32;
-                self.zoom = scale_x.min(scale_y).min(1.0).max(0.01);
-                self.pan = egui::Vec2::ZERO;
-            }
+        if let (Some(img), Some(canvas)) = (&self.image, self.canvas_rect) {
+            let sx = canvas.width() / img.width() as f32;
+            let sy = canvas.height() / img.height() as f32;
+            self.zoom = sx.min(sy).min(1.0).max(0.01);
+            self.pan = egui::Vec2::ZERO;
         }
     }
 
@@ -500,9 +421,8 @@ impl ImageEditor {
 
     fn sample_color(&mut self, x: u32, y: u32) {
         if let Some(img) = &self.image {
-            let p = img.get_pixel(x, y);
-            let rgba = p.0;
-            self.color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+            let p = img.get_pixel(x, y).0;
+            self.color = egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]);
             self.add_color_to_history();
             self.hex_input = RgbaColor::from_egui(self.color).to_hex();
         }

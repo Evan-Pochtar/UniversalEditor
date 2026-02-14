@@ -6,10 +6,10 @@
 - [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
   - [x] Page you go to changes depending on what file you put in on main menu
-  - [ ] Improved Patch Notes Screen
+  - [x] Improved Patch Notes Screen
   - [ ] Add About Page
-  - [ ] Settings per page
-  - [ ] Way to go back to main menu
+  - [x] Settings per page
+  - [x] Way to go back to main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
