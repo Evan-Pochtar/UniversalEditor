@@ -46,6 +46,7 @@
 - **GENERAL**: Improved Home Page
 - **GENERAL**: Can now navigate to home page from any screen or converter
 - **GENERAL**: Improved Settings Menu and Patchnotes Parsing
+- **GENERAL**: Modals now close when clicked off from instead of just using the "x"
   
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging

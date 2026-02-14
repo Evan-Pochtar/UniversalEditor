@@ -8,15 +8,10 @@ use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::fs;
 
 #[derive(Serialize, Deserialize, Clone)]
-struct RecentFile {
-    path: PathBuf,
-    timestamp: i64,
-}
+struct RecentFile { path: PathBuf, timestamp: i64 }
 
 #[derive(Serialize, Deserialize)]
-struct RecentFiles {
-    files: Vec<RecentFile>,
-}
+struct RecentFiles { files: Vec<RecentFile> }
 
 impl RecentFiles {
     fn new() -> Self {
@@ -74,18 +69,10 @@ impl RecentFiles {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
-pub enum ThemePreference {
-    System,
-    Light,
-    Dark,
-}
+pub enum ThemePreference { System, Light, Dark }
 
 #[derive(Serialize, Deserialize)]
-struct AppSettings {
-    theme_preference: ThemePreference,
-    show_toolbar: bool,
-    show_file_info: bool,
-}
+struct AppSettings { theme_preference: ThemePreference, show_toolbar: bool, show_file_info: bool }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -126,45 +113,19 @@ impl AppSettings {
     }
 }
 
-enum PendingAction {
-    OpenFile(PathBuf),
-    NewFile,
-    SwitchModule(Box<dyn EditorModule>),
-    GoHome,
-    Exit,
-}
+enum PendingAction { OpenFile(PathBuf), NewFile, SwitchModule(Box<dyn EditorModule>), GoHome, Exit }
 
 #[derive(PartialEq)]
-enum HomeAction {
-    NewTextFile,
-    OpenFile,
-    ImageEditor,
-    ImageConverter,
-    ShowSettings,
-    ShowPatchNotes,
-}
+enum HomeAction { NewTextFile, OpenFile, ImageEditor, ImageConverter, ShowSettings, ShowPatchNotes }
 
-struct PatchNote {
-    module_tag: String,
-    text: String,
-}
+struct PatchNote { module_tag: String,text: String }
 
-struct PatchCategory {
-    name: String,
-    notes: Vec<PatchNote>,
-}
+struct PatchCategory { name: String, notes: Vec<PatchNote> }
 
-struct PatchVersion {
-    version: String,
-    tag: String,
-    categories: Vec<PatchCategory>,
-}
+struct PatchVersion { version: String, tag: String, categories: Vec<PatchCategory> }
 
 #[derive(PartialEq, Clone, Copy)]
-enum SettingsTab {
-    General,
-    TextEditor,
-}
+enum SettingsTab { General, TextEditor }
 
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
@@ -461,7 +422,6 @@ impl UniversalEditor {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(8.0);
-                    
                     ui.label(
                         egui::RichText::new("Do you want to save changes?")
                             .size(16.0)
@@ -469,7 +429,6 @@ impl UniversalEditor {
                     );
                     
                     ui.add_space(8.0);
-                    
                     ui.label(
                         egui::RichText::new("Your changes will be lost if you don't save them.")
                             .size(13.0)
@@ -479,9 +438,7 @@ impl UniversalEditor {
                                 ColorPalette::GRAY_600
                             })
                     );
-                    
                     ui.add_space(24.0);
-                    
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 12.0;
                         
@@ -507,7 +464,6 @@ impl UniversalEditor {
                             self.pending_action = None;
                         }
                     });
-                    
                     ui.add_space(8.0);
                 });
             });
@@ -579,7 +535,6 @@ impl UniversalEditor {
                             }
                         }
                     }
-                    
                     ui.separator();
                     if ui.button("Exit").clicked() {
                         if self.has_unsaved_changes() {
@@ -642,19 +597,15 @@ impl UniversalEditor {
                     }
 
                     ui.separator();
-                   
                     ui.label("Theme:");
-                   
                     let system_clicked = ui.selectable_label(
                         matches!(self.theme_preference, ThemePreference::System), 
                         "System"
                     ).clicked();
-                   
                     let light_clicked = ui.selectable_label(
                         matches!(self.theme_preference, ThemePreference::Light), 
                         "Light"
                     ).clicked();
-                   
                     let dark_clicked = ui.selectable_label(
                         matches!(self.theme_preference, ThemePreference::Dark), 
                         "Dark"
@@ -781,7 +732,6 @@ impl UniversalEditor {
                         if let Some(path) = file_to_remove {
                             self.recent_files.remove_file(&path);
                         }
-                        
                         if let Some(path) = file_to_open {
                             self.open_file(path);
                         }
@@ -804,7 +754,6 @@ impl UniversalEditor {
 
     fn landing_page(&mut self, ui: &mut egui::Ui) {
         let theme = self.theme_mode;
-
         let (title_col, sub_col, accent_line, ver_bg, ver_text_col) = match theme {
             ThemeMode::Dark => (
                 egui::Color32::WHITE,
@@ -823,7 +772,6 @@ impl UniversalEditor {
         };
 
         let mut action: Option<HomeAction> = None;
-
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -977,7 +925,6 @@ impl UniversalEditor {
 
         match action {
             Some(HomeAction::NewTextFile) => self.new_text_file(),
-
             Some(HomeAction::OpenFile) => {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("All Files", &[
@@ -989,16 +936,13 @@ impl UniversalEditor {
                     self.open_file(path);
                 }
             }
-
             Some(HomeAction::ImageEditor) => {
                 let m = self.create_image_editor_with_callback();
                 self.switch_to_module(m);
             }
-
             Some(HomeAction::ImageConverter) => {
                 self.switch_to_module(Box::new(ImageConverter::new()));
             }
-
             Some(HomeAction::ShowSettings)   => self.show_settings    = true,
             Some(HomeAction::ShowPatchNotes) => self.show_patch_notes = true,
             None => {}
@@ -1007,7 +951,6 @@ impl UniversalEditor {
 
     fn render_settings_modal(&mut self, ctx: &egui::Context) {
         if !self.show_settings { return; }
-
         let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
         egui::Area::new(egui::Id::new("settings_overlay"))
             .fixed_pos(egui::pos2(0.0, 0.0))
@@ -1018,41 +961,23 @@ impl UniversalEditor {
             });
 
         let (bg, border, heading, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (
-                egui::Color32::from_rgb(22, 22, 27),
-                ColorPalette::ZINC_700,
-                egui::Color32::WHITE,
-                ColorPalette::ZINC_500,
-                ColorPalette::SLATE_200,
-            )
+            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
         } else {
-            (
-                egui::Color32::WHITE,
-                ColorPalette::GRAY_200,
-                ColorPalette::GRAY_900,
-                ColorPalette::GRAY_400,
-                ColorPalette::GRAY_700,
-            )
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
         };
 
-        let mut sys_clicked   = false;
+        let mut sys_clicked = false;
         let mut light_clicked = false;
-        let mut dark_clicked  = false;
+        let mut dark_clicked = false;
         let mut prefs_changed = false;
-        let mut open          = self.show_settings;
+        let mut open = self.show_settings;
 
-        egui::Window::new("Settings")
+        let response = egui::Window::new("Settings")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .min_width(400.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(bg)
-                    .stroke(egui::Stroke::new(1.0, border))
-                    .corner_radius(10.0)
-                    .inner_margin(28.0),
-            )
+            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
@@ -1061,25 +986,15 @@ impl UniversalEditor {
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let tabs = [
-                        (SettingsTab::General,    "General"),
-                        (SettingsTab::TextEditor, "Text Editor"),
-                    ];
+                    let tabs = [(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor")];
                     for (tab, label) in &tabs {
                         let selected = self.settings_tab == *tab;
                         let (fill, text_col) = if selected {
-                            (if matches!(self.theme_mode, ThemeMode::Dark) {
-                                egui::Color32::from_rgb(40, 40, 50)
-                            } else {
-                                ColorPalette::GRAY_100
-                            }, text)
+                            (if matches!(self.theme_mode, ThemeMode::Dark) { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text)
                         } else {
                             (egui::Color32::TRANSPARENT, muted)
                         };
-                        let btn = egui::Button::new(egui::RichText::new(*label).size(13.0).color(text_col))
-                            .fill(fill)
-                            .corner_radius(6.0);
-                        if ui.add(btn).clicked() {
+                        if ui.add(egui::Button::new(egui::RichText::new(*label).size(13.0).color(text_col)).fill(fill).corner_radius(6.0)).clicked() {
                             self.settings_tab = *tab;
                         }
                         ui.add_space(4.0);
@@ -1122,14 +1037,18 @@ impl UniversalEditor {
                 }
             });
 
-        self.show_settings = open;
+        if let Some(r) = response {
+            let clicked_outside = ctx.input(|i| {
+                i.pointer.any_click()
+                    && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))
+            });
+            if clicked_outside { open = false; }
+        }
 
+        self.show_settings = open;
         if sys_clicked {
             self.theme_preference = ThemePreference::System;
-            self.theme_mode = match ctx.theme() {
-                egui::Theme::Dark  => ThemeMode::Dark,
-                egui::Theme::Light => ThemeMode::Light,
-            };
+            self.theme_mode = match ctx.theme() { egui::Theme::Dark => ThemeMode::Dark, egui::Theme::Light => ThemeMode::Light };
             style::apply_theme(ctx, self.theme_mode);
             self.save_settings();
         }
@@ -1145,9 +1064,7 @@ impl UniversalEditor {
             style::apply_theme(ctx, self.theme_mode);
             self.save_settings();
         }
-        if prefs_changed {
-            self.save_settings();
-        }
+        if prefs_changed { self.save_settings(); }
     }
 
     fn render_patch_notes_modal(&mut self, ctx: &egui::Context) {
@@ -1163,49 +1080,27 @@ impl UniversalEditor {
             });
 
         let (bg, border, heading, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (
-                egui::Color32::from_rgb(22, 22, 27),
-                ColorPalette::ZINC_700,
-                egui::Color32::WHITE,
-                ColorPalette::ZINC_500,
-                ColorPalette::SLATE_200,
-                egui::Color32::from_rgb(30, 40, 60),
-            )
+            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200, egui::Color32::from_rgb(30, 40, 60))
         } else {
-            (
-                egui::Color32::WHITE,
-                ColorPalette::GRAY_200,
-                ColorPalette::GRAY_900,
-                ColorPalette::GRAY_400,
-                ColorPalette::GRAY_700,
-                ColorPalette::BLUE_50,
-            )
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
         };
 
         let mut open = self.show_patch_notes;
-        egui::Window::new("Patch Notes")
+        let total_pages = self.patch_notes.len().max(1);
+        if self.patch_notes_page >= total_pages { self.patch_notes_page = total_pages - 1; }
+
+        let response = egui::Window::new("Patch Notes")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .min_width(480.0)
             .max_width(560.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(bg)
-                    .stroke(egui::Stroke::new(1.0, border))
-                    .corner_radius(10.0)
-                    .inner_margin(28.0),
-            )
+            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
                 ui.label(egui::RichText::new("Patch Notes").size(20.0).strong().color(heading));
                 ui.add_space(20.0);
-                
-                let total_pages = self.patch_notes.len().max(1);
-                if self.patch_notes_page >= total_pages {
-                    self.patch_notes_page = total_pages - 1;
-                }
 
                 egui::ScrollArea::vertical()
                     .max_height(420.0)
@@ -1213,121 +1108,80 @@ impl UniversalEditor {
                     .show(ui, |ui| {
                         if let Some(entry) = self.patch_notes.get(self.patch_notes_page) {
                             ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&entry.version).size(16.0).strong().color(text),
-                                );
+                                ui.label(egui::RichText::new(&entry.version).size(16.0).strong().color(text));
                                 ui.add_space(6.0);
                                 if !entry.tag.is_empty() {
-                                    egui::Frame::new()
-                                        .fill(tag_bg)
-                                        .corner_radius(4.0)
+                                    egui::Frame::new().fill(tag_bg).corner_radius(4.0)
                                         .inner_margin(egui::Margin { left: 6, right: 6, top: 2, bottom: 2 })
-                                        .show(ui, |ui| {
-                                            ui.label(
-                                                egui::RichText::new(&entry.tag).size(10.0).color(muted),
-                                            );
-                                        });
+                                        .show(ui, |ui| { ui.label(egui::RichText::new(&entry.tag).size(10.0).color(muted)); });
                                 }
                             });
                             ui.add_space(12.0);
 
-                            let cat_colors = [
-                                ColorPalette::BLUE_500,
-                                ColorPalette::TEAL_500,
-                                ColorPalette::PURPLE_500,
-                            ];
-
+                            let cat_colors = [ColorPalette::BLUE_500, ColorPalette::TEAL_500, ColorPalette::PURPLE_500];
                             for (ci, category) in entry.categories.iter().enumerate() {
                                 if !category.name.is_empty() {
                                     let cat_color = cat_colors[ci % cat_colors.len()];
                                     ui.horizontal(|ui| {
                                         let rect_min = ui.cursor().min;
-                                        ui.painter().rect_filled(
-                                            egui::Rect::from_min_size(
-                                                egui::pos2(rect_min.x, rect_min.y + 2.0),
-                                                egui::vec2(3.0, 14.0),
-                                            ),
-                                            1.5,
-                                            cat_color,
-                                        );
+                                        ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(rect_min.x, rect_min.y + 2.0), egui::vec2(3.0, 14.0)), 1.5, cat_color);
                                         ui.add_space(8.0);
-                                        ui.label(
-                                            egui::RichText::new(&category.name)
-                                                .size(12.0)
-                                                .strong()
-                                                .color(muted),
-                                        );
+                                        ui.label(egui::RichText::new(&category.name).size(12.0).strong().color(muted));
                                     });
                                     ui.add_space(6.0);
                                 }
-
                                 for note in &category.notes {
                                     ui.horizontal_wrapped(|ui| {
                                         ui.add_space(14.0);
-                                        ui.painter().circle_filled(
-                                            egui::pos2(
-                                                ui.cursor().min.x + 3.0,
-                                                ui.cursor().min.y + 8.0,
-                                            ),
-                                            2.0,
-                                            ColorPalette::BLUE_500,
-                                        );
+                                        ui.painter().circle_filled(egui::pos2(ui.cursor().min.x + 3.0, ui.cursor().min.y + 8.0), 2.0, ColorPalette::BLUE_500);
                                         ui.add_space(10.0);
-
                                         if !note.module_tag.is_empty() {
                                             let (chip_bg, chip_text) = if matches!(self.theme_mode, ThemeMode::Dark) {
                                                 (egui::Color32::from_rgb(35, 40, 55), ColorPalette::BLUE_400)
                                             } else {
                                                 (ColorPalette::BLUE_50, ColorPalette::BLUE_600)
                                             };
-                                            egui::Frame::new()
-                                                .fill(chip_bg)
-                                                .corner_radius(3.0)
+                                            egui::Frame::new().fill(chip_bg).corner_radius(3.0)
                                                 .inner_margin(egui::Margin { left: 5, right: 5, top: 1, bottom: 1 })
-                                                .show(ui, |ui| {
-                                                    ui.label(
-                                                        egui::RichText::new(&note.module_tag)
-                                                            .size(11.0)
-                                                            .color(chip_text),
-                                                    );
-                                                });
+                                                .show(ui, |ui| { ui.label(egui::RichText::new(&note.module_tag).size(11.0).color(chip_text)); });
                                             ui.add_space(4.0);
                                         }
-
                                         ui.label(egui::RichText::new(&note.text).size(13.0).color(text));
                                     });
                                     ui.add_space(4.0);
                                 }
-
-                                if ci < entry.categories.len() - 1 {
-                                    ui.add_space(10.0);
-                                }
+                                if ci < entry.categories.len() - 1 { ui.add_space(10.0); }
                             }
-
                             ui.add_space(20.0);
                         } else {
                             ui.label("No patch notes available.");
                         }
                     });
-                
+
                 ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
-                
+
                 ui.horizontal(|ui| {
                     if ui.add_enabled(self.patch_notes_page > 0, egui::Button::new("< Prev")).clicked() {
                         self.patch_notes_page -= 1;
                     }
-                    
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add_enabled(self.patch_notes_page < total_pages - 1, egui::Button::new("Next >")).clicked() {
                             self.patch_notes_page += 1;
                         }
-                        
                         ui.label(egui::RichText::new(format!("Page {} of {}", self.patch_notes_page + 1, total_pages)).color(muted));
                     });
                 });
             });
+
+        if let Some(r) = response {
+            let clicked_outside = ctx.input(|i| {
+                i.pointer.any_click()
+                    && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))
+            });
+            if clicked_outside { open = false; }
+        }
 
         self.show_patch_notes = open;
     }
