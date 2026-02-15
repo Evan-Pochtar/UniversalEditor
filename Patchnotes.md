@@ -41,6 +41,7 @@
 #### Features
 - **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
 - **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
+- **IMG EDITOR**: Corner resizing and selection of text now available
 - **GENERAL**: Top panel now customized to each page
 - **GENERAL**: Adding icon to release build executable
 - **GENERAL**: Improved Home Page
@@ -51,3 +52,4 @@
 #### Debugging
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
 - **IMG EDITOR**: Images now show up in "Recent Files" properly
+- **IMG EDITOR**: Text tool now properly shows up in final images

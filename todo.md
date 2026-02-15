@@ -66,6 +66,8 @@
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
 - [x] Resize does not work if not aspect ratio locked
+- [x] Text tool currently not working
+- [ ] Text Corner Resizing delta too fast, hard to select
 
 #### Other
 - [x] Sidebar down arrow shows as empty square
@@ -119,6 +121,12 @@
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
   - [ ] Add opacity to color picker
+- [x] Better text selection/writing tool
+  - [x] Easy selection of text
+  - [x] Resize by corner drag
+  - [ ] Resize Up/Down
+  - [ ] Bold/Italics/Underlined Text
+  - [ ] Font picker
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
 - [x] Keyboard Shortcuts
@@ -134,8 +142,6 @@
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files
-- [ ] Better text selection/writing tool
-  - [ ] Resize text, easy selection of text
 - [x] Make image converter and image editor use the same export function
 - [ ] Add different cursors for different functions/tools
 - [ ] Crop should show preview of the size of the image

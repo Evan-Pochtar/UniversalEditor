@@ -9,6 +9,7 @@ use crate::style::{ColorPalette, ThemeMode};
 use super::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont};
 
 const MAX_UNDO: usize = 20;
 const MAX_COLOR_HISTORY: usize = 20;
@@ -89,13 +90,20 @@ pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan }
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FilterPanel { None, BrightnessContrast, HueSaturation, Blur, Sharpen, Resize, Export }
 
-struct TextState { content: String, font_size: u32, placing: bool, pos: Option<(u32, u32)> }
+#[derive(Debug, Clone)]
+struct TextLayer { id: u64, content: String, img_x: f32, img_y: f32, font_size: f32, color: egui::Color32 }
 
-impl Default for TextState {
-    fn default() -> Self {
-        Self { content: String::new(), font_size: 24, placing: false, pos: None }
+impl TextLayer {
+    fn screen_rect(&self, anchor: egui::Pos2, zoom: f32) -> egui::Rect {
+        let w = (self.content.chars().count().max(1) as f32 * self.font_size * 0.58 * zoom)
+            .max(self.font_size * zoom);
+        let h = self.font_size * 1.35 * zoom;
+        egui::Rect::from_min_size(anchor, egui::vec2(w, h))
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TextDragMode { Move, ResizeCorner }
 
 struct CropState { start: Option<(f32, f32)>, end: Option<(f32, f32)> }
 
@@ -128,7 +136,16 @@ pub struct ImageEditor {
     stroke_points: Vec<(f32, f32)>,
     is_dragging: bool,
 
-    text_state: TextState,
+    text_layers: Vec<TextLayer>,
+    selected_text: Option<u64>,
+    editing_text: bool,
+    next_text_id: u64,
+    text_font_size: f32,
+    text_drag_mode: Option<TextDragMode>,
+    text_drag_origin: Option<egui::Pos2>,
+    text_layer_origin: Option<(f32, f32)>,
+    text_font_size_origin: Option<f32>,
+
     crop_state: CropState,
 
     filter_panel: FilterPanel,
@@ -153,7 +170,6 @@ pub struct ImageEditor {
     color_history: ColorHistory,
     hex_input: String,
     canvas_rect: Option<egui::Rect>,
-    text_focused: bool,
 
     filter_progress: Arc<Mutex<f32>>,
     is_processing: bool,
@@ -180,7 +196,15 @@ impl ImageEditor {
             color: egui::Color32::BLACK,
             stroke_points: Vec::new(),
             is_dragging: false,
-            text_state: TextState::default(),
+            text_layers: Vec::new(),
+            selected_text: None,
+            editing_text: false,
+            next_text_id: 0,
+            text_font_size: 24.0,
+            text_drag_mode: None,
+            text_drag_origin: None,
+            text_layer_origin: None,
+            text_font_size_origin: None,
             crop_state: CropState::default(),
             filter_panel: FilterPanel::None,
             brightness: 0.0,
@@ -202,7 +226,6 @@ impl ImageEditor {
             color_history: ColorHistory::load(),
             hex_input: String::from("#000000FF"),
             canvas_rect: None,
-            text_focused: false,
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
@@ -428,47 +451,108 @@ impl ImageEditor {
         }
     }
 
-    fn stamp_text(&mut self) {
-        let img = match self.image.as_mut() {
-            Some(i) => i,
-            None => return,
+    fn stamp_all_text_layers(&self, base: &DynamicImage) -> DynamicImage {
+        if self.text_layers.is_empty() { return base.clone(); }
+
+        static FONT_BYTES: &[u8] = include_bytes!("../../assets/Ubuntu-Regular.ttf");
+        let font = match FontRef::try_from_slice(FONT_BYTES) {
+            Ok(f) => f,
+            Err(e) => { eprintln!("[text] Font parse error: {}", e); return base.clone(); }
         };
-        let (tx, ty) = match self.text_state.pos {
-            Some(p) => p,
-            None => return,
-        };
-        if self.text_state.content.is_empty() { return; }
-        let mut buf = img.to_rgba8();
-        let w = buf.width();
-        let h = buf.height();
-        let (r, g, b, a) = (self.color.r(), self.color.g(), self.color.b(), self.color.a());
-        let font_size = self.text_state.font_size.max(4) as f32;
-        let char_w = (font_size * 0.6) as u32;
-        let char_h = font_size as u32;
-        for (i, _ch) in self.text_state.content.chars().enumerate() {
-            let cx = tx + (i as u32) * char_w;
-            if cx + char_w > w { break; }
-            let x_start = cx;
-            let x_end = (cx + char_w).min(w);
-            let y_start = ty;
-            let y_end = (ty + char_h).min(h);
-            for py in y_start..y_end {
-                for px in x_start..x_end {
-                    let existing = buf.get_pixel(px, py).0;
-                    let fa = a as f32 / 255.0;
-                    let fb = 1.0 - fa;
-                    let nr = (r as f32 * fa + existing[0] as f32 * fb).min(255.0) as u8;
-                    let ng = (g as f32 * fa + existing[1] as f32 * fb).min(255.0) as u8;
-                    let nb = (b as f32 * fa + existing[2] as f32 * fb).min(255.0) as u8;
-                    let na = ((a as f32 + existing[3] as f32 * fb).min(255.0)) as u8;
-                    buf.put_pixel(px, py, Rgba([nr, ng, nb, na]));
+
+        let mut buf = base.to_rgba8();
+        let (w, h) = (buf.width(), buf.height());
+
+        for layer in &self.text_layers {
+            let scale = PxScale::from(layer.font_size);
+            let scaled = font.as_scaled(scale);
+            let (r, g, b, a) = (layer.color.r(), layer.color.g(), layer.color.b(), layer.color.a());
+
+            let mut cursor_x = layer.img_x;
+            let baseline_y = layer.img_y + scaled.ascent();
+
+            for ch in layer.content.chars() {
+                let glyph_id = font.glyph_id(ch);
+                let advance = scaled.h_advance(glyph_id);
+
+                let glyph = glyph_id.with_scale_and_position(scale, ab_glyph::point(cursor_x, baseline_y));
+                if let Some(outlined) = font.outline_glyph(glyph) {
+                    let bounds = outlined.px_bounds();
+                    outlined.draw(|gx, gy, cov| {
+                        let px = bounds.min.x as i32 + gx as i32;
+                        let py = bounds.min.y as i32 + gy as i32;
+                        if px < 0 || py < 0 || px as u32 >= w || py as u32 >= h { return; }
+                        let px = px as u32; let py = py as u32;
+                        let dst = buf.get_pixel(px, py).0;
+                        let src_a = (cov * a as f32).min(255.0) as u32;
+                        let dst_a = dst[3] as u32;
+                        let out_a = (src_a + dst_a * (255 - src_a) / 255).min(255) as u8;
+                        let blend = |s: u8, d: u8| -> u8 {
+                            if out_a == 0 { return 0; }
+                            ((s as u32 * src_a + d as u32 * dst_a * (255 - src_a) / 255) / out_a as u32).min(255) as u8
+                        };
+                        buf.put_pixel(px, py, Rgba([blend(r, dst[0]), blend(g, dst[1]), blend(b, dst[2]), out_a]));
+                    });
                 }
+                cursor_x += advance;
             }
         }
-        self.image = Some(DynamicImage::ImageRgba8(buf));
-        self.texture_dirty = true;
-        self.dirty = true;
-        self.text_state = TextState::default();
+        DynamicImage::ImageRgba8(buf)
+    }
+
+    fn hit_text_layer(&self, pos: egui::Pos2) -> Option<u64> {
+        for layer in self.text_layers.iter().rev() {
+            let anchor = self.image_to_screen(layer.img_x, layer.img_y);
+            if layer.screen_rect(anchor, self.zoom).contains(pos) {
+                return Some(layer.id);
+            }
+        }
+        None
+    }
+
+    fn text_resize_handle(&self) -> Option<egui::Rect> {
+        let id = self.selected_text?;
+        let layer = self.text_layers.iter().find(|l| l.id == id)?;
+        let anchor = self.image_to_screen(layer.img_x, layer.img_y);
+        let r = layer.screen_rect(anchor, self.zoom);
+        let corner = r.right_bottom();
+        Some(egui::Rect::from_center_size(corner, egui::vec2(10.0, 10.0)))
+    }
+
+    fn commit_or_discard_active_text(&mut self) {
+        if let Some(id) = self.selected_text {
+            let empty = self.text_layers.iter().find(|l| l.id == id).map(|l| l.content.is_empty()).unwrap_or(true);
+            if empty { self.text_layers.retain(|l| l.id != id); }
+        }
+        self.selected_text = None;
+        self.editing_text = false;
+    }
+
+    fn process_text_input(&mut self, ctx: &egui::Context) {
+        if !self.editing_text || self.selected_text.is_none() { return; }
+        let id = self.selected_text.unwrap();
+        ctx.input(|i| {
+            for event in &i.events {
+                match event {
+                    egui::Event::Text(t) => {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                            layer.content.push_str(t);
+                        }
+                    }
+                    egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                            layer.content.pop();
+                        }
+                    }
+                    egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                            layer.content.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
 
     fn apply_crop(&mut self) {
@@ -688,6 +772,8 @@ impl ImageEditor {
             None => return Err("No image to export".to_string()),
         };
 
+        let composite = self.stamp_all_text_layers(img);
+
         let default_name = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str()).unwrap_or("export");
         let filename = format!("{}.{}", default_name, self.export_format.extension());
         
@@ -701,7 +787,7 @@ impl ImageEditor {
         };
 
         export_image(
-            img, 
+            &composite, 
             &path, 
             self.export_format, 
             self.export_jpeg_quality,
@@ -871,15 +957,40 @@ impl ImageEditor {
                         }
                         Tool::Text => {
                             ui.label(egui::RichText::new("Font size:").size(12.0).color(label_col));
-                            ui.add(egui::DragValue::new(&mut self.text_state.font_size).range(4..=200));
-                            ui.label(egui::RichText::new("Text:").size(12.0).color(label_col));
-                            let te_resp = ui.text_edit_singleline(&mut self.text_state.content);
-                            self.text_focused = te_resp.has_focus();
-                            if self.text_state.placing {
-                                if ui.button("Cancel").clicked() {
-                                    self.text_state.placing = false;
-                                    self.text_state.pos = None;
+                            let mut fs = self.text_font_size;
+                            if ui.add(egui::DragValue::new(&mut fs).range(6.0..=400.0).speed(1.0)).changed() {
+                                self.text_font_size = fs;
+                                if let Some(id) = self.selected_text {
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                                        layer.font_size = fs;
+                                    }
                                 }
+                            }
+                            if let Some(id) = self.selected_text {
+                                ui.separator();
+                                let layer_color = self.text_layers.iter().find(|l| l.id == id).map(|l| l.color);
+                                if let Some(lc) = layer_color {
+                                    let swatch = egui::Button::new("").fill(lc).min_size(egui::vec2(20.0, 20.0));
+                                    if ui.add(swatch).on_hover_text("Text color").clicked() {
+                                        self.show_color_picker = !self.show_color_picker;
+                                    }
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                                        layer.color = self.color;
+                                    }
+                                }
+                                if ui.small_button("Deselect").clicked() {
+                                    self.commit_or_discard_active_text();
+                                }
+                                if ui.small_button("Delete").clicked() {
+                                    let del_id = id;
+                                    self.text_layers.retain(|l| l.id != del_id);
+                                    self.selected_text = None;
+                                    self.editing_text = false;
+                                }
+                            }
+                            if self.text_layers.iter().any(|_| true) {
+                                ui.separator();
+                                ui.label(egui::RichText::new(format!("{} layer(s)", self.text_layers.len())).size(11.0).color(label_col));
                             }
                         }
                         Tool::Crop => {
@@ -1408,10 +1519,25 @@ impl ImageEditor {
             }
         }
 
-        if self.text_state.placing {
-            if let Some((tx, ty)) = self.text_state.pos {
-                let screen_pos = self.image_to_screen(tx as f32, ty as f32);
-                painter.text(screen_pos, egui::Align2::LEFT_TOP, &self.text_state.content, egui::FontId::proportional(self.text_state.font_size as f32 * self.zoom), self.color);
+        for layer in &self.text_layers {
+            let anchor = self.image_to_screen(layer.img_x, layer.img_y);
+            let font_id = egui::FontId::proportional(layer.font_size * self.zoom);
+            let display = if self.editing_text && self.selected_text == Some(layer.id) {
+                let blink = (ctx.input(|i| i.time) * 2.0) as u32 % 2 == 0;
+                if blink { format!("{}|", layer.content) } else { layer.content.clone() }
+            } else {
+                layer.content.clone()
+            };
+            painter.text(anchor, egui::Align2::LEFT_TOP, &display, font_id, layer.color);
+
+            if self.selected_text == Some(layer.id) {
+                let sel_rect = layer.screen_rect(anchor, self.zoom);
+                let sel_color = ColorPalette::BLUE_400;
+                painter.rect_stroke(sel_rect, 2.0,
+                    egui::Stroke::new(1.5, sel_color), egui::StrokeKind::Outside);
+                if let Some(handle) = self.text_resize_handle() {
+                    painter.rect_filled(handle, 2.0, sel_color);
+                }
             }
         }
 
@@ -1464,6 +1590,32 @@ impl ImageEditor {
                         self.crop_state.end = Some((ix as f32, iy as f32));
                     }
                 }
+                Tool::Text => {
+                    if let (Some(id), Some(drag_start), Some(drag_mode)) =
+                        (self.selected_text, self.text_drag_origin, self.text_drag_mode)
+                    {
+                        match drag_mode {
+                            TextDragMode::Move => {
+                                if let Some(origin) = self.text_layer_origin {
+                                    let delta = pos - drag_start;
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                                        layer.img_x = origin.0 + delta.x / self.zoom;
+                                        layer.img_y = origin.1 + delta.y / self.zoom;
+                                    }
+                                }
+                            }
+                            TextDragMode::ResizeCorner => {
+                                if let Some(origin_fs) = self.text_font_size_origin {
+                                    let delta = pos - drag_start;
+                                    let factor = 1.0 + (delta.x + delta.y) / 100.0;
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                                        layer.font_size = (origin_fs * factor).clamp(6.0, 400.0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1476,12 +1628,48 @@ impl ImageEditor {
             }
         }
 
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Text {
+            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            self.text_drag_mode = None;
+            self.text_drag_origin = None;
+            self.text_layer_origin = None;
+            self.text_font_size_origin = None;
+
+            if let Some(id) = self.selected_text {
+                if let Some(handle) = self.text_resize_handle() {
+                    if handle.contains(pos) {
+                        self.text_drag_mode = Some(TextDragMode::ResizeCorner);
+                        self.text_drag_origin = Some(pos);
+                        if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+                            self.text_font_size_origin = Some(layer.font_size);
+                        }
+                    }
+                }
+                if self.text_drag_mode.is_none() {
+                    if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+                        let anchor = self.image_to_screen(layer.img_x, layer.img_y);
+                        if layer.screen_rect(anchor, self.zoom).contains(pos) {
+                            self.text_drag_mode = Some(TextDragMode::Move);
+                            self.text_drag_origin = Some(pos);
+                            self.text_layer_origin = Some((layer.img_x, layer.img_y));
+                        }
+                    }
+                }
+            }
+        }
+
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
                 Tool::Brush | Tool::Eraser => {
                     self.texture_dirty = true;
                     self.stroke_points.clear();
                     self.is_dragging = false;
+                }
+                Tool::Text => {
+                    self.text_drag_mode = None;
+                    self.text_drag_origin = None;
+                    self.text_layer_origin = None;
+                    self.text_font_size_origin = None;
                 }
                 _ => {}
             }
@@ -1516,14 +1704,25 @@ impl ImageEditor {
                     }
                 }
                 Tool::Text => {
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
-                        if self.text_state.placing && self.text_state.pos.is_some() {
-                            self.push_undo();
-                            self.stamp_text();
-                            self.add_color_to_history();
+                    if let Some(hit) = self.hit_text_layer(pos) {
+                        self.selected_text = Some(hit);
+                        self.editing_text = true;
+                    } else {
+                        self.commit_or_discard_active_text();
+                        if let Some((ix, iy)) = self.screen_to_image(pos) {
+                            let id = self.next_text_id;
+                            self.next_text_id += 1;
+                            self.text_layers.push(TextLayer {
+                                id,
+                                content: String::new(),
+                                img_x: ix as f32,
+                                img_y: iy as f32,
+                                font_size: self.text_font_size,
+                                color: self.color,
+                            });
+                            self.selected_text = Some(id);
+                            self.editing_text = true;
                         }
-                        self.text_state.placing = true;
-                        self.text_state.pos = Some((ix, iy));
                     }
                 }
                 _ => {}
@@ -1542,6 +1741,8 @@ impl ImageEditor {
     }
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
+        self.process_text_input(ctx);
+
         ctx.input_mut(|i| {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Z) { self.undo(); }
             if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z) { self.redo(); }
@@ -1550,16 +1751,20 @@ impl ImageEditor {
                 if i.modifiers.shift { let _ = self.save_as_impl(); }
                 else { let _ = self.save_impl(); }
             }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) {
+                self.commit_or_discard_active_text();
+            }
         });
-        if !self.text_focused {
+
+        if !self.editing_text {
             ctx.input_mut(|i| {
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::B) { self.tool = Tool::Brush; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::E) { self.tool = Tool::Eraser; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::F) { self.tool = Tool::Fill; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::B) { self.commit_or_discard_active_text(); self.tool = Tool::Brush; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::E) { self.commit_or_discard_active_text(); self.tool = Tool::Eraser; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::F) { self.commit_or_discard_active_text(); self.tool = Tool::Fill; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::T) { self.tool = Tool::Text; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::D) { self.tool = Tool::Eyedropper; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::C) { self.tool = Tool::Crop; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::P) { self.tool = Tool::Pan; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::D) { self.commit_or_discard_active_text(); self.tool = Tool::Eyedropper; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::C) { self.commit_or_discard_active_text(); self.tool = Tool::Crop; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::P) { self.commit_or_discard_active_text(); self.tool = Tool::Pan; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Num0) { self.fit_image(); }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Plus) { self.zoom *= 1.25; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Minus) { self.zoom = (self.zoom / 1.25).max(0.01); }
@@ -1573,7 +1778,8 @@ impl ImageEditor {
             None => return self.save_as_impl(),
         };
         if let Some(img) = &self.image {
-            img.save(&path).map_err(|e| e.to_string())?;
+            let composite = self.stamp_all_text_layers(img);
+            composite.save(&path).map_err(|e| e.to_string())?;
             self.dirty = false;
         }
         Ok(())
@@ -1585,7 +1791,8 @@ impl ImageEditor {
             .save_file()
         {
             if let Some(img) = &self.image {
-                img.save(&path).map_err(|e| e.to_string())?;
+                let composite = self.stamp_all_text_layers(img);
+                composite.save(&path).map_err(|e| e.to_string())?;
                 self.file_path = Some(path);
                 self.dirty = false;
             }
