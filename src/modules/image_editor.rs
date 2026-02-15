@@ -496,59 +496,41 @@ impl ImageEditor {
     }
 
     fn apply_brightness_contrast(&mut self) {
-        let img = match self.image.clone() {
-            Some(i) => i,
-            None => return,
-        };
-        
+        let img = match self.image.clone() { Some(i) => i, None => return };
         let b = self.brightness;
         let c = 1.0 + self.contrast / 100.0;
         let progress = Arc::clone(&self.filter_progress);
         let result = Arc::clone(&self.pending_filter_result);
-        
         self.is_processing = true;
         *progress.lock().unwrap() = 0.0;
-        
         thread::spawn(move || {
             let mut buf = img.to_rgba8();
             let total = (buf.width() * buf.height()) as usize;
             let mut processed = 0;
-            
             for pixel in buf.pixels_mut() {
                 for i in 0..3 {
                     let val = pixel[i] as f32;
                     pixel[i] = ((val - 128.0) * c + 128.0 + b).clamp(0.0, 255.0) as u8;
                 }
-                
                 processed += 1;
-                if processed % 5000 == 0 {
-                    *progress.lock().unwrap() = processed as f32 / total as f32;
-                }
+                if processed % 5000 == 0 { *progress.lock().unwrap() = processed as f32 / total as f32; }
             }
-            
             *result.lock().unwrap() = Some(DynamicImage::ImageRgba8(buf));
             *progress.lock().unwrap() = 1.0;
         });
     }
 
     fn apply_hue_saturation(&mut self) {
-        let img = match self.image.clone() {
-            Some(i) => i,
-            None => return,
-        };
-        
+         let img = match self.image.clone() { Some(i) => i, None => return };
         let sat_factor = 1.0 + self.saturation / 100.0;
         let hue_shift = self.hue;
         let progress = Arc::clone(&self.filter_progress);
         let result = Arc::clone(&self.pending_filter_result);
-        
         self.is_processing = true;
         *progress.lock().unwrap() = 0.0;
         
         thread::spawn(move || {
             let mut buf = img.to_rgba8();
-            let total = buf.height();
-            
             for y in 0..buf.height() {
                 for x in 0..buf.width() {
                     let p = buf.get_pixel(x, y).0;
@@ -558,55 +540,34 @@ impl ImageEditor {
                     let (nr, ng, nb) = hsv_to_rgb(nh, ns, v);
                     buf.put_pixel(x, y, Rgba([nr, ng, nb, p[3]]));
                 }
-                
-                if y % 10 == 0 {
-                    *progress.lock().unwrap() = y as f32 / total as f32;
-                }
+                if y % 10 == 0 { *progress.lock().unwrap() = y as f32 / buf.height() as f32; }
             }
-            
             *result.lock().unwrap() = Some(DynamicImage::ImageRgba8(buf));
             *progress.lock().unwrap() = 1.0;
         });
     }
-
-    fn apply_blur(&mut self) {
-        let img = match self.image.clone() {
-            Some(i) => i,
-            None => return,
-        };
-        
+    
+    fn apply_blur(&mut self) { 
+        let img = match self.image.clone() { Some(i) => i, None => return };
         let radius = self.blur_radius;
-        let progress = Arc::clone(&self.filter_progress);
         let result = Arc::clone(&self.pending_filter_result);
-        
+        let progress = Arc::clone(&self.filter_progress);
         self.is_processing = true;
-        *progress.lock().unwrap() = 0.0;
-        
         thread::spawn(move || {
             *progress.lock().unwrap() = 0.5;
-            let blurred = img.blur(radius);
-            *result.lock().unwrap() = Some(blurred);
+            *result.lock().unwrap() = Some(img.blur(radius));
             *progress.lock().unwrap() = 1.0;
         });
     }
-
-    fn apply_sharpen(&mut self) {
-        let img = match self.image.clone() {
-            Some(i) => i,
-            None => return,
-        };
-        
+    fn apply_sharpen(&mut self) { 
+         let img = match self.image.clone() { Some(i) => i, None => return };
         let amount = self.sharpen_amount;
-        let progress = Arc::clone(&self.filter_progress);
         let result = Arc::clone(&self.pending_filter_result);
-        
+        let progress = Arc::clone(&self.filter_progress);
         self.is_processing = true;
-        *progress.lock().unwrap() = 0.0;
-        
         thread::spawn(move || {
             *progress.lock().unwrap() = 0.5;
-            let sharpened = img.unsharpen(amount, 0);
-            *result.lock().unwrap() = Some(sharpened);
+            *result.lock().unwrap() = Some(img.unsharpen(amount, 0));
             *progress.lock().unwrap() = 1.0;
         });
     }
@@ -702,34 +663,20 @@ impl ImageEditor {
         }
     }
 
-    fn apply_resize(&mut self) {
-        let img = match self.image.clone() {
-            Some(i) => i,
-            None => return,
-        };
-        
+    fn apply_resize(&mut self) { 
+        let img = match self.image.clone() { Some(i) => i, None => return };
         if self.resize_w == 0 || self.resize_h == 0 { return; }
-        
-        let w = self.resize_w;
-        let h = self.resize_h;
-        let stretch = self.resize_stretch;
-        let progress = Arc::clone(&self.filter_progress);
+        let (w, h, stretch) = (self.resize_w, self.resize_h, self.resize_stretch);
         let result = Arc::clone(&self.pending_filter_result);
-        
+        let progress = Arc::clone(&self.filter_progress);
         self.is_processing = true;
-        *progress.lock().unwrap() = 0.0;
-        
         thread::spawn(move || {
             *progress.lock().unwrap() = 0.5;
-            
-            let final_img = if stretch {
-                 img.resize_exact(w, h, image::imageops::FilterType::Lanczos3)
-            } else {
+            let final_img = if stretch { img.resize_exact(w, h, image::imageops::FilterType::Lanczos3) } else {
                 let mut new_buf = ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]));
                 image::imageops::overlay(&mut new_buf, &img, 0, 0);
                 DynamicImage::ImageRgba8(new_buf)
             };
-            
             *result.lock().unwrap() = Some(final_img);
             *progress.lock().unwrap() = 1.0;
         });
@@ -741,11 +688,7 @@ impl ImageEditor {
             None => return Err("No image to export".to_string()),
         };
 
-        let default_name = self.file_path.as_ref()
-            .and_then(|p| p.file_stem())
-            .and_then(|s| s.to_str())
-            .unwrap_or("export");
-        
+        let default_name = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str()).unwrap_or("export");
         let filename = format!("{}.{}", default_name, self.export_format.extension());
         
         let path = match rfd::FileDialog::new()
@@ -773,67 +716,27 @@ impl ImageEditor {
 
     fn ensure_texture(&mut self, ctx: &egui::Context) {
         if !self.texture_dirty { return; }
-        let img = match &self.image {
-            Some(i) => i,
-            None => { self.texture_dirty = false; return; }
-        };
+        let img = match &self.image { Some(i) => i, None => { self.texture_dirty = false; return; } };
         let rgba = img.to_rgba8();
-        let w = rgba.width() as usize;
-        let h = rgba.height() as usize;
+        let (w, h) = (rgba.width() as usize, rgba.height() as usize);
         let color_image = egui::ColorImage {
             size: [w, h],
             source_size: egui::vec2(w as f32, h as f32),
-            pixels: rgba.pixels().map(|p| {
-                let [r, g, b, a] = p.0;
-                egui::Color32::from_rgba_unmultiplied(r, g, b, a)
-            }).collect(),
+            pixels: rgba.pixels().map(|p| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect(),
         };
 
         if let Some(texture_id) = self.texture {
-            ctx.tex_manager().write().set(
-                texture_id,
-                egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default())
-            );
+            ctx.tex_manager().write().set(texture_id, egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default()));
         } else {
-            self.texture = Some(ctx.tex_manager().write().alloc(
-                "image_editor_img".into(),
-                color_image.into(),
-                egui::TextureOptions::default(),
-            ));
+            self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), egui::TextureOptions::default()));
         }
         self.texture_dirty = false;
     }
 
-    fn open_image(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif"])
-            .pick_file()
-        {
-            if let Ok(img) = image::open(&path) {
-                self.push_undo();
-                self.resize_w = img.width();
-                self.resize_h = img.height();
-                self.image = Some(img);
-                self.texture_dirty = true;
-                self.file_path = Some(path.clone());
-                self.dirty = false;
-                self.fit_on_next_frame = true;
-                self.crop_state = CropState::default();
-                self.text_state = TextState::default();
-                
-                if let Some(cb) = &self.export_callback {
-                    cb(path);
-                }
-            }
-        }
-    }
-
     fn new_image(&mut self, w: u32, h: u32) {
         self.push_undo();
-        let buf = ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]));
-        self.image = Some(DynamicImage::ImageRgba8(buf));
-        self.resize_w = w;
-        self.resize_h = h;
+        self.image = Some(DynamicImage::ImageRgba8(ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]))));
+        self.resize_w = w; self.resize_h = h;
         self.texture_dirty = true;
         self.file_path = None;
         self.dirty = true;
@@ -1693,50 +1596,18 @@ impl ImageEditor {
     }
 
     fn check_filter_completion(&mut self) {
-        if !self.is_processing {
-            return;
-        }
-        
-        let progress = *self.filter_progress.lock().unwrap();
-        if progress >= 1.0 {
+        if !self.is_processing { return; }
+        if *self.filter_progress.lock().unwrap() >= 1.0 {
             if let Some(result) = self.pending_filter_result.lock().unwrap().take() {
-                self.resize_w = result.width();
-                self.resize_h = result.height();
+                self.resize_w = result.width(); self.resize_h = result.height();
                 self.image = Some(result);
-                self.texture_dirty = true;
-                self.dirty = true;
-                self.is_processing = false;
-                
-                match self.filter_panel {
-                    FilterPanel::BrightnessContrast => {
-                        self.brightness = 0.0;
-                        self.contrast = 0.0;
-                        self.filter_panel = FilterPanel::None;
-                    }
-                    FilterPanel::HueSaturation => {
-                        self.hue = 0.0;
-                        self.saturation = 0.0;
-                        self.filter_panel = FilterPanel::None;
-                    }
-                    FilterPanel::Blur => {
-                        self.blur_radius = 3.0;
-                        self.filter_panel = FilterPanel::None;
-                    }
-                    FilterPanel::Sharpen => {
-                        self.sharpen_amount = 1.0;
-                        self.filter_panel = FilterPanel::None;
-                    }
-                    FilterPanel::Resize => {
-                        self.fit_on_next_frame = true;
-                        self.filter_panel = FilterPanel::None;
-                    }
-                    _ => {}
-                }
+                self.texture_dirty = true; self.dirty = true; self.is_processing = false;
+                self.filter_panel = FilterPanel::None;
+                if self.resize_w != 0 { self.fit_on_next_frame = true; }
             }
         }
     }
 }
-
 
 fn rgb_to_hsv_f32(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
@@ -1778,15 +1649,7 @@ fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
     let delta = max - min;
     let v = max;
     let s = if max == 0.0 { 0.0 } else { delta / max };
-    let h = if delta == 0.0 {
-        0.0
-    } else if max == r {
-        60.0 * (((g - b) / delta) % 6.0)
-    } else if max == g {
-        60.0 * ((b - r) / delta + 2.0)
-    } else {
-        60.0 * ((r - g) / delta + 4.0)
-    };
+    let h = if delta == 0.0 { 0.0 } else if max == r { 60.0 * (((g - b) / delta) % 6.0) } else if max == g { 60.0 * ((b - r) / delta + 2.0) } else { 60.0 * ((r - g) / delta + 4.0) };
     (if h < 0.0 { h + 360.0 } else { h }, s, v)
 }
 
@@ -1795,12 +1658,7 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
     let m = v - c;
     let (r, g, b) = match h as u32 {
-        0..=59 => (c, x, 0.0),
-        60..=119 => (x, c, 0.0),
-        120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c),
-        240..=299 => (x, 0.0, c),
-        _ => (c, 0.0, x),
+        0..=59 => (c, x, 0.0), 60..=119 => (x, c, 0.0), 120..=179 => (0.0, c, x), 180..=239 => (0.0, x, c), 240..=299 => (x, 0.0, c), _ => (c, 0.0, x),
     };
     (((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
 }
@@ -1823,73 +1681,35 @@ impl EditorModule for ImageEditor {
         let has_image = self.image.is_some();
         let has_undo = !self.undo_stack.is_empty();
         let has_redo = !self.redo_stack.is_empty();
-        
         MenuContribution {
-            file_items: vec![
-                (MenuItem {
-                    label: "Export...".to_string(),
-                    shortcut: None,
-                    enabled: has_image,
-                }, MenuAction::Export),
-            ],
-            edit_items: vec![
-                (MenuItem {
-                    label: "Undo".to_string(),
-                    shortcut: Some("Ctrl+Z".to_string()),
-                    enabled: has_undo,
-                }, MenuAction::Undo),
-                (MenuItem {
-                    label: "Redo".to_string(),
-                    shortcut: Some("Ctrl+Y".to_string()),
-                    enabled: has_redo,
-                }, MenuAction::Redo),
+            file_items: vec![ (MenuItem { label: "Export...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Export) ],
+            edit_items: vec![ 
+                (MenuItem { label: "Undo".to_string(), 
+                shortcut: Some("Ctrl+Z".to_string()), enabled: has_undo }, MenuAction::Undo), 
+                (MenuItem { label: "Redo".to_string(), shortcut: Some("Ctrl+Y".to_string()), enabled: has_redo }, 
+                MenuAction::Redo) 
             ],
             view_items: vec![
-                (MenuItem {
-                    label: "Zoom In".to_string(),
-                    shortcut: Some("+".to_string()),
-                    enabled: true,
-                }, MenuAction::Custom("Zoom In".to_string())),
-                (MenuItem {
-                    label: "Zoom Out".to_string(),
-                    shortcut: Some("-".to_string()),
-                    enabled: true,
-                }, MenuAction::Custom("Zoom Out".to_string())),
-                (MenuItem {
-                    label: "Fit".to_string(),
-                    shortcut: Some("0".to_string()),
-                    enabled: true,
-                }, MenuAction::Custom("Fit".to_string())),
+                (MenuItem { label: "Zoom In".to_string(), 
+                shortcut: Some("+".to_string()), enabled: true }, 
+                MenuAction::Custom("Zoom In".to_string())), 
+                (MenuItem { label: "Zoom Out".to_string(), 
+                shortcut: Some("-".to_string()), enabled: true }, 
+                MenuAction::Custom("Zoom Out".to_string())), 
+                (MenuItem { label: "Fit".to_string(), shortcut: Some("0".to_string()), enabled: true }, 
+                MenuAction::Custom("Fit".to_string())) 
             ],
         }
     }
-    
+
     fn handle_menu_action(&mut self, action: MenuAction) -> bool {
         match action {
-            MenuAction::Undo => {
-                self.undo();
-                true
-            }
-            MenuAction::Redo => {
-                self.redo();
-                true
-            }
-            MenuAction::Export => {
-                self.filter_panel = FilterPanel::Export;
-                true
-            }
-            MenuAction::Custom(val) if val == "Zoom In".to_string() => {
-                self.zoom *= 1.25;
-                true
-            }
-            MenuAction::Custom(val) if val == "Zoom Out".to_string() => {
-                self.zoom = (self.zoom / 1.25).max(0.01);
-                true
-            }
-            MenuAction::Custom(val) if val == "Fit".to_string() => {
-                self.fit_image();
-                true
-            }
+            MenuAction::Undo => { self.undo(); true }
+            MenuAction::Redo => { self.redo(); true }
+            MenuAction::Export => { self.filter_panel = FilterPanel::Export; true }
+            MenuAction::Custom(val) if val == "Zoom In" => { self.zoom *= 1.25; true }
+            MenuAction::Custom(val) if val == "Zoom Out" => { self.zoom = (self.zoom / 1.25).max(0.01); true }
+            MenuAction::Custom(val) if val == "Fit" => { self.fit_image(); true }
             _ => false,
         }
     }
@@ -1905,45 +1725,7 @@ impl EditorModule for ImageEditor {
         }
 
         if self.image.is_none() && self.file_path.is_none() {
-            ui.centered_and_justified(|ui| {
-                ui.vertical_centered(|ui| {
-                    let title_color = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 };
-                    ui.label(egui::RichText::new("Image Editor").size(28.0).color(title_color));
-                    ui.add_space(8.0);
-                    let sub_color = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
-                    ui.label(egui::RichText::new("Draw, edit, filter, and transform images").size(14.0).color(sub_color));
-                    ui.add_space(32.0);
-
-                    let (bg, hover, txt) = (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE);
-                    let open_clicked = ui.scope(|ui| {
-                        let s = ui.style_mut();
-                        s.visuals.widgets.inactive.bg_fill = bg;
-                        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                        s.visuals.widgets.hovered.bg_fill = hover;
-                        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-                        ui.add(egui::Button::new(egui::RichText::new("Open Image").size(15.0).color(txt)).min_size(egui::vec2(180.0, 42.0))).clicked()
-                    }).inner;
-                    if open_clicked { self.open_image(); }
-
-                    ui.add_space(12.0);
-
-                    let (bg2, hover2, txt2) = if matches!(theme, ThemeMode::Dark) {
-                        (ColorPalette::ZINC_700, ColorPalette::ZINC_600, ColorPalette::ZINC_200)
-                    } else {
-                        (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
-                    };
-                    let new_clicked = ui.scope(|ui| {
-                        let s = ui.style_mut();
-                        s.visuals.widgets.inactive.bg_fill = bg2;
-                        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                        s.visuals.widgets.hovered.bg_fill = hover2;
-                        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-                        ui.add(egui::Button::new(egui::RichText::new("New Canvas").size(15.0).color(txt2)).min_size(egui::vec2(180.0, 42.0))).clicked()
-                    }).inner;
-                    if new_clicked { self.new_image(800, 600); }
-                });
-            });
-            return;
+            self.new_image(800, 600);
         }
 
         self.render_toolbar(ui, theme);
