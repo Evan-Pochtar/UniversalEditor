@@ -39,12 +39,11 @@
 
 ## Debugging
 
-#### Text Editor
+### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
-- [ ] Save warning dialogue does not show up on application close
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
 - [x] Can click to non-existant line in markdown mode, desyncing cursor.
@@ -59,7 +58,8 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
-#### Image Editor
+### Image Editor Bugs
+
 - [x] Can't just click to color for brush, must drag
 - [x] Color picker
   - [x] Hexcode Does not update properly on color picker
@@ -67,15 +67,23 @@
   - [x] Cant see cursor on color picker
 - [x] Resize does not work if not aspect ratio locked
 - [x] Text tool currently not working
-- [ ] Text Corner Resizing delta too fast, hard to select
+- [x] Text Corner Resizing delta too fast, hard to select
+- [ ] Text Issues
+  - [x] Bold only shows up when fully saved
+  - [ ] Rotated text has spots in final image
+  - [ ] Rotated text does not show up in the same place when saved
+  - [ ] Cannot highlight text within text box
+  - [ ] When selecting another tool, text box should be deselected
 
-#### Other
+### Other Bugs
+
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
+- [ ] Save warning dialogue does not show up on application close
 
 ## Features
 
-#### Text Editor
+### Text Editor
 
 - [x] Keyboard Shortcuts
 - [x] Markdown Loader
@@ -97,9 +105,9 @@
 - [x] Opening .md file automatically sets markdown mode
 - [ ] Latex?
 
-#### Image Editor
+### Image Editor
 
-- [ ] Layer system 
+- [ ] Layer system
   - [ ] Add
   - [ ] Reorder
   - [ ] Merge
@@ -124,12 +132,14 @@
 - [x] Better text selection/writing tool
   - [x] Easy selection of text
   - [x] Resize by corner drag
-  - [ ] Resize Up/Down
-  - [ ] Bold/Italics/Underlined Text
-  - [ ] Font picker
+  - [x] Resize Up/Down
+  - [x] Bold/Italics/Underlined Text
+  - [x] Font picker
+  - [x] Rotate
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
 - [x] Keyboard Shortcuts
+- [ ] Import Images into Canvas
 - [ ] Copy/paste/cut within selection
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
@@ -146,7 +156,8 @@
 - [ ] Add different cursors for different functions/tools
 - [ ] Crop should show preview of the size of the image
 
-#### CONVERTER: Img 2 Img
+### CONVERTER: Img 2 Img
+
 - [ ] Keyboard Shortcuts
 - [x] Display Error (For example, width > 256 for ico conversion)
 

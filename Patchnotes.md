@@ -42,6 +42,9 @@
 - **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
 - **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
 - **IMG EDITOR**: Corner resizing and selection of text now available
+- **IMG EDITOR**: Textbox up/down resizing
+- **IMG EDITOR**: Textbox Bold/Italics/Underlining
+- **IMG EDITOR**: Textbox Rotating
 - **GENERAL**: Top panel now customized to each page
 - **GENERAL**: Adding icon to release build executable
 - **GENERAL**: Improved Home Page
