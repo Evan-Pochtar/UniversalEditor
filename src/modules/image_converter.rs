@@ -3,53 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
+use crate::modules::image_export::{ExportFormat, export_image};
 use super::EditorModule;
-use image::ImageEncoder;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ImageFormat {
-    Jpeg,
-    Png,
-    Webp,
-    Bmp,
-    Tiff,
-    Ico,
-}
-
-impl ImageFormat {
-    fn as_str(&self) -> &str {
-        match self {
-            ImageFormat::Jpeg => "JPEG",
-            ImageFormat::Png => "PNG",
-            ImageFormat::Webp => "WebP",
-            ImageFormat::Bmp => "BMP",
-            ImageFormat::Tiff => "TIFF",
-            ImageFormat::Ico => "ICO",
-        }
-    }
-
-    fn extension(&self) -> &str {
-        match self {
-            ImageFormat::Jpeg => "jpg",
-            ImageFormat::Png => "png",
-            ImageFormat::Webp => "webp",
-            ImageFormat::Bmp => "bmp",
-            ImageFormat::Tiff => "tiff",
-            ImageFormat::Ico => "ico",
-        }
-    }
-
-    fn all() -> Vec<ImageFormat> {
-        vec![
-            ImageFormat::Jpeg,
-            ImageFormat::Png,
-            ImageFormat::Webp,
-            ImageFormat::Bmp,
-            ImageFormat::Tiff,
-            ImageFormat::Ico,
-        ]
-    }
-}
 
 #[derive(Debug, Clone)]
 struct ImageFile {
@@ -113,7 +68,7 @@ impl Default for ConversionProgress {
 
 pub struct ImageConverter {
     images: Vec<ImageFile>,
-    target_format: ImageFormat,
+    target_format: ExportFormat,
     output_directory: Option<PathBuf>,
     jpeg_quality: u8,
     png_compression: u8,
@@ -133,7 +88,7 @@ impl ImageConverter {
     pub fn new() -> Self {
         Self {
             images: Vec::new(),
-            target_format: ImageFormat::Png,
+            target_format: ExportFormat::Png,
             output_directory: None,
             jpeg_quality: 90,
             png_compression: 6,
@@ -249,26 +204,17 @@ impl ImageConverter {
     fn convert_image(
         input_path: &PathBuf,
         output_dir: &PathBuf,
-        target_format: ImageFormat,
+        target_format: ExportFormat,
         jpeg_quality: u8,
-        _png_compression: u8,
-        _webp_quality: f32,
+        png_compression: u8,
+        webp_quality: f32,
         overwrite: bool,
         add_suffix: bool,
         suffix: &str,
         auto_scale_ico: bool,
     ) -> Result<(), String> {
-        let mut img = image::open(input_path)
+        let img = image::open(input_path)
             .map_err(|e| format!("Failed to open image: {}", e))?;
-
-        if target_format == ImageFormat::Ico && auto_scale_ico {
-            if img.width() > 256 || img.height() > 256 {
-                let scale = 256.0 / img.width().max(img.height()) as f32;
-                let new_width = (img.width() as f32 * scale) as u32;
-                let new_height = (img.height() as f32 * scale) as u32;
-                img = img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
-            }
-        }
 
         let stem = input_path.file_stem()
             .and_then(|s| s.to_str())
@@ -287,53 +233,7 @@ impl ImageConverter {
             return Err("File exists and overwrite is disabled".to_string());
         }
 
-        match target_format {
-            ImageFormat::Jpeg => {
-                let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-                    std::fs::File::create(&output_path)
-                        .map_err(|e| format!("Failed to create output file: {}", e))?,
-                    jpeg_quality,
-                );
-                encoder.encode_image(&img)
-                    .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
-            }
-            ImageFormat::Png => {
-                let file = std::fs::File::create(&output_path)
-                    .map_err(|e| format!("Failed to create output file: {}", e))?;
-                let encoder = image::codecs::png::PngEncoder::new_with_quality(
-                    file,
-                    image::codecs::png::CompressionType::Default,
-                    image::codecs::png::FilterType::Adaptive,
-                );
-                encoder.write_image(
-                    img.as_bytes(),
-                    img.width(),
-                    img.height(),
-                    img.color().into(),
-                ).map_err(|e| format!("Failed to encode PNG: {}", e))?;
-            }
-            ImageFormat::Webp => {
-                img.save_with_format(&output_path, image::ImageFormat::WebP)
-                    .map_err(|e| format!("Failed to save WebP: {}", e))?;
-            }
-            ImageFormat::Bmp => {
-                img.save_with_format(&output_path, image::ImageFormat::Bmp)
-                    .map_err(|e| format!("Failed to save BMP: {}", e))?;
-            }
-            ImageFormat::Tiff => {
-                img.save_with_format(&output_path, image::ImageFormat::Tiff)
-                    .map_err(|e| format!("Failed to save TIFF: {}", e))?;
-            }
-            ImageFormat::Ico => {
-                if img.width() > 256 || img.height() > 256 {
-                    return Err(format!("ICO format requires dimensions ≤256px. Image is {}x{}. Enable auto-scaling in settings.", img.width(), img.height()));
-                }
-                img.save_with_format(&output_path, image::ImageFormat::Ico)
-                    .map_err(|e| format!("Failed to save ICO: {}", e))?;
-            }
-        }
-
-        Ok(())
+        export_image(&img, &output_path, target_format, jpeg_quality, png_compression, webp_quality, auto_scale_ico)
     }
 
     fn render_header(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
@@ -394,7 +294,7 @@ impl ImageConverter {
                 ui.add_space(8.0);
 
                 ui.horizontal_wrapped(|ui| {
-                    for format in ImageFormat::all() {
+                    for format in ExportFormat::all() {
                         let is_selected = self.target_format == format;
                         
                         let (bg_color, txt_color) = if is_selected {
@@ -461,25 +361,25 @@ impl ImageConverter {
                     ui.add_space(12.0);
 
                     match self.target_format {
-                        ImageFormat::Jpeg => {
+                        ExportFormat::Jpeg => {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("JPEG Quality:").color(label_color));
                                 ui.add(egui::Slider::new(&mut self.jpeg_quality, 1..=100).suffix("%"));
                             });
                         }
-                        ImageFormat::Png => {
+                        ExportFormat::Png => {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("PNG Compression:").color(label_color));
                                 ui.add(egui::Slider::new(&mut self.png_compression, 0..=9));
                             });
                         }
-                        ImageFormat::Webp => {
+                        ExportFormat::Webp => {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("WebP Quality:").color(label_color));
                                 ui.add(egui::Slider::new(&mut self.webp_quality, 0.0..=100.0).suffix("%"));
                             });
                         }
-                        ImageFormat::Ico => {
+                        ExportFormat::Ico => {
                             ui.checkbox(&mut self.auto_scale_ico, 
                                 egui::RichText::new("Auto-scale to 256px (maintains aspect ratio, only if width > 256px)").color(label_color));
                         }

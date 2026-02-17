@@ -397,3 +397,155 @@ pub fn sidebar_item(
 
     response
 }
+
+pub fn ghost_button(ui: &mut egui::Ui, text: &str, disabled: bool, theme: ThemeMode) -> egui::Response {
+    let (text_color, hover_bg, border) = match theme {
+        ThemeMode::Dark => (
+            if disabled { egui::Color32::from_rgb(65, 65, 74) } else { ColorPalette::SLATE_300 },
+            egui::Color32::from_rgb(34, 34, 42),
+            if disabled { egui::Color32::from_rgb(42, 42, 50) } else { ColorPalette::ZINC_700 },
+        ),
+        ThemeMode::Light => (
+            if disabled { ColorPalette::GRAY_300 } else { ColorPalette::GRAY_600 },
+            ColorPalette::GRAY_100,
+            if disabled { ColorPalette::GRAY_200 } else { ColorPalette::GRAY_300 },
+        ),
+    };
+
+    ui.scope(|ui| {
+        if disabled { ui.disable(); }
+        let s = ui.style_mut();
+        s.visuals.widgets.inactive.bg_fill          = egui::Color32::TRANSPARENT;
+        s.visuals.widgets.inactive.weak_bg_fill     = egui::Color32::TRANSPARENT;
+        s.visuals.widgets.inactive.bg_stroke        = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.inactive.fg_stroke        = egui::Stroke::new(1.0, text_color);
+        s.visuals.widgets.hovered.bg_fill           = hover_bg;
+        s.visuals.widgets.hovered.weak_bg_fill      = hover_bg;
+        s.visuals.widgets.hovered.bg_stroke         = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.hovered.fg_stroke         = egui::Stroke::new(1.0, text_color);
+        s.visuals.widgets.active.bg_fill            = hover_bg;
+        s.visuals.widgets.active.bg_stroke          = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.active.fg_stroke          = egui::Stroke::new(1.0, text_color);
+        ui.add(
+            egui::Button::new(egui::RichText::new(text).size(13.0).color(text_color))
+                .min_size(egui::vec2(0.0, 30.0)),
+        )
+    }).inner
+}
+
+pub fn tool_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    desc: &str,
+    accent: egui::Color32,
+    theme: ThemeMode,
+) -> egui::Response {
+    let (card_bg, card_hover, border, hover_border, title_color, desc_color) = match theme {
+        ThemeMode::Dark => (
+            egui::Color32::from_rgb(26, 26, 31),
+            egui::Color32::from_rgb(34, 34, 41),
+            egui::Color32::from_rgb(46, 46, 54),
+            accent,
+            ColorPalette::SLATE_100,
+            ColorPalette::ZINC_500,
+        ),
+        ThemeMode::Light => (
+            egui::Color32::WHITE,
+            ColorPalette::GRAY_50,
+            ColorPalette::GRAY_200,
+            accent,
+            ColorPalette::GRAY_900,
+            ColorPalette::GRAY_500,
+        ),
+    };
+
+    let desired = egui::vec2(ui.available_width(), 84.0);
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        let hovered = response.hovered();
+        let bg      = if hovered { card_hover } else { card_bg };
+        let stroke  = egui::Stroke::new(if hovered { 1.5 } else { 1.0 }, if hovered { hover_border } else { border });
+
+        ui.painter().rect(rect, 8.0, bg, stroke, egui::StrokeKind::Outside);
+
+        let bar = egui::Rect::from_min_size(
+            rect.min + egui::vec2(1.0, 1.0),
+            egui::vec2(3.0, rect.height() - 2.0),
+        );
+        ui.painter().rect_filled(bar, egui::CornerRadius { nw: 7, sw: 7, ne: 0, se: 0 }, accent);
+
+        let tx = rect.left() + 20.0;
+        let mid = rect.center().y;
+        let offset = if desc.is_empty() { 0.0 } else { 11.0 };
+
+        ui.painter().text(
+            egui::pos2(tx, mid - offset),
+            egui::Align2::LEFT_CENTER,
+            title,
+            egui::FontId::proportional(15.0),
+            title_color,
+        );
+        if !desc.is_empty() {
+            ui.painter().text(
+                egui::pos2(tx, mid + offset),
+                egui::Align2::LEFT_CENTER,
+                desc,
+                egui::FontId::proportional(12.0),
+                desc_color,
+            );
+        }
+    }
+
+    response
+}
+
+pub fn tool_card_placeholder(ui: &mut egui::Ui, label: &str, theme: ThemeMode) {
+    let (bg, border, text_color) = match theme {
+        ThemeMode::Dark => (
+            egui::Color32::from_rgb(20, 20, 24),
+            egui::Color32::from_rgb(36, 36, 42),
+            ColorPalette::ZINC_600,
+        ),
+        ThemeMode::Light => (ColorPalette::GRAY_50, ColorPalette::GRAY_200, ColorPalette::GRAY_400),
+    };
+
+    let desired = egui::vec2(ui.available_width(), 84.0);
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(rect, 8.0, bg, egui::Stroke::new(1.0, border), egui::StrokeKind::Outside);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(12.0),
+            text_color,
+        );
+    }
+}
+
+pub fn home_section_header(ui: &mut egui::Ui, title: &str, theme: ThemeMode) {
+    let text_color = match theme {
+        ThemeMode::Dark  => ColorPalette::ZINC_500,
+        ThemeMode::Light => ColorPalette::GRAY_400,
+    };
+    let line_color = match theme {
+        ThemeMode::Dark  => egui::Color32::from_rgb(42, 42, 50),
+        ThemeMode::Light => ColorPalette::GRAY_200,
+    };
+
+    ui.horizontal(|ui| {
+        let label_resp = ui.label(
+            egui::RichText::new(title.to_uppercase()).size(11.0).color(text_color),
+        );
+        let y   = label_resp.rect.center().y;
+        let x0  = ui.cursor().min.x + 6.0;
+        let x1  = ui.max_rect().max.x;
+        ui.painter().line_segment(
+            [egui::pos2(x0, y), egui::pos2(x1, y)],
+            egui::Stroke::new(1.0, line_color),
+        );
+        ui.allocate_exact_size(egui::vec2((x1 - x0).max(0.0), 1.0), egui::Sense::hover());
+    });
+}

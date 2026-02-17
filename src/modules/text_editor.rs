@@ -5,7 +5,7 @@ use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use crate::style::ColorPalette;
 
-use super::EditorModule;
+use super::{EditorModule, MenuAction, MenuItem, MenuContribution};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
@@ -1297,6 +1297,37 @@ impl EditorModule for TextEditor {
             self.save()
         } else {
             Err("Cancelled".to_string())
+        }
+    }
+
+    fn get_menu_contributions(&self) -> MenuContribution {
+        MenuContribution {
+            file_items: Vec::new(),
+            edit_items: vec![
+                (MenuItem {
+                    label: "Undo".to_string(),
+                    shortcut: Some("Ctrl+Z".to_string()),
+                    enabled: false,
+                }, MenuAction::Undo),
+                (MenuItem {
+                    label: "Redo".to_string(),
+                    shortcut: Some("Ctrl+Y".to_string()),
+                    enabled: false,
+                }, MenuAction::Redo),
+            ],
+            view_items: Vec::new(),
+        }
+    }
+    
+    fn handle_menu_action(&mut self, action: MenuAction) -> bool {
+        match action {
+            MenuAction::Undo => {
+                false
+            }
+            MenuAction::Redo => {
+                false
+            }
+            _ => false,
         }
     }
 

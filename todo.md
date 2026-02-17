@@ -6,12 +6,17 @@
 - [x] "System" option to decide light/dark mode
 - [ ] Create Main Menu
   - [x] Page you go to changes depending on what file you put in on main menu
+  - [x] Improved Patch Notes Screen
+  - [ ] Add About Page
+  - [x] Settings per page
+  - [x] Way to go back to main menu
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
   - [ ] Change checkmark close/open sidebar to a small arrow.
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
-- [ ] Unified Top Bar Handling
+- [x] Unified Top Bar Handling
+- [ ] Better File System
 
 ## Screens
 
@@ -34,12 +39,11 @@
 
 ## Debugging
 
-#### Text Editor
+### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
-- [ ] Save warning dialogue does not show up on application close
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
 - [x] Can click to non-existant line in markdown mode, desyncing cursor.
@@ -54,20 +58,39 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 
-#### Image Editor
-- [ ] Can't just click to color for brush, must drag
+### Image Editor Bugs
+
+- [x] Can't just click to color for brush, must drag
 - [x] Color picker
   - [x] Hexcode Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
+- [x] Resize does not work if not aspect ratio locked
+- [x] Text tool currently not working
+- [x] Text Corner Resizing delta too fast, hard to select
+- [ ] Text Issues
+  - [x] Bold only shows up when fully saved
+  - [x] Rotated text has spots in final image
+  - [x] Rotated text does not show up in the same place when saved
+  - [x] Cannot highlight text within text box
+  - [x] When selecting another tool, text box should be deselected
+  - [x] Text doesn't rotate with canvas on transform
+  - [x] Sentances don't wrap properly within text boxes
+  - [x] Doesn't actually use font's listed in text box
+  - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
+  - [x] Cursor getting disconnected from where text is actually being written.
+  - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
+  - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
-#### Other
+### Other Bugs
+
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
+- [ ] Save warning dialogue does not show up on application close
 
 ## Features
 
-#### Text Editor
+### Text Editor
 
 - [x] Keyboard Shortcuts
 - [x] Markdown Loader
@@ -89,9 +112,9 @@
 - [x] Opening .md file automatically sets markdown mode
 - [ ] Latex?
 
-#### Image Editor
+### Image Editor
 
-- [ ] Layer system 
+- [ ] Layer system
   - [ ] Add
   - [ ] Reorder
   - [ ] Merge
@@ -113,8 +136,17 @@
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
   - [ ] Add opacity to color picker
+- [x] Better text selection/writing tool
+  - [x] Easy selection of text
+  - [x] Resize by corner drag
+  - [x] Resize Up/Down
+  - [x] Bold/Italics/Underlined Text
+  - [x] Font picker
+  - [x] Rotate
 - [ ] More brush presets or options
   - [ ] Custom brush shapes?
+- [x] Keyboard Shortcuts
+- [ ] Import Images into Canvas
 - [ ] Copy/paste/cut within selection
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
@@ -124,17 +156,15 @@
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
 - [ ] Filter preview before apply
-- [ ] Better toolbar organization
-- [ ] Clearer option selection (instead of constant dropdowns, e.g Filter options)
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
-- [ ] Images show up in recent files
-- [ ] Better text selection/writing tool
-  - [ ] Resize text, easy selection of text
-- [ ] Make image converter and image editor use the same export function
+- [x] Images show up in recent files
+- [x] Make image converter and image editor use the same export function
 - [ ] Add different cursors for different functions/tools
+- [ ] Crop should show preview of the size of the image
 
-#### CONVERTER: Img 2 Img
+### CONVERTER: Img 2 Img
+
 - [ ] Keyboard Shortcuts
 - [x] Display Error (For example, width > 256 for ico conversion)
 

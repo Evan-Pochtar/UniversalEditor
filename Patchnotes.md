@@ -35,3 +35,33 @@
 #### Debugging
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
 - **GENERAL**: Images now show up in recent files when opened from main menu
+
+## V0.0.3
+
+#### Features
+- **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
+- **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
+- **IMG EDITOR**: Corner resizing and selection of text now available
+- **IMG EDITOR**: Textbox up/down resizing
+- **IMG EDITOR**: Textbox Bold/Italics/Underlining
+- **IMG EDITOR**: Textbox Rotating
+- **IMG EDITOR**: Roboto and Ubuntu fonts now available within text tool
+- **GENERAL**: Top panel now customized to each page
+- **GENERAL**: Adding icon to release build executable
+- **GENERAL**: Improved Home Page
+- **GENERAL**: Can now navigate to home page from any screen or converter
+- **GENERAL**: Improved Settings Menu and Patchnotes Parsing
+- **GENERAL**: Modals now close when clicked off from instead of just using the "x"
+  
+#### Debugging
+- **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
+- **IMG EDITOR**: Images now show up in "Recent Files" properly
+- **IMG EDITOR**: Text tool now properly shows up in final images
+- **IMG EDITOR**: Bold text now shows up in edited canvas, not only in final image
+- **IMG EDITOR**: Rotated text now displays properly on export
+- **IMG EDITOR**: Rotated text no longer desyncs from canvas position
+- **IMG EDITOR**: Can now properly highlight text in text boxes
+- **IMG EDITOR**: Selecting another tool now properly deselects active textbox
+- **IMG EDITOR**: Sentences now wrap within text boxes
+- **IMG EDITOR**: Text boxes now use selected font properly
+- **IMG EDITOR**: Cusor no longer gets disconnected from text in text box
