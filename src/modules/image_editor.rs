@@ -184,6 +184,7 @@ struct TextLayer {
     italic: bool,
     underline: bool,
     font_name: String,
+    rendered_height: f32,
 }
 
 impl TextLayer {
@@ -195,12 +196,23 @@ impl TextLayer {
         (self.max_line_chars() as f32 * self.font_size * 0.58 * zoom).max(self.font_size * zoom)
     }
     fn auto_height(&self, zoom: f32) -> f32 {
-        self.line_count() as f32 * self.font_size * 1.35 * zoom
+        if self.rendered_height > 0.0 { self.rendered_height * zoom }
+        else { self.line_count() as f32 * self.font_size * 1.35 * zoom }
     }
     fn screen_rect(&self, anchor: egui::Pos2, zoom: f32) -> egui::Rect {
         let w = self.box_width.map(|bw| bw * zoom).unwrap_or_else(|| self.auto_width(zoom));
         let h = self.box_height.map(|bh| bh * zoom).unwrap_or_else(|| self.auto_height(zoom));
         egui::Rect::from_min_size(anchor, egui::vec2(w, h))
+    }
+    fn font_family_name(&self) -> &'static str {
+        match (self.font_name.as_str(), self.bold, self.italic) {
+            ("Roboto", true, _) => "Roboto-Bold",
+            ("Roboto", _, true) => "Roboto-Italic",
+            ("Roboto", ..)     => "Roboto",
+            (_, true, _)       => "Ubuntu-Bold",
+            (_, _, true)       => "Ubuntu-Italic",
+            _                  => "Ubuntu",
+        }
     }
 }
 
@@ -257,6 +269,8 @@ pub struct ImageEditor {
     text_underline: bool,
     text_font_name: String,
     text_drag: Option<TextDrag>,
+    text_cursor: usize,
+    text_sel_anchor: Option<usize>,
 
     crop_state: CropState,
 
@@ -286,6 +300,7 @@ pub struct ImageEditor {
     filter_progress: Arc<Mutex<f32>>,
     is_processing: bool,
     pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
+    fonts_registered: bool,
 }
 
 impl ImageEditor {
@@ -318,6 +333,8 @@ impl ImageEditor {
             text_underline: false,
             text_font_name: "Ubuntu".to_string(),
             text_drag: None,
+            text_cursor: 0,
+            text_sel_anchor: None,
             crop_state: CropState::default(),
             filter_panel: FilterPanel::None,
             brightness: 0.0,
@@ -342,6 +359,7 @@ impl ImageEditor {
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
+            fonts_registered: false,
         }
     }
 
@@ -567,78 +585,154 @@ impl ImageEditor {
     fn stamp_all_text_layers(&self, base: &DynamicImage) -> DynamicImage {
         if self.text_layers.is_empty() { return base.clone(); }
 
-        static REG_BYTES:   &[u8] = include_bytes!("../../assets/Ubuntu-Regular.ttf");
-        static BOLD_BYTES:  &[u8] = include_bytes!("../../assets/Ubuntu-Bold.ttf");
-        static ITAL_BYTES:  &[u8] = include_bytes!("../../assets/Ubuntu-Italic.ttf");
+        static UB_REG: &[u8] = include_bytes!("../../assets/Ubuntu-Regular.ttf");
+        static UB_BLD: &[u8] = include_bytes!("../../assets/Ubuntu-Bold.ttf");
+        static UB_ITL: &[u8] = include_bytes!("../../assets/Ubuntu-Italic.ttf");
+        static RB_REG: &[u8] = include_bytes!("../../assets/Roboto-Regular.ttf");
+        static RB_BLD: &[u8] = include_bytes!("../../assets/Roboto-Bold.ttf");
+        static RB_ITL: &[u8] = include_bytes!("../../assets/Roboto-Italic.ttf");
 
-        let reg_font  = FontRef::try_from_slice(REG_BYTES).expect("Ubuntu-Regular");
-        let bold_font = FontRef::try_from_slice(BOLD_BYTES).expect("Ubuntu-Bold");
-        let ital_font = FontRef::try_from_slice(ITAL_BYTES).expect("Ubuntu-Italic");
+        let ub_reg = FontRef::try_from_slice(UB_REG).expect("Ubuntu-Regular");
+        let ub_bld = FontRef::try_from_slice(UB_BLD).expect("Ubuntu-Bold");
+        let ub_itl = FontRef::try_from_slice(UB_ITL).expect("Ubuntu-Italic");
+        let rb_reg = FontRef::try_from_slice(RB_REG).expect("Roboto-Regular");
+        let rb_bld = FontRef::try_from_slice(RB_BLD).expect("Roboto-Bold");
+        let rb_itl = FontRef::try_from_slice(RB_ITL).expect("Roboto-Italic");
 
         let mut buf = base.to_rgba8();
         let (iw, ih) = (buf.width(), buf.height());
 
-        let blend_pixel = |buf: &mut image::RgbaImage, px: i32, py: i32,
-                            r: u8, g: u8, b: u8, a: u8, cov: f32| {
-            if px < 0 || py < 0 || px as u32 >= iw || py as u32 >= ih { return; }
-            let (px, py) = (px as u32, py as u32);
-            let dst = buf.get_pixel(px, py).0;
-            let src_a = (cov * a as f32).min(255.0) as u32;
-            let dst_a = dst[3] as u32;
-            let out_a = (src_a + dst_a * (255 - src_a) / 255).min(255) as u8;
-            if out_a == 0 { buf.put_pixel(px, py, Rgba([0, 0, 0, 0])); return; }
-            let mix = |s: u8, d: u8| -> u8 {
-                ((s as u32 * src_a + d as u32 * dst_a * (255 - src_a) / 255) / out_a as u32).min(255) as u8
-            };
-            buf.put_pixel(px, py, Rgba([mix(r, dst[0]), mix(g, dst[1]), mix(b, dst[2]), out_a]));
-        };
-
         for layer in &self.text_layers {
-            let font: &FontRef = if layer.bold { &bold_font } else if layer.italic { &ital_font } else { &reg_font };
+            let font: &FontRef = match (layer.font_name.as_str(), layer.bold, layer.italic) {
+                ("Roboto", true, _) => &rb_bld,
+                ("Roboto", _, true) => &rb_itl,
+                ("Roboto", _, _) => &rb_reg,
+                (_, true, _) => &ub_bld,
+                (_, _, true) => &ub_itl,
+                _ => &ub_reg,
+            };
+
             let scale = PxScale::from(layer.font_size);
             let scaled = font.as_scaled(scale);
-            let (r, g, b, a) = (layer.color.r(), layer.color.g(), layer.color.b(), layer.color.a());
-            let angle_rad = layer.rotation.to_radians();
-            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
-
             let line_h = layer.font_size * 1.35;
 
-            for (line_idx, line) in layer.content.lines().enumerate() {
-                let line_y = layer.img_y + line_idx as f32 * line_h;
-                let base_x = layer.img_x;
-                let base_y = line_y + scaled.ascent();
+            let wrap_w = layer.box_width.unwrap_or(f32::MAX);
+            let mut visual_lines: Vec<String> = Vec::new();
+            for paragraph in layer.content.split('\n') {
+                if paragraph.is_empty() { visual_lines.push(String::new()); continue; }
+                let mut cur_line = String::new();
+                let mut cur_w = 0.0f32;
+                for word in paragraph.split_inclusive(' ') {
+                    let w: f32 = word.chars().map(|c| scaled.h_advance(font.glyph_id(c))).sum();
+                    if cur_w + w > wrap_w && !cur_line.is_empty() {
+                        visual_lines.push(cur_line.trim_end().to_string());
+                        cur_line = word.to_string();
+                        cur_w = w;
+                    } else {
+                        cur_line.push_str(word);
+                        cur_w += w;
+                    }
+                }
+                visual_lines.push(cur_line);
+            }
 
+            let actual_h = if layer.rendered_height > 0.0 {
+                layer.rendered_height + 4.0
+            } else {
+                visual_lines.len() as f32 * line_h + 4.0
+            };
+            let bw = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0)) + 4.0;
+            let bh = layer.box_height.unwrap_or(actual_h);
+            let ibw = bw.ceil() as usize;
+            let ibh = bh.ceil() as usize;
+
+            let mut tbuf: Vec<[f32; 4]> = vec![[0.0; 4]; ibw * ibh];
+            let (cr, cg, cb, ca) = (
+                layer.color.r() as f32 / 255.0,
+                layer.color.g() as f32 / 255.0,
+                layer.color.b() as f32 / 255.0,
+                layer.color.a() as f32 / 255.0,
+            );
+
+            let put = |tbuf: &mut Vec<[f32; 4]>, tx: i32, ty: i32, cov: f32| {
+                if tx < 0 || ty < 0 || tx >= ibw as i32 || ty >= ibh as i32 { return; }
+                let idx = ty as usize * ibw + tx as usize;
+                let src_a = (cov * ca).min(1.0);
+                let dst = &mut tbuf[idx];
+                let out_a = src_a + dst[3] * (1.0 - src_a);
+                if out_a < 1e-5 { return; }
+                dst[0] = (cr * src_a + dst[0] * dst[3] * (1.0 - src_a)) / out_a;
+                dst[1] = (cg * src_a + dst[1] * dst[3] * (1.0 - src_a)) / out_a;
+                dst[2] = (cb * src_a + dst[2] * dst[3] * (1.0 - src_a)) / out_a;
+                dst[3] = out_a;
+            };
+
+            for (line_idx, line) in visual_lines.iter().enumerate() {
+                let base_y = line_idx as f32 * line_h + scaled.ascent();
                 let mut cursor_x = 0.0f32;
                 for ch in line.chars() {
-                    let glyph_id = font.glyph_id(ch);
-                    let advance = scaled.h_advance(glyph_id);
-                    let glyph = glyph_id.with_scale_and_position(scale, ab_glyph::point(cursor_x, 0.0));
-
+                    let gid = font.glyph_id(ch);
+                    let adv = scaled.h_advance(gid);
+                    let glyph = gid.with_scale_and_position(scale, ab_glyph::point(cursor_x, 0.0));
                     if let Some(outlined) = font.outline_glyph(glyph) {
                         let bounds = outlined.px_bounds();
                         outlined.draw(|gx, gy, cov| {
-                            let lx = bounds.min.x + gx as f32;
-                            let ly = bounds.min.y + gy as f32;
-                            let rx = (base_x + lx * cos_a - ly * sin_a) as i32;
-                            let ry = (base_y + lx * sin_a + ly * cos_a) as i32;
-                            blend_pixel(&mut buf, rx, ry, r, g, b, a, cov);
+                            let tx = (bounds.min.x + gx as f32) as i32;
+                            let ty = (base_y + bounds.min.y + gy as f32) as i32;
+                            put(&mut tbuf, tx, ty, cov);
                         });
                     }
-
                     if layer.underline {
-                        let uly = scaled.descent() + 2.0;
-                        let x0 = cursor_x;
-                        let x1 = cursor_x + advance;
-                        let mut ux = x0;
-                        while ux < x1 {
-                            let rx = (base_x + ux * cos_a - uly * sin_a) as i32;
-                            let ry = (base_y + ux * sin_a + uly * cos_a) as i32;
-                            blend_pixel(&mut buf, rx, ry, r, g, b, a, 1.0);
-                            ux += 1.0;
+                        let uly = (base_y + scaled.descent() + 2.0) as i32;
+                        for ux in cursor_x as i32..(cursor_x + adv) as i32 {
+                            put(&mut tbuf, ux, uly, 1.0);
                         }
                     }
+                    cursor_x += adv;
+                }
+            }
 
-                    cursor_x += advance;
+            let rcx = layer.img_x + bw / 2.0;
+            let rcy = layer.img_y + bh / 2.0;
+            let angle_rad = layer.rotation.to_radians();
+            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+            let half_w = bw / 2.0;
+            let half_h = bh / 2.0;
+
+            let corners = [
+                (rcx - half_w * cos_a + half_h * sin_a, rcy - half_w * sin_a - half_h * cos_a),
+                (rcx + half_w * cos_a + half_h * sin_a, rcy + half_w * sin_a - half_h * cos_a),
+                (rcx + half_w * cos_a - half_h * sin_a, rcy + half_w * sin_a + half_h * cos_a),
+                (rcx - half_w * cos_a - half_h * sin_a, rcy - half_w * sin_a + half_h * cos_a),
+            ];
+            let min_x = corners.iter().map(|c| c.0).fold(f32::MAX, f32::min).max(0.0) as i32;
+            let max_x = (corners.iter().map(|c| c.0).fold(f32::MIN, f32::max).ceil() as i32).min(iw as i32);
+            let min_y = corners.iter().map(|c| c.1).fold(f32::MAX, f32::min).max(0.0) as i32;
+            let max_y = (corners.iter().map(|c| c.1).fold(f32::MIN, f32::max).ceil() as i32).min(ih as i32);
+
+            for py in min_y..max_y {
+                for px in min_x..max_x {
+                    let dx = px as f32 - rcx;
+                    let dy = py as f32 - rcy;
+                    let ux = dx * cos_a + dy * sin_a;
+                    let uy = -dx * sin_a + dy * cos_a;
+                    let tx = (ux + half_w) as i32;
+                    let ty = (uy + half_h) as i32;
+                    if tx < 0 || ty < 0 || tx >= ibw as i32 || ty >= ibh as i32 { continue; }
+                    let src = tbuf[ty as usize * ibw + tx as usize];
+                    let src_a = src[3];
+                    if src_a < 1e-5 { continue; }
+                    let dst = buf.get_pixel(px as u32, py as u32).0;
+                    let dst_a = dst[3] as f32 / 255.0;
+                    let out_a = (src_a + dst_a * (1.0 - src_a)).min(1.0);
+                    if out_a < 1e-5 { continue; }
+                    let blend = |s: f32, d: u8| -> u8 {
+                        ((s * src_a + d as f32 / 255.0 * dst_a * (1.0 - src_a)) / out_a * 255.0).min(255.0) as u8
+                    };
+                    buf.put_pixel(px as u32, py as u32, Rgba([
+                        blend(src[0], dst[0]), blend(src[1], dst[1]), blend(src[2], dst[2]),
+                        (out_a * 255.0).min(255.0) as u8,
+                    ]));
                 }
             }
         }
@@ -670,38 +764,180 @@ impl ImageEditor {
         self.selected_text = None;
         self.editing_text = false;
         self.text_drag = None;
+        self.text_cursor = 0;
+        self.text_sel_anchor = None;
     }
 
     fn process_text_input(&mut self, ctx: &egui::Context) {
         if !self.editing_text || self.selected_text.is_none() { return; }
         let id = self.selected_text.unwrap();
-        ctx.input(|i| {
-            for event in &i.events {
-                match event {
-                    egui::Event::Text(t) => {
-                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
-                            layer.content.push_str(t);
-                        }
-                    }
-                    egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => {
-                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
-                            layer.content.push('\n');
-                        }
-                    }
-                    egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
-                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
-                            layer.content.pop();
-                        }
-                    }
-                    egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
-                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
-                            layer.content.pop();
-                        }
-                    }
-                    _ => {}
-                }
-            }
+
+        let (events, shift, ctrl) = ctx.input(|i| {
+            (i.events.clone(), i.modifiers.shift, i.modifiers.ctrl || i.modifiers.mac_cmd)
         });
+
+        for event in &events {
+            let cursor = self.text_cursor;
+            let sel = self.text_sel_anchor;
+            match event {
+                egui::Event::Text(t) => {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                        if let Some(anchor) = sel {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            layer.content.drain(lo..hi);
+                            self.text_cursor = lo;
+                            self.text_sel_anchor = None;
+                        }
+                        let c = self.text_cursor;
+                        layer.content.insert_str(c, t);
+                        self.text_cursor += t.len();
+                    }
+                }
+                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                        if let Some(anchor) = sel {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            layer.content.drain(lo..hi);
+                            self.text_cursor = lo;
+                            self.text_sel_anchor = None;
+                        }
+                        let c = self.text_cursor;
+                        layer.content.insert(c, '\n');
+                        self.text_cursor += 1;
+                    }
+                }
+                egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                        if let Some(anchor) = sel {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            layer.content.drain(lo..hi);
+                            self.text_cursor = lo;
+                            self.text_sel_anchor = None;
+                        } else if cursor > 0 {
+                            let prev = layer.content[..cursor]
+                                .char_indices().next_back().map(|(i, _)| i).unwrap_or(0);
+                            layer.content.drain(prev..cursor);
+                            self.text_cursor = prev;
+                        }
+                    }
+                }
+                egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                        if let Some(anchor) = sel {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            layer.content.drain(lo..hi);
+                            self.text_cursor = lo;
+                            self.text_sel_anchor = None;
+                        } else if cursor < layer.content.len() {
+                            let next = layer.content[cursor..]
+                                .char_indices().nth(1).map(|(i, _)| cursor + i)
+                                .unwrap_or(layer.content.len());
+                            layer.content.drain(cursor..next);
+                        }
+                    }
+                }
+                egui::Event::Key { key: egui::Key::ArrowLeft, pressed: true, .. } => {
+                    if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+                        if !shift && sel.is_some() {
+                            let anchor = sel.unwrap();
+                            self.text_cursor = cursor.min(anchor);
+                            self.text_sel_anchor = None;
+                        } else {
+                            if shift && self.text_sel_anchor.is_none() { self.text_sel_anchor = Some(cursor); }
+                            if cursor > 0 {
+                                let prev = layer.content[..cursor]
+                                    .char_indices().next_back().map(|(i, _)| i).unwrap_or(0);
+                                self.text_cursor = prev;
+                            }
+                        }
+                    }
+                }
+                egui::Event::Key { key: egui::Key::ArrowRight, pressed: true, .. } => {
+                    if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+                        if !shift && sel.is_some() {
+                            let anchor = sel.unwrap();
+                            self.text_cursor = cursor.max(anchor);
+                            self.text_sel_anchor = None;
+                        } else {
+                            if shift && self.text_sel_anchor.is_none() { self.text_sel_anchor = Some(cursor); }
+                            if cursor < layer.content.len() {
+                                let next = layer.content[cursor..]
+                                    .char_indices().nth(1).map(|(i, _)| cursor + i)
+                                    .unwrap_or(layer.content.len());
+                                self.text_cursor = next;
+                            }
+                        }
+                    }
+                }
+                egui::Event::Key { key: egui::Key::Home, pressed: true, .. } => {
+                    if shift && self.text_sel_anchor.is_none() { self.text_sel_anchor = Some(cursor); }
+                    else if !shift { self.text_sel_anchor = None; }
+                    self.text_cursor = 0;
+                }
+                egui::Event::Key { key: egui::Key::End, pressed: true, .. } => {
+                    let len = self.text_layers.iter().find(|l| l.id == id).map(|l| l.content.len()).unwrap_or(0);
+                    if shift && self.text_sel_anchor.is_none() { self.text_sel_anchor = Some(cursor); }
+                    else if !shift { self.text_sel_anchor = None; }
+                    self.text_cursor = len;
+                }
+                egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. }
+                    if modifiers.ctrl || modifiers.mac_cmd =>
+                {
+                    let len = self.text_layers.iter().find(|l| l.id == id).map(|l| l.content.len()).unwrap_or(0);
+                    self.text_sel_anchor = Some(0);
+                    self.text_cursor = len;
+                }
+                egui::Event::Copy => {
+                    if let Some(anchor) = sel {
+                        if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            if lo < hi && hi <= layer.content.len() {
+                                ctx.copy_text(layer.content[lo..hi].to_string());
+                            }
+                        }
+                    }
+                }
+                egui::Event::Cut => {
+                    if let Some(anchor) = sel {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            if lo < hi && hi <= layer.content.len() {
+                                let cut_text = layer.content[lo..hi].to_string();
+                                ctx.copy_text(cut_text);
+                                layer.content.drain(lo..hi);
+                                self.text_cursor = lo;
+                                self.text_sel_anchor = None;
+                            }
+                        }
+                    }
+                }
+                egui::Event::Paste(text) => {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                        if let Some(anchor) = sel {
+                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                            layer.content.drain(lo..hi);
+                            self.text_cursor = lo;
+                            self.text_sel_anchor = None;
+                        }
+                        let c = self.text_cursor;
+                        layer.content.insert_str(c, text);
+                        self.text_cursor += text.len();
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(layer) = self.text_layers.iter().find(|l| l.id == id) {
+            let clamp = |c: usize| -> usize {
+                let c = c.min(layer.content.len());
+                if layer.content.is_char_boundary(c) { c }
+                else { (0..c).rev().find(|&i| layer.content.is_char_boundary(i)).unwrap_or(0) }
+            };
+            self.text_cursor = clamp(self.text_cursor);
+            if let Some(a) = self.text_sel_anchor { self.text_sel_anchor = Some(clamp(a)); }
+        }
+        let _ = ctrl;
     }
 
     fn apply_crop(&mut self) {
@@ -858,42 +1094,102 @@ impl ImageEditor {
         self.dirty = true;
     }
 
-    fn apply_flip_h(&mut self) {
-        if let Some(img) = &self.image {
-            self.image = Some(img.fliph());
-            self.texture_dirty = true;
-            self.dirty = true;
+    fn transform_text_rotate_cw(&mut self, _old_w: u32, old_h: u32) {
+        for layer in &mut self.text_layers {
+            let bw = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0));
+            let bh = layer.box_height.unwrap_or_else(|| layer.auto_height(1.0));
+            let cx = layer.img_x + bw / 2.0;
+            let cy = layer.img_y + bh / 2.0;
+            let new_cx = old_h as f32 - cy;
+            let new_cy = cx;
+            layer.img_x = new_cx - bh / 2.0;
+            layer.img_y = new_cy - bw / 2.0;
+            std::mem::swap(&mut layer.box_width, &mut layer.box_height);
+            layer.rotation = (layer.rotation + 90.0).rem_euclid(360.0);
         }
+    }
+
+    fn transform_text_rotate_ccw(&mut self, old_w: u32, _old_h: u32) {
+        for layer in &mut self.text_layers {
+            let bw = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0));
+            let bh = layer.box_height.unwrap_or_else(|| layer.auto_height(1.0));
+            let cx = layer.img_x + bw / 2.0;
+            let cy = layer.img_y + bh / 2.0;
+            let new_cx = cy;
+            let new_cy = old_w as f32 - cx;
+            layer.img_x = new_cx - bh / 2.0;
+            layer.img_y = new_cy - bw / 2.0;
+            std::mem::swap(&mut layer.box_width, &mut layer.box_height);
+            layer.rotation = (layer.rotation - 90.0).rem_euclid(360.0);
+        }
+    }
+
+    fn transform_text_flip_h(&mut self, old_w: u32) {
+        for layer in &mut self.text_layers {
+            let bw = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0));
+            let cx = layer.img_x + bw / 2.0;
+            layer.img_x = old_w as f32 - cx - bw / 2.0;
+            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+        }
+    }
+
+    fn transform_text_flip_v(&mut self, old_h: u32) {
+        for layer in &mut self.text_layers {
+            let bh = layer.box_height.unwrap_or_else(|| layer.auto_height(1.0));
+            let cy = layer.img_y + bh / 2.0;
+            layer.img_y = old_h as f32 - cy - bh / 2.0;
+            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+        }
+    }
+
+    fn apply_flip_h(&mut self) {
+        let (old_w, flipped) = match &self.image {
+            Some(img) => (img.width(), img.fliph()),
+            None => return,
+        };
+        self.transform_text_flip_h(old_w);
+        self.image = Some(flipped);
+        self.texture_dirty = true;
+        self.dirty = true;
     }
 
     fn apply_flip_v(&mut self) {
-        if let Some(img) = &self.image {
-            self.image = Some(img.flipv());
-            self.texture_dirty = true;
-            self.dirty = true;
-        }
+        let (old_h, flipped) = match &self.image {
+            Some(img) => (img.height(), img.flipv()),
+            None => return,
+        };
+        self.transform_text_flip_v(old_h);
+        self.image = Some(flipped);
+        self.texture_dirty = true;
+        self.dirty = true;
     }
 
     fn apply_rotate_cw(&mut self) {
-        if let Some(img) = &self.image {
-            self.image = Some(img.rotate90());
-            self.resize_w = self.image.as_ref().unwrap().width();
-            self.resize_h = self.image.as_ref().unwrap().height();
-            self.texture_dirty = true;
-            self.dirty = true;
-            self.fit_on_next_frame = true;
-        }
+        let (old_w, old_h, rotated) = match &self.image {
+            Some(img) => (img.width(), img.height(), img.rotate90()),
+            None => return,
+        };
+        self.transform_text_rotate_cw(old_w, old_h);
+        self.image = Some(rotated);
+        self.resize_w = self.image.as_ref().unwrap().width();
+        self.resize_h = self.image.as_ref().unwrap().height();
+        self.texture_dirty = true;
+        self.dirty = true;
+        self.fit_on_next_frame = true;
     }
 
     fn apply_rotate_ccw(&mut self) {
-        if let Some(img) = &self.image {
-            self.image = Some(img.rotate270());
-            self.resize_w = self.image.as_ref().unwrap().width();
-            self.resize_h = self.image.as_ref().unwrap().height();
-            self.texture_dirty = true;
-            self.dirty = true;
-            self.fit_on_next_frame = true;
-        }
+        let (old_w, old_h, rotated) = match &self.image {
+            Some(img) => (img.width(), img.height(), img.rotate270()),
+            None => return,
+        };
+        self.transform_text_rotate_ccw(old_w, old_h);
+        self.image = Some(rotated);
+        self.resize_w = self.image.as_ref().unwrap().width();
+        self.resize_h = self.image.as_ref().unwrap().height();
+        self.texture_dirty = true;
+        self.dirty = true;
+        self.fit_on_next_frame = true;
     }
 
     fn apply_resize(&mut self) { 
@@ -947,6 +1243,36 @@ impl ImageEditor {
 
         self.filter_panel = FilterPanel::None;
         Ok(path)
+    }
+
+    fn ensure_fonts_registered(&mut self, ctx: &egui::Context) {
+        if self.fonts_registered { return; }
+        self.fonts_registered = true;
+
+        static UB_REG: &[u8] = include_bytes!("../../assets/Ubuntu-Regular.ttf");
+        static UB_BLD: &[u8] = include_bytes!("../../assets/Ubuntu-Bold.ttf");
+        static UB_ITL: &[u8] = include_bytes!("../../assets/Ubuntu-Italic.ttf");
+        static RB_REG: &[u8] = include_bytes!("../../assets/Roboto-Regular.ttf");
+        static RB_BLD: &[u8] = include_bytes!("../../assets/Roboto-Bold.ttf");
+        static RB_ITL: &[u8] = include_bytes!("../../assets/Roboto-Italic.ttf");
+
+        let mut fonts = egui::FontDefinitions::default();
+        let entries: &[(&str, &'static [u8])] = &[
+            ("Ubuntu", UB_REG),
+            ("Ubuntu-Bold", UB_BLD),
+            ("Ubuntu-Italic", UB_ITL),
+            ("Roboto", RB_REG),
+            ("Roboto-Bold", RB_BLD),
+            ("Roboto-Italic", RB_ITL),
+        ];
+        for (name, bytes) in entries {
+            fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());
+            fonts.families.insert(
+                egui::FontFamily::Name((*name).into()),
+                vec![name.to_string()],
+            );
+        }
+        ctx.set_fonts(fonts);
     }
 
     fn ensure_texture(&mut self, ctx: &egui::Context) {
@@ -1075,7 +1401,10 @@ impl ImageEditor {
                 btn
             }
         }).inner;
-        if response.clicked() { self.tool = tool; }
+        if response.clicked() { 
+            if tool != Tool::Text { self.commit_or_discard_active_text(); }
+            self.tool = tool; 
+        }
     }
 
     fn render_options_bar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
@@ -1106,7 +1435,7 @@ impl ImageEditor {
                         }
                         Tool::Text => {
                             ui.label(egui::RichText::new("Font:").size(12.0).color(label_col));
-                            let avail_fonts = ["Ubuntu"];
+                            let avail_fonts = ["Ubuntu", "Roboto"];
                             let cur_font = self.text_font_name.clone();
                             egui::ComboBox::from_id_salt("text_font_pick")
                                 .selected_text(cur_font.as_str())
@@ -1175,15 +1504,8 @@ impl ImageEditor {
 
                             if let Some(id) = self.selected_text {
                                 ui.separator();
-                                let layer_color = self.text_layers.iter().find(|l| l.id == id).map(|l| l.color);
-                                if let Some(lc) = layer_color {
-                                    let swatch = egui::Button::new("").fill(lc).min_size(egui::vec2(20.0, 20.0));
-                                    if ui.add(swatch).on_hover_text("Text color").clicked() {
-                                        self.show_color_picker = !self.show_color_picker;
-                                    }
-                                    if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
-                                        layer.color = self.color;
-                                    }
+                                if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                                    layer.color = self.color;
                                 }
 
                                 if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
@@ -1192,10 +1514,10 @@ impl ImageEditor {
                                     ui.add(egui::DragValue::new(&mut layer.rotation).speed(1.0).range(-360.0..=360.0).suffix("°")).on_hover_text("Rotation in degrees");
                                 }
 
-                                if ui.small_button("Deselect").clicked() {
+                                if ui.button("Deselect").clicked() {
                                     self.commit_or_discard_active_text();
                                 }
-                                if ui.small_button("Delete").clicked() {
+                                if ui.button("Delete").clicked() {
                                     let del_id = id;
                                     self.text_layers.retain(|l| l.id != del_id);
                                     self.selected_text = None;
@@ -1736,22 +2058,20 @@ impl ImageEditor {
         for layer in &self.text_layers {
             let anchor = self.image_to_screen(layer.img_x, layer.img_y);
             let font_size_screen = layer.font_size * self.zoom;
-            let font_id = egui::FontId::proportional(font_size_screen);
             let angle_rad = layer.rotation.to_radians();
+            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
 
-            let display = if self.editing_text && self.selected_text == Some(layer.id) {
-                let blink = (ctx.input(|i| i.time) * 2.0) as u32 % 2 == 0;
-                if blink { format!("{}|", layer.content) } else { layer.content.clone() }
-            } else {
-                layer.content.clone()
-            };
+            let font_family = egui::FontFamily::Name(layer.font_family_name().into());
+            let font_id = egui::FontId::new(font_size_screen, font_family);
+            let box_w_screen = layer.box_width.map(|w| w * self.zoom).unwrap_or(f32::INFINITY);
 
             let make_job = |text: &str| {
                 let mut job = egui::text::LayoutJob::default();
+                job.wrap.max_width = box_w_screen;
                 job.append(text, 0.0, egui::TextFormat {
                     font_id: font_id.clone(),
                     color: layer.color,
-                    italics: layer.italic,
+                    italics: false,
                     underline: if layer.underline {
                         egui::Stroke::new((font_size_screen * 0.06).max(1.0), layer.color)
                     } else {
@@ -1761,31 +2081,120 @@ impl ImageEditor {
                 });
                 job
             };
-            
+
             let sel_rect = layer.screen_rect(anchor, self.zoom);
             let center = sel_rect.center();
             let d = anchor - center;
-            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
             let text_pos = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
-            let galley = ui.painter().layout_job(make_job(&display));
+            let galley = ui.painter().layout_job(make_job(&layer.content));
+            let mut text_shape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer.color);
+            text_shape.angle = angle_rad;
 
-            if layer.bold {
-                for i in 1..=2 {
-                    let offset_dist = i as f32;
-                    let offset_vec = egui::vec2(offset_dist * cos_a, offset_dist * sin_a);
-                    let mut bold_shape = egui::epaint::TextShape::new(text_pos + offset_vec, galley.clone(), layer.color);
-                    bold_shape.angle = angle_rad;
-                    painter.add(egui::Shape::Text(bold_shape));
+            if self.editing_text && self.selected_text == Some(layer.id) {
+                let cursor_byte = self.text_cursor;
+                let sel_anchor = self.text_sel_anchor;
+                let content = &layer.content;
+                let glyph_pos_for = |byte_off: usize| -> egui::Pos2 {
+                    let char_idx = content[..byte_off.min(content.len())].chars().count();
+                    let mut ci = 0usize;
+                    for row in &galley.rows {
+                        for g in &row.glyphs {
+                            if ci == char_idx {
+                                return egui::pos2(g.pos.x, row.rect().min.y);
+                            }
+                            ci += 1;
+                        }
+                        if ci == char_idx {
+                            return egui::pos2(row.rect().max.x, row.rect().min.y);
+                        }
+                    }
+                    if let Some(last_row) = galley.rows.last() {
+                        egui::pos2(last_row.rect().max.x, last_row.rect().min.y)
+                    } else {
+                        egui::pos2(0.0, 0.0)
+                    }
+                };
+
+                let galley_to_canvas = |lp: egui::Pos2| -> egui::Pos2 {
+                    text_pos + egui::vec2(lp.x * cos_a - lp.y * sin_a, lp.x * sin_a + lp.y * cos_a)
+                };
+
+                if let Some(anchor) = sel_anchor {
+                    let (lo, hi) = (anchor.min(cursor_byte), anchor.max(cursor_byte));
+                    let char_lo = content[..lo.min(content.len())].chars().count();
+                    let char_hi = content[..hi.min(content.len())].chars().count();
+                    let mut ci = 0usize;
+                    for row in &galley.rows {
+                        let row_start = ci;
+                        let row_end = ci + row.glyphs.len();
+                        let sel_start_in_row = char_lo.max(row_start);
+                        let sel_end_in_row   = char_hi.min(row_end);
+                        if sel_start_in_row < sel_end_in_row || (char_lo <= row_start && char_hi >= row_end) {
+                            let x0 = if sel_start_in_row <= row_start {
+                                row.rect().min.x
+                            } else {
+                                row.glyphs.get(sel_start_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().min.x)
+                            };
+                            let x1 = if sel_end_in_row >= row_end {
+                                row.rect().max.x
+                            } else {
+                                row.glyphs.get(sel_end_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+                            };
+                            let y0 = row.rect().min.y;
+                            let y1 = row.rect().max.y;
+                            let corners = [
+                                galley_to_canvas(egui::pos2(x0, y0)),
+                                galley_to_canvas(egui::pos2(x1, y0)),
+                                galley_to_canvas(egui::pos2(x1, y1)),
+                                galley_to_canvas(egui::pos2(x0, y1)),
+                            ];
+                            painter.add(egui::Shape::convex_polygon(
+                                corners.to_vec(),
+                                egui::Color32::from_rgba_unmultiplied(100, 140, 255, 80),
+                                egui::Stroke::NONE,
+                            ));
+                        }
+                        ci = row_end;
+                    }
                 }
+
+                let blink = (ctx.input(|i| i.time) * 2.0) as u32 % 2 == 0;
+                if blink {
+                    let lp = glyph_pos_for(cursor_byte);
+                    let row_h = galley.rows.iter().find(|r| r.rect().min.y <= lp.y && lp.y <= r.rect().max.y)
+                        .map(|r| r.rect().height()).unwrap_or(font_size_screen);
+                    let top = galley_to_canvas(lp);
+                    let bot = galley_to_canvas(egui::pos2(lp.x, lp.y + row_h));
+                    painter.line_segment([top, bot], egui::Stroke::new(2.0, layer.color));
+                }
+                ctx.request_repaint();
             }
 
-            let mut text_shape = egui::epaint::TextShape::new(text_pos, galley, layer.color);
-            text_shape.angle = angle_rad;
             painter.add(egui::Shape::Text(text_shape));
 
             if self.selected_text == Some(layer.id) {
                 let handles = TransformHandleSet::with_rotation(sel_rect, angle_rad);
                 handles.draw(&painter, ColorPalette::BLUE_400);
+            }
+        }
+
+        let zoom = self.zoom;
+        let height_updates: Vec<(u64, f32)> = self.text_layers.iter().map(|layer| {
+            let font_size_screen = layer.font_size * zoom;
+            let font_family = egui::FontFamily::Name(layer.font_family_name().into());
+            let font_id = egui::FontId::new(font_size_screen, font_family);
+            let box_w_screen = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
+            let mut job = egui::text::LayoutJob::default();
+            job.wrap.max_width = box_w_screen;
+            job.append(&layer.content, 0.0, egui::TextFormat {
+                font_id, color: layer.color, ..Default::default()
+            });
+            let galley = ui.painter().layout_job(job);
+            (layer.id, galley.rect.height() / zoom)
+        }).collect();
+        for (id, h) in height_updates {
+            if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
+                layer.rendered_height = h.max(layer.font_size);
             }
         }
 
@@ -2025,12 +2434,14 @@ impl ImageEditor {
                     if let Some(hit) = self.hit_text_layer(pos) {
                         self.selected_text = Some(hit);
                         self.editing_text = true;
+                        self.text_sel_anchor = None;
                         if let Some(layer) = self.text_layers.iter().find(|l| l.id == hit) {
                             self.text_font_size = layer.font_size;
                             self.text_bold = layer.bold;
                             self.text_italic = layer.italic;
                             self.text_underline = layer.underline;
                             self.text_font_name = layer.font_name.clone();
+                            self.text_cursor = layer.content.len();
                         }
                     } else {
                         self.commit_or_discard_active_text();
@@ -2043,7 +2454,7 @@ impl ImageEditor {
                                 img_x: ix as f32,
                                 img_y: iy as f32,
                                 font_size: self.text_font_size,
-                                box_width: None,
+                                box_width: Some(300.0),
                                 box_height: None,
                                 rotation: 0.0,
                                 color: self.color,
@@ -2051,9 +2462,12 @@ impl ImageEditor {
                                 italic: self.text_italic,
                                 underline: self.text_underline,
                                 font_name: self.text_font_name.clone(),
+                                rendered_height: 0.0,
                             });
                             self.selected_text = Some(id);
                             self.editing_text = true;
+                            self.text_cursor = 0;
+                            self.text_sel_anchor = None;
                         }
                     }
                 }
@@ -2256,6 +2670,7 @@ impl EditorModule for ImageEditor {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
 
+        self.ensure_fonts_registered(ctx);
         self.handle_keyboard(ctx);
         self.check_filter_completion();
 

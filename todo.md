@@ -70,10 +70,17 @@
 - [x] Text Corner Resizing delta too fast, hard to select
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
-  - [ ] Rotated text has spots in final image
-  - [ ] Rotated text does not show up in the same place when saved
-  - [ ] Cannot highlight text within text box
-  - [ ] When selecting another tool, text box should be deselected
+  - [x] Rotated text has spots in final image
+  - [x] Rotated text does not show up in the same place when saved
+  - [x] Cannot highlight text within text box
+  - [x] When selecting another tool, text box should be deselected
+  - [x] Text doesn't rotate with canvas on transform
+  - [x] Sentances don't wrap properly within text boxes
+  - [x] Doesn't actually use font's listed in text box
+  - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
+  - [x] Cursor getting disconnected from where text is actually being written.
+  - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
+  - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
 ### Other Bugs
 
