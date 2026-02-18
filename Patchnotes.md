@@ -72,3 +72,4 @@
 - **IMG EDITOR**: Filters and Transformations moved to top menu bar under "Image" and "Filter"
 
 #### Debugging
+- **GENERAL**: Console no longer opens on build executable
