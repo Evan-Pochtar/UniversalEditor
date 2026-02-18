@@ -68,6 +68,7 @@
 - [x] Resize does not work if not aspect ratio locked
 - [x] Text tool currently not working
 - [x] Text Corner Resizing delta too fast, hard to select
+- [ ] Eraser doesn't erase to white background, completley removes background
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -123,9 +124,24 @@
   - [ ] Ellipse
   - [ ] Free-hand lasso
   - [ ] Magic wand
+  - [ ] Copy/paste/cut within selection
 - [ ] Gradient tool
   - [ ] Linear
   - [ ] Radial
+- [ ] Cutout tool
+- [ ] Filter tool
+  - [ ] Blur
+  - [ ] Sharpen
+  - [ ] Smudge
+  - [ ] Vibrance
+  - [ ] Saturation
+  - [ ] Temperature
+  - [ ] Brightness
+- [ ] Writing tools
+  - [ ] Pen
+  - [ ] Pencil
+  - [ ] Crayon
+- [ ] Shape tool
 - [ ] Performance
   - [ ] Brush is slightly laggy, make more smooth on large images
   - [x] Increase performance of filters on bigger images (E.g Blur)
@@ -144,14 +160,13 @@
   - [x] Font picker
   - [x] Rotate
 - [ ] More brush presets or options
-  - [ ] Custom brush shapes?
+  - [ ] Custom brush shapes
 - [x] Keyboard Shortcuts
 - [ ] Import Images into Canvas
-- [ ] Copy/paste/cut within selection
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
-- [ ] Canvas size (extend without scaling)
+- [x] Canvas size (extend without scaling)
 - [x] Export with metadata
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop

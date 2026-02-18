@@ -65,3 +65,10 @@
 - **IMG EDITOR**: Sentences now wrap within text boxes
 - **IMG EDITOR**: Text boxes now use selected font properly
 - **IMG EDITOR**: Cusor no longer gets disconnected from text in text box
+
+## V0.0.4
+
+#### Features
+- **IMG EDITOR**: Filters and Transformations moved to top menu bar under "Image" and "Filter"
+
+#### Debugging

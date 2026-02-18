@@ -639,6 +639,48 @@ impl UniversalEditor {
                         ui.close();
                     }
                 });
+
+                if !contributions.image_items.is_empty() {
+                    ui.menu_button("Image", |ui| {
+                        for (item, action) in &contributions.image_items {
+                            if item.label == "Seperator" {
+                                ui.separator();
+                                continue;
+                            }
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+
+                if !contributions.filter_items.is_empty() {
+                    ui.menu_button("Filter", |ui| {
+                        for (item, action) in &contributions.filter_items {
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
             });
             ui.add_space(4.0);
         });
@@ -1011,9 +1053,9 @@ impl UniversalEditor {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Theme").size(14.0).color(text));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                dark_clicked  = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark),   "Dark").clicked();
-                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light),  "Light").clicked();
-                                sys_clicked   = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
+                                dark_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark), "Dark").clicked();
+                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light), "Light").clicked();
+                                sys_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
                             });
                         });
                     }

@@ -11,6 +11,7 @@ pub enum MenuAction {
     Undo,
     Redo,
     Export,
+    None,
     Custom(String),
 }
 
@@ -26,6 +27,8 @@ pub struct MenuContribution {
     pub file_items: Vec<(MenuItem, MenuAction)>,
     pub edit_items: Vec<(MenuItem, MenuAction)>,
     pub view_items: Vec<(MenuItem, MenuAction)>,
+    pub image_items: Vec<(MenuItem, MenuAction)>,
+    pub filter_items: Vec<(MenuItem, MenuAction)>,
 }
 
 #[allow(dead_code)]

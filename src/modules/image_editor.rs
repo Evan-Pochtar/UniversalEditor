@@ -1330,52 +1330,9 @@ impl ImageEditor {
                             self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, Some("D"), theme);
                             self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
                             self.tool_btn(ui, "Pan", Tool::Pan, Some("P"), theme);
-
-                            ui.separator();
-                            ui.label(egui::RichText::new("Transform").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "Flip H", None, theme).clicked() { self.push_undo(); self.apply_flip_h(); }
-                            if self.toolbar_btn(ui, "Flip V", None, theme).clicked() { self.push_undo(); self.apply_flip_v(); }
-                            if self.toolbar_btn(ui, "Rot CW", None, theme).clicked() { self.push_undo(); self.apply_rotate_cw(); }
-                            if self.toolbar_btn(ui, "Rot CCW", None, theme).clicked() { self.push_undo(); self.apply_rotate_ccw(); }
-
-                            ui.separator();
-                            ui.label(egui::RichText::new("Filters").size(12.0).color(ColorPalette::ZINC_500));
-                            if self.toolbar_btn(ui, "B/C", None, theme).clicked() { self.filter_panel = FilterPanel::BrightnessContrast; }
-                            if self.toolbar_btn(ui, "H/S", None, theme).clicked() { self.filter_panel = FilterPanel::HueSaturation; }
-                            if self.toolbar_btn(ui, "Blur", None, theme).clicked() { self.filter_panel = FilterPanel::Blur; }
-                            if self.toolbar_btn(ui, "Sharpen", None, theme).clicked() { self.filter_panel = FilterPanel::Sharpen; }
-                            if self.toolbar_btn(ui, "Gray", None, theme).clicked() { self.push_undo(); self.apply_grayscale(); }
-                            if self.toolbar_btn(ui, "Invert", None, theme).clicked() { self.push_undo(); self.apply_invert(); }
-                            if self.toolbar_btn(ui, "Sepia", None, theme).clicked() { self.push_undo(); self.apply_sepia(); }
-
-                            ui.separator();
-                            if self.toolbar_btn(ui, "Resize", None, theme).clicked() { self.filter_panel = FilterPanel::Resize; }
                         });
                     });
             });
-    }
-
-    fn toolbar_btn(&self, ui: &mut egui::Ui, label: &str, shortcut: Option<&str>, theme: ThemeMode) -> egui::Response {
-        let (bg, hover, txt) = if matches!(theme, ThemeMode::Dark) {
-            (ColorPalette::ZINC_700, ColorPalette::ZINC_600, ColorPalette::ZINC_200)
-        } else {
-            (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
-        };
-        let response = ui.scope(|ui| {
-            let s = ui.style_mut();
-            s.visuals.widgets.inactive.bg_fill = bg;
-            s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-            s.visuals.widgets.hovered.bg_fill = hover;
-            s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-            s.visuals.widgets.active.bg_fill = hover;
-            ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0)))
-        }).inner;
-        
-        if let Some(sc) = shortcut {
-            response.on_hover_text(sc)
-        } else {
-            response
-        }
     }
 
     fn tool_btn(&mut self, ui: &mut egui::Ui, label: &str, tool: Tool, shortcut: Option<&str>, theme: ThemeMode) {
@@ -2637,20 +2594,30 @@ impl EditorModule for ImageEditor {
         MenuContribution {
             file_items: vec![ (MenuItem { label: "Export...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Export) ],
             edit_items: vec![ 
-                (MenuItem { label: "Undo".to_string(), 
-                shortcut: Some("Ctrl+Z".to_string()), enabled: has_undo }, MenuAction::Undo), 
-                (MenuItem { label: "Redo".to_string(), shortcut: Some("Ctrl+Y".to_string()), enabled: has_redo }, 
-                MenuAction::Redo) 
+                (MenuItem { label: "Undo".to_string(), shortcut: Some("Ctrl+Z".to_string()), enabled: has_undo }, MenuAction::Undo), 
+                (MenuItem { label: "Redo".to_string(), shortcut: Some("Ctrl+Y".to_string()), enabled: has_redo }, MenuAction::Redo) 
             ],
             view_items: vec![
-                (MenuItem { label: "Zoom In".to_string(), 
-                shortcut: Some("+".to_string()), enabled: true }, 
-                MenuAction::Custom("Zoom In".to_string())), 
-                (MenuItem { label: "Zoom Out".to_string(), 
-                shortcut: Some("-".to_string()), enabled: true }, 
-                MenuAction::Custom("Zoom Out".to_string())), 
-                (MenuItem { label: "Fit".to_string(), shortcut: Some("0".to_string()), enabled: true }, 
-                MenuAction::Custom("Fit".to_string())) 
+                (MenuItem { label: "Zoom In".to_string(), shortcut: Some("+".to_string()), enabled: true }, MenuAction::Custom("Zoom In".to_string())), 
+                (MenuItem { label: "Zoom Out".to_string(), shortcut: Some("-".to_string()), enabled: true }, MenuAction::Custom("Zoom Out".to_string())), 
+                (MenuItem { label: "Fit".to_string(), shortcut: Some("0".to_string()), enabled: true }, MenuAction::Custom("Fit".to_string())) 
+            ],
+            image_items: vec![
+                (MenuItem { label: "Resize Canvas...".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Resize Canvas".to_string())),
+                (MenuItem { label: "Seperator".to_string(), shortcut: None, enabled: false}, MenuAction::None),
+                (MenuItem { label: "Flip Horizontal".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Flip Horizontal".to_string())), 
+                (MenuItem { label: "Flip Vertical".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Flip Vertical".to_string())), 
+                (MenuItem { label: "Rotate CCW".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Rotate CCW".to_string())), 
+                (MenuItem { label: "Rotate CW".to_string(), shortcut: None, enabled: true },MenuAction::Custom("Rotate CW".to_string()))
+            ],
+            filter_items: vec![
+                (MenuItem { label: "Brightness/Contrast...".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("B/C".to_string())),
+                (MenuItem { label: "Hue/Saturation...".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("H/S".to_string())),
+                (MenuItem { label: "Blur...".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Blur".to_string())),
+                (MenuItem { label: "Sharpen...".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Sharpen".to_string())),
+                (MenuItem { label: "Grayscale".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Gray".to_string())),
+                (MenuItem { label: "Invert".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Invert".to_string())),
+                (MenuItem { label: "Sepia".to_string(), shortcut: None, enabled: self.image.is_some() }, MenuAction::Custom("Sepia".to_string()))
             ],
         }
     }
@@ -2663,6 +2630,18 @@ impl EditorModule for ImageEditor {
             MenuAction::Custom(val) if val == "Zoom In" => { self.zoom *= 1.25; true }
             MenuAction::Custom(val) if val == "Zoom Out" => { self.zoom = (self.zoom / 1.25).max(0.01); true }
             MenuAction::Custom(val) if val == "Fit" => { self.fit_image(); true }
+            MenuAction::Custom(val) if val == "Flip Horizontal" => { self.push_undo(); self.apply_flip_h(); true }
+            MenuAction::Custom(val) if val == "Flip Vertical" => { self.push_undo(); self.apply_flip_v(); true }
+            MenuAction::Custom(val) if val == "Rotate CCW" => { self.push_undo(); self.apply_rotate_ccw(); true }
+            MenuAction::Custom(val) if val == "Rotate CW" => { self.push_undo(); self.apply_rotate_cw(); true }
+            MenuAction::Custom(val) if val == "Resize Canvas" => { self.filter_panel = FilterPanel::Resize; true }
+            MenuAction::Custom(val) if val == "B/C" => { self.filter_panel = FilterPanel::BrightnessContrast; true }
+            MenuAction::Custom(val) if val == "H/S" => { self.filter_panel = FilterPanel::HueSaturation; true }
+            MenuAction::Custom(val) if val == "Blur" => { self.filter_panel = FilterPanel::Blur; true }
+            MenuAction::Custom(val) if val == "Sharpen" => { self.filter_panel = FilterPanel::Sharpen; true }
+            MenuAction::Custom(val) if val == "Gray" => { self.push_undo(); self.apply_grayscale(); true }
+            MenuAction::Custom(val) if val == "Invert" => { self.push_undo(); self.apply_invert(); true }
+            MenuAction::Custom(val) if val == "Sepia" => { self.push_undo(); self.apply_sepia(); true }
             _ => false,
         }
     }
