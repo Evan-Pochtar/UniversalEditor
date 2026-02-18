@@ -73,3 +73,4 @@
 
 #### Debugging
 - **GENERAL**: Console no longer opens on build executable
+- **GENERAL**: Menu version now displays cargo package version

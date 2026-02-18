@@ -840,7 +840,7 @@ impl UniversalEditor {
                                     .inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 })
                                     .show(ui, |ui| {
                                         ui.label(
-                                            egui::RichText::new("v0.0.3")
+                                            egui::RichText::new("v".to_owned() + env!("CARGO_PKG_VERSION"))
                                                 .size(11.0)
                                                 .color(ver_text_col),
                                         );
