@@ -2,66 +2,14 @@ use eframe::egui;
 use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
 use crate::modules::helpers::image_export::export_image;
 use std::path::PathBuf;
-use std::sync::{Arc };
+use std::sync::{Arc};
 use std::thread;
 use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont};
+use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, CropState, TransformHandleSet,
     FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL,
 };
-
-pub(super) fn rgb_to_hsv_f32(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max: f32 = r.max(g).max(b);
-    let min: f32 = r.min(g).min(b);
-    let delta: f32 = max - min;
-    let v: f32 = max;
-    let s: f32 = if max == 0.0 { 0.0 } else { delta / max };
-    let h: f32 = if delta == 0.0 { 0.0 }
-        else if max == r { 60.0 * (((g - b) / delta) % 6.0) }
-        else if max == g { 60.0 * ((b - r) / delta + 2.0) }
-        else { 60.0 * ((r - g) / delta + 4.0) };
-    (if h < 0.0 { h + 360.0 } else { h }, s, v)
-}
-
-pub(super) fn hsv_to_rgb_f32(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
-    let c: f32 = v * s;
-    let x: f32 = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let m: f32 = v - c;
-    let (r, g, b) = match h as u32 {
-        0..=59   => (c, x, 0.0),
-        60..=119 => (x, c, 0.0),
-        120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c),
-        240..=299 => (x, 0.0, c),
-        _         => (c, 0.0, x),
-    };
-    (r + m, g + m, b + m)
-}
-
-fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
-    let max: f32 = r.max(g).max(b);
-    let min: f32 = r.min(g).min(b);
-    let delta: f32 = max - min;
-    let v: f32 = max;
-    let s: f32 = if max == 0.0 { 0.0 } else { delta / max };
-    let h: f32 = if delta == 0.0 { 0.0 }
-        else if max == r { 60.0 * (((g - b) / delta) % 6.0) }
-        else if max == g { 60.0 * ((b - r) / delta + 2.0) }
-        else { 60.0 * ((r - g) / delta + 4.0) };
-    (if h < 0.0 { h + 360.0 } else { h }, s, v)
-}
-
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
-    let c: f32 = v * s;
-    let x: f32 = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let m: f32 = v - c;
-    let (r, g, b) = match h as u32 {
-        0..=59   => (c, x, 0.0), 60..=119 => (x, c, 0.0), 120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c), 240..=299 => (x, 0.0, c), _ => (c, 0.0, x),
-    };
-    (((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
-}
 
 impl ImageEditor {
     pub(super) fn apply_brush_stroke(&mut self) {
@@ -75,7 +23,7 @@ impl ImageEditor {
 
         let width: u32 = buf.width(); let height = buf.height();
         let (r, g, b, base_a) = if self.tool == Tool::Eraser {
-            (0u8, 0u8, 0u8, 0u8)
+            if self.eraser_transparent { (0u8, 0u8, 0u8, 0u8) } else { (255u8, 255u8, 255u8, 255u8) }
         } else {
             (self.color.r(), self.color.g(), self.color.b(), self.color.a())
         };
@@ -108,7 +56,7 @@ impl ImageEditor {
                             unsafe {
                                 let pixel: Rgba<u8> = buf.unsafe_get_pixel(px, py);
                                 let [er, eg, eb, ea] = pixel.0;
-                                let new_pixel: Rgba<u8> = if self.tool == Tool::Eraser {
+                                let new_pixel: Rgba<u8> = if self.tool == Tool::Eraser && self.eraser_transparent {
                                     Rgba([er, eg, eb, ea.saturating_sub(alpha)])
                                 } else {
                                     let fa: u16 = alpha as u16;

@@ -1,8 +1,8 @@
 use eframe::egui;
 use crate::style::{ColorPalette, ThemeMode};
 use crate::modules::helpers::image_export::ExportFormat;
-use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag};
-use super::ie_tools::{rgb_to_hsv_f32, hsv_to_rgb_f32};
+use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT};
+use super::ie_helpers::{rgb_to_hsv_f32, hsv_to_rgb_f32, crop_hit_handle, draw_crop_handles};
 
 impl ImageEditor {
     pub(super) fn render_toolbar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
@@ -86,6 +86,9 @@ impl ImageEditor {
                         Tool::Eraser => {
                             ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
                             ui.add(egui::Slider::new(&mut self.eraser_size, 1.0..=200.0));
+                            ui.separator();
+                            let cb = ui.add(egui::Checkbox::new(&mut self.eraser_transparent, egui::RichText::new("Remove Background").size(12.0).color(label_col)));
+                            cb.on_hover_text("When checked, erases pixels to transparent instead of white.\nUseful for removing image backgrounds.");
                         }
                         Tool::Text => {
                             ui.label(egui::RichText::new("Font:").size(12.0).color(label_col));
@@ -526,12 +529,27 @@ impl ImageEditor {
                 let p0: egui::Pos2 = self.image_to_screen(s.0, s.1);
                 let p1: egui::Pos2 = self.image_to_screen(e.0, e.1);
                 let crop_rect = egui::Rect::from_two_pos(p0, p1);
-                painter.rect_stroke(crop_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_400), egui::StrokeKind::Outside);
                 let overlay: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 0, 0, 60);
+
                 if crop_rect.min.y > canvas_rect.min.y { painter.rect_filled(egui::Rect::from_min_max(canvas_rect.min, egui::pos2(canvas_rect.max.x, crop_rect.min.y)), 0.0, overlay); }
                 if crop_rect.max.y < canvas_rect.max.y { painter.rect_filled(egui::Rect::from_min_max(egui::pos2(canvas_rect.min.x, crop_rect.max.y), canvas_rect.max), 0.0, overlay); }
                 if crop_rect.min.x > canvas_rect.min.x { painter.rect_filled(egui::Rect::from_min_max(egui::pos2(canvas_rect.min.x, crop_rect.min.y), egui::pos2(crop_rect.min.x, crop_rect.max.y)), 0.0, overlay); }
                 if crop_rect.max.x < canvas_rect.max.x { painter.rect_filled(egui::Rect::from_min_max(egui::pos2(crop_rect.max.x, crop_rect.min.y), egui::pos2(canvas_rect.max.x, crop_rect.max.y)), 0.0, overlay); }
+
+                painter.rect_stroke(crop_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_400), egui::StrokeKind::Outside);
+                draw_crop_handles(&painter, crop_rect, ColorPalette::BLUE_400);
+
+                let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                let min_img = egui::pos2(s.0.min(e.0).clamp(0.0, img_w), s.1.min(e.1).clamp(0.0, img_h));
+                let max_img = egui::pos2(s.0.max(e.0).clamp(0.0, img_w), s.1.max(e.1).clamp(0.0, img_h));
+                let pw = (max_img.x - min_img.x).round() as u32;
+                let ph = (max_img.y - min_img.y).round() as u32;
+                let label = format!("{} x {}", pw, ph);
+                let raw_tp = egui::pos2(crop_rect.min.x + 4.0, crop_rect.min.y - 18.0);
+                let text_pos = egui::pos2(raw_tp.x.max(canvas_rect.min.x + 4.0), raw_tp.y.max(canvas_rect.min.y + 4.0));
+
+                painter.text(text_pos + egui::vec2(1.0, 1.0), egui::Align2::LEFT_TOP, &label, egui::FontId::proportional(12.0), egui::Color32::from_black_alpha(160));
+                painter.text(text_pos, egui::Align2::LEFT_TOP, &label, egui::FontId::proportional(12.0), egui::Color32::WHITE);
             }
         }
 
@@ -642,11 +660,34 @@ impl ImageEditor {
         if let Some(mp) = mouse_pos {
             if canvas_rect.contains(mp) {
                 match self.tool {
+                    Tool::Brush | Tool::Eraser => ctx.set_cursor_icon(egui::CursorIcon::None),
+                    Tool::Fill | Tool::Eyedropper | Tool::Crop => ctx.set_cursor_icon(egui::CursorIcon::Crosshair),
+                    Tool::Pan => ctx.set_cursor_icon(if response.dragged_by(egui::PointerButton::Primary) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::AllScroll }),
+                    Tool::Text => ctx.set_cursor_icon(egui::CursorIcon::Text),
+                }
+                match self.tool {
                     Tool::Brush => { painter.circle_stroke(mp, self.brush_size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); }
                     Tool::Eraser => { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); }
                     Tool::Text => {
                         if let Some(handles) = self.text_transform_handles() {
                             if let Some(h) = handles.hit_test(mp) { ctx.set_cursor_icon(TransformHandleSet::cursor_for(h)); }
+                        }
+                    }
+                    Tool::Crop => {
+                        if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
+                            let p0 = self.image_to_screen(s.0, s.1);
+                            let p1 = self.image_to_screen(e.0, e.1);
+                            let cr = egui::Rect::from_two_pos(p0, p1);
+                            if let Some(h) = crop_hit_handle(mp, cr) {
+                                ctx.set_cursor_icon(match h {
+                                    THandle::Move => egui::CursorIcon::Move,
+                                    THandle::N | THandle::S => egui::CursorIcon::ResizeVertical,
+                                    THandle::E | THandle::W => egui::CursorIcon::ResizeHorizontal,
+                                    THandle::NE | THandle::SW => egui::CursorIcon::ResizeNeSw,
+                                    THandle::NW | THandle::SE => egui::CursorIcon::ResizeNwSe,
+                                    _ => egui::CursorIcon::Crosshair,
+                                });
+                            }
                         }
                     }
                     _ => {}
@@ -670,9 +711,42 @@ impl ImageEditor {
                     }
                 }
                 Tool::Crop => {
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
-                        if self.crop_state.start.is_none() { self.crop_state.start = Some((ix as f32, iy as f32)); }
-                        self.crop_state.end = Some((ix as f32, iy as f32));
+                    if let Some(handle) = self.crop_drag {
+                        if let Some((ox1, oy1, ox2, oy2)) = self.crop_drag_orig {
+                            let (min_ix, min_iy) = (ox1.min(ox2), oy1.min(oy2));
+                            let (max_ix, max_iy) = (ox1.max(ox2), oy1.max(oy2));
+                            if let Some((ix, iy)) = self.screen_to_image(pos).map(|(x,y)|(x as f32, y as f32)) {
+                                let (mut s, mut e) = ((min_ix, min_iy), (max_ix, max_iy));
+                                match handle {
+                                    THandle::N  => s.1 = iy.min(e.1 - 1.0),
+                                    THandle::S  => e.1 = iy.max(s.1 + 1.0),
+                                    THandle::W  => s.0 = ix.min(e.0 - 1.0),
+                                    THandle::E  => e.0 = ix.max(s.0 + 1.0),
+                                    THandle::NW => { s.0 = ix.min(e.0 - 1.0); s.1 = iy.min(e.1 - 1.0); }
+                                    THandle::NE => { e.0 = ix.max(s.0 + 1.0); s.1 = iy.min(e.1 - 1.0); }
+                                    THandle::SW => { s.0 = ix.min(e.0 - 1.0); e.1 = iy.max(s.1 + 1.0); }
+                                    THandle::SE => { e.0 = ix.max(s.0 + 1.0); e.1 = iy.max(s.1 + 1.0); }
+                                    THandle::Move => {
+                                        let delta_screen = response.drag_delta();
+                                        let zoom = self.zoom;
+                                        let dx = delta_screen.x / zoom;
+                                        let dy = delta_screen.y / zoom;
+                                        let w = max_ix - min_ix; let h = max_iy - min_iy;
+                                        let ns = (min_ix + dx, min_iy + dy);
+                                        s = ns; e = (ns.0 + w, ns.1 + h);
+                                        self.crop_drag_orig = Some((ns.0, ns.1, ns.0 + w, ns.1 + h));
+                                    }
+                                    _ => {}
+                                }
+                                self.crop_state.start = Some(s);
+                                self.crop_state.end   = Some(e);
+                            }
+                        }
+                    } else {
+                        if let Some((ix, iy)) = self.screen_to_image(pos) {
+                            if self.crop_state.start.is_none() { self.crop_state.start = Some((ix as f32, iy as f32)); }
+                            self.crop_state.end = Some((ix as f32, iy as f32));
+                        }
                     }
                 }
                 Tool::Text => {
@@ -770,9 +844,26 @@ impl ImageEditor {
         }
 
         if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
-            self.crop_state = CropState::default();
-            if let Some((ix, iy)) = self.screen_to_image(response.interact_pointer_pos().unwrap_or(canvas_rect.center())) {
-                self.crop_state.start = Some((ix as f32, iy as f32));
+            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
+                let p0 = self.image_to_screen(s.0, s.1);
+                let p1 = self.image_to_screen(e.0, e.1);
+                let cr = egui::Rect::from_two_pos(p0, p1);
+                if cr.width() > HANDLE_HIT && cr.height() > HANDLE_HIT {
+                    crop_hit_handle(pos, cr)
+                } else { None }
+            } else { None };
+
+            if let Some(h) = handle_hit {
+                let (s, e) = (self.crop_state.start.unwrap(), self.crop_state.end.unwrap());
+                self.crop_drag = Some(h);
+                self.crop_drag_orig = Some((s.0, s.1, e.0, e.1));
+            } else {
+                self.crop_state = CropState::default();
+                self.crop_drag = None; self.crop_drag_orig = None;
+                if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    self.crop_state.start = Some((ix as f32, iy as f32));
+                }
             }
         }
 
@@ -802,6 +893,7 @@ impl ImageEditor {
             match self.tool {
                 Tool::Brush | Tool::Eraser => { self.texture_dirty = true; self.stroke_points.clear(); self.is_dragging = false; }
                 Tool::Text => { self.text_drag = None; }
+                Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
             }
         }

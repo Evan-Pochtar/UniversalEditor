@@ -46,12 +46,12 @@
 - [ ] At 20 Font size with Sans font, code block doesn't format correctly.
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
-- [x] Can click to non-existant line in markdown mode, desyncing cursor.
+- [x] Can click to non-existent line in markdown mode, desyncing cursor.
 - [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
 - [x] If there is a asterisk MUCH after the last italicized word, It will think it connected
   - Basically, make sure to not check asterisks that are actively being used in words.
-- [x] Bolding is barely noticable
+- [x] Bolding is barely noticeable
   - Seems like just turning the markdown text into same color as the plaintext will help a lot.
 - [x] Can't put punctuation after subscript or superscript.
 - [x] Features in top tool bar are not aligned.
@@ -62,13 +62,14 @@
 
 - [x] Can't just click to color for brush, must drag
 - [x] Color picker
-  - [x] Hexcode Does not update properly on color picker
+  - [x] Hex code Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
 - [x] Resize does not work if not aspect ratio locked
 - [x] Text tool currently not working
 - [x] Text Corner Resizing delta too fast, hard to select
-- [ ] Eraser doesn't erase to white background, completley removes background
+- [x] Eraser doesn't erase to white background, completely removes background
+- [ ] Crop suddenly jumps when resizing vertically or horizontally
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -76,7 +77,7 @@
   - [x] Cannot highlight text within text box
   - [x] When selecting another tool, text box should be deselected
   - [x] Text doesn't rotate with canvas on transform
-  - [x] Sentances don't wrap properly within text boxes
+  - [x] Sentences don't wrap properly within text boxes
   - [x] Doesn't actually use font's listed in text box
   - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
   - [x] Cursor getting disconnected from where text is actually being written.
@@ -88,7 +89,7 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [ ] Save warning dialogue does not show up on application close
-- [ ] Can click on buttons in the background of the main menu with patchnotes/settings modal up
+- [ ] Can click on buttons in the background of the main menu with patch notes/settings modal up
 
 ## Features
 
@@ -176,8 +177,8 @@
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files
 - [x] Make image converter and image editor use the same export function
-- [ ] Add different cursors for different functions/tools
-- [ ] Crop should show preview of the size of the image
+- [x] Add different cursors for different functions/tools
+- [x] Crop should show preview of the size of the image
 
 ### CONVERTER: Img 2 Img
 
