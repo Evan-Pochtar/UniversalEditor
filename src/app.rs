@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_editor::ImageEditor};
+use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
