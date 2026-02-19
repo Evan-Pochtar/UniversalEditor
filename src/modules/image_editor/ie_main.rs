@@ -309,6 +309,7 @@ pub struct ImageEditor {
     pub(super) color_history: ColorHistory,
     pub(super) hex_input: String,
     pub(super) canvas_rect: Option<egui::Rect>,
+    pub(super) color_picker_rect: Option<egui::Rect>,
 
     pub(super) filter_progress: Arc<Mutex<f32>>,
     pub(super) is_processing: bool,
@@ -342,6 +343,7 @@ impl ImageEditor {
             export_auto_scale_ico: true, export_callback: None,
             show_color_picker: false, color_history: ColorHistory::load(),
             hex_input: String::from("#000000FF"), canvas_rect: None,
+            color_picker_rect: None,
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),

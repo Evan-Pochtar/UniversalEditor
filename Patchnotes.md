@@ -71,9 +71,11 @@
 #### Features
 - **IMG EDITOR**: Filters and Transformations moved to top menu bar under "Image" and "Filter"
 - **IMG EDITOR**: Eraser now has option to remove background
-- **IMG EDITOR**: Crop is now readjustable and 
+- **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
+- **IMG EDITOR**: Cursor now changes depending on current tool selected
 
 #### Debugging
 - **IMG EDITOR**: Eraser now properly erases to white background
+- **IMG EDITOR**: Cursor now no longer disappears on color picker
 - **GENERAL**: Console no longer opens on build executable
 - **GENERAL**: Menu version now displays cargo package version

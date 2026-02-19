@@ -347,7 +347,7 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
         };
-        egui::Window::new("Color Picker")
+        let win_resp = egui::Window::new("Color Picker")
             .collapsible(false).resizable(false)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 60.0))
             .fixed_size(egui::vec2(340.0, 0.0))
@@ -482,6 +482,7 @@ impl ImageEditor {
                     if ui.button("Cancel").clicked() { self.show_color_picker = false; }
                 });
             });
+        self.color_picker_rect = win_resp.map(|r| r.response.rect);
     }
 
     pub(super) fn render_canvas(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -658,16 +659,20 @@ impl ImageEditor {
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
         if let Some(mp) = mouse_pos {
+            let over_picker = self.show_color_picker && self.color_picker_rect.map_or(false, |r| r.contains(mp));
             if canvas_rect.contains(mp) {
                 match self.tool {
-                    Tool::Brush | Tool::Eraser => ctx.set_cursor_icon(egui::CursorIcon::None),
+                    Tool::Brush | Tool::Eraser => {
+                        if over_picker { ctx.set_cursor_icon(egui::CursorIcon::Default); }
+                        else { ctx.set_cursor_icon(egui::CursorIcon::None); }
+                    }
                     Tool::Fill | Tool::Eyedropper | Tool::Crop => ctx.set_cursor_icon(egui::CursorIcon::Crosshair),
                     Tool::Pan => ctx.set_cursor_icon(if response.dragged_by(egui::PointerButton::Primary) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::AllScroll }),
                     Tool::Text => ctx.set_cursor_icon(egui::CursorIcon::Text),
                 }
                 match self.tool {
-                    Tool::Brush => { painter.circle_stroke(mp, self.brush_size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); }
-                    Tool::Eraser => { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); }
+                    Tool::Brush => { if !over_picker { painter.circle_stroke(mp, self.brush_size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); } }
+                    Tool::Eraser => { if !over_picker { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); } }
                     Tool::Text => {
                         if let Some(handles) = self.text_transform_handles() {
                             if let Some(h) = handles.hit_test(mp) { ctx.set_cursor_icon(TransformHandleSet::cursor_for(h)); }
