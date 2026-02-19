@@ -11,24 +11,25 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::GRAY_300)
         };
+        
         egui::Frame::new()
             .fill(bg).stroke(egui::Stroke::new(1.0, border))
             .corner_radius(6.0)
             .inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 4 })
-            .show(ui, |ui| {
+            .show(ui, |ui: &mut egui::Ui| {
                 egui::ScrollArea::horizontal()
                     .auto_shrink([false, true])
                     .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                     .min_scrolled_height(32.0)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            self.tool_btn(ui, "Brush",   Tool::Brush,      Some("B"), theme);
-                            self.tool_btn(ui, "Eraser",  Tool::Eraser,     Some("E"), theme);
-                            self.tool_btn(ui, "Fill",    Tool::Fill,       Some("F"), theme);
-                            self.tool_btn(ui, "Text",    Tool::Text,       Some("T"), theme);
+                    .show(ui, |ui: &mut egui::Ui| {
+                        ui.horizontal(|ui: &mut egui::Ui| {
+                            self.tool_btn(ui, "Brush", Tool::Brush, Some("B"), theme);
+                            self.tool_btn(ui, "Eraser", Tool::Eraser, Some("E"), theme);
+                            self.tool_btn(ui, "Fill", Tool::Fill, Some("F"), theme);
+                            self.tool_btn(ui, "Text", Tool::Text, Some("T"), theme);
                             self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, Some("D"), theme);
-                            self.tool_btn(ui, "Crop",    Tool::Crop,       Some("C"), theme);
-                            self.tool_btn(ui, "Pan",     Tool::Pan,        Some("P"), theme);
+                            self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
+                            self.tool_btn(ui, "Pan", Tool::Pan, Some("P"), theme);
                         });
                     });
             });
@@ -43,6 +44,7 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
         };
+
         let response: egui::Response = ui.scope(|ui: &mut egui::Ui| {
             let s: &mut egui::Style = ui.style_mut();
             s.visuals.widgets.inactive.bg_fill = bg;
@@ -53,6 +55,7 @@ impl ImageEditor {
             let btn: egui::Response = ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0)));
             if let Some(sc) = shortcut { btn.on_hover_text(sc) } else { btn }
         }).inner;
+
         if response.clicked() {
             if tool != Tool::Text { self.commit_or_discard_active_text(); }
             self.tool = tool;
@@ -66,12 +69,13 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::GRAY_300, ColorPalette::ZINC_600)
         };
+
         egui::Frame::new()
             .fill(bg).stroke(egui::Stroke::new(1.0, border))
             .corner_radius(6.0)
             .inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 })
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
+            .show(ui, |ui: &mut egui::Ui| {
+                ui.horizontal(|ui: &mut egui::Ui| {
                     match self.tool {
                         Tool::Brush => {
                             ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
@@ -119,7 +123,7 @@ impl ImageEditor {
                                 } else {
                                     (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
                                 };
-                                ui.scope(|ui| {
+                                ui.scope(|ui: &mut egui::Ui| {
                                     let s: &mut egui::Style = ui.style_mut();
                                     s.visuals.widgets.inactive.bg_fill = bg;
                                     s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
@@ -180,6 +184,7 @@ impl ImageEditor {
                         let color_btn: egui::Button<'_> = egui::Button::new("").fill(self.color).min_size(egui::vec2(28.0, 28.0));
                         if ui.add(color_btn).clicked() { self.show_color_picker = !self.show_color_picker; }
                         ui.label(egui::RichText::new("Color:").size(12.0).color(label_col));
+
                         if let Some(img) = &self.image {
                             ui.label(egui::RichText::new(format!("{}x{}", img.width(), img.height())).size(12.0).color(label_col));
                             ui.label(egui::RichText::new(format!("{:.0}%", self.zoom * 100.0)).size(12.0).color(label_col));
@@ -198,10 +203,11 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
         };
+
         egui::Frame::new()
             .fill(bg).stroke(egui::Stroke::new(1.5, border))
             .corner_radius(6.0).inner_margin(12.0)
-            .show(ui, |ui| {
+            .show(ui, |ui: &mut egui::Ui| {
                 if self.is_processing {
                     let progress_val: f32 = *self.filter_progress.lock().unwrap();
                     ui.label(egui::RichText::new("Processing Filter...").size(13.0).color(text_col));
@@ -256,7 +262,7 @@ impl ImageEditor {
                     }
                     FilterPanel::Resize => {
                         ui.label(egui::RichText::new("Resize").size(16.0).color(text_col));
-                        ui.horizontal(|ui| {
+                        ui.horizontal(|ui: &mut egui::Ui| {
                             ui.label(egui::RichText::new("Width:").size(12.0).color(label_col));
                             let old_w: u32 = self.resize_w;
                             ui.add(egui::DragValue::new(&mut self.resize_w).range(1..=8192));
@@ -285,7 +291,7 @@ impl ImageEditor {
                     FilterPanel::Export => {
                         ui.label(egui::RichText::new("Export Image").size(13.0).color(text_col));
                         ui.label(egui::RichText::new("Format:").size(12.0).color(label_col));
-                        ui.horizontal_wrapped(|ui| {
+                        ui.horizontal_wrapped(|ui: &mut egui::Ui| {
                             for format in ExportFormat::all() {
                                 let is_selected: bool = self.export_format == format;
                                 let (bg_color, txt_color) = if is_selected {
@@ -377,6 +383,7 @@ impl ImageEditor {
                     painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
                     painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
                 }
+
                 if response.clicked() || response.dragged() {
                     if let Some(pos) = response.interact_pointer_pos() {
                         let x: f32 = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
@@ -391,10 +398,12 @@ impl ImageEditor {
                     ui.label(egui::RichText::new("Hue:").size(12.0).color(weak_col));
                     let hue_size: egui::Vec2 = egui::vec2(ui.available_width(), 24.0);
                     let (hue_rect, hue_response) = ui.allocate_exact_size(hue_size, egui::Sense::click_and_drag());
+
                     if ui.is_rect_visible(hue_rect) {
                         let painter: egui::Painter = ui.painter_at(hue_rect);
                         let steps: i32 = 60;
                         let step_w: f32 = hue_rect.width() / steps as f32;
+
                         for i in 0..steps {
                             let h_step: f32 = (i as f32 / steps as f32) * 360.0;
                             let (r, g, b) = hsv_to_rgb_f32(h_step, 1.0, 1.0);
@@ -404,14 +413,17 @@ impl ImageEditor {
                                 egui::vec2(step_w.ceil(), hue_rect.height()),
                             ), 0.0, color);
                         }
+
                         painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0,
                             if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
                         ), egui::StrokeKind::Outside);
+
                         let hue_cursor_x: f32 = hue_rect.min.x + (h / 360.0) * hue_rect.width();
                         let hcr: egui::Rect = egui::Rect::from_center_size(egui::pos2(hue_cursor_x, hue_rect.center().y), egui::vec2(4.0, hue_rect.height() + 2.0));
                         painter.rect_filled(hcr, 2.0, egui::Color32::WHITE);
                         painter.rect_stroke(hcr, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
                     }
+
                     if hue_response.clicked() || hue_response.dragged() {
                         if let Some(pos) = hue_response.interact_pointer_pos() {
                             let x: f32 = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0);
@@ -435,6 +447,7 @@ impl ImageEditor {
                     ui.label(egui::RichText::new(&rgb_str).size(12.0).color(text_col).monospace());
                     if ui.small_button("Copy").clicked() { ctx.copy_text(rgb_str); }
                 });
+
                 ui.horizontal(|ui: &mut egui::Ui| {
                     ui.label(egui::RichText::new("Hex:").size(12.0).color(weak_col));
                     let response: egui::Response = ui.text_edit_singleline(&mut self.hex_input);
@@ -444,11 +457,13 @@ impl ImageEditor {
                     if response.lost_focus() { self.hex_input = RgbaColor::from_egui(self.color).to_hex(); }
                     if ui.small_button("Copy").clicked() { ctx.copy_text(self.hex_input.clone()); }
                 });
+
                 ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
                 ui.horizontal(|ui: &mut egui::Ui| {
                     ui.label(egui::RichText::new("Recent").size(13.0).color(text_col));
                     if ui.small_button("Clear").clicked() { self.color_history = super::ie_main::ColorHistory::new(); }
                 });
+                
                 ui.horizontal_wrapped(|ui: &mut egui::Ui| {
                     let history: std::collections::VecDeque<RgbaColor> = self.color_history.get_colors().clone();
                     for color in history.iter() {
@@ -457,6 +472,7 @@ impl ImageEditor {
                         }
                     }
                 });
+
                 ui.add_space(8.0);
                 ui.horizontal(|ui: &mut egui::Ui| {
                     if ui.button("Apply").clicked()  { self.add_color_to_history(); self.show_color_picker = false; }
@@ -480,6 +496,7 @@ impl ImageEditor {
         } else {
             (egui::Color32::from_rgb(200, 200, 200), egui::Color32::from_rgb(220, 220, 220))
         };
+
         let mut cy: f32 = rect.min.y;
         while cy < rect.max.y {
             let mut cx: f32 = rect.min.x;
@@ -661,6 +678,7 @@ impl ImageEditor {
                 Tool::Text => {
                     let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> = 
                         self.text_drag.as_ref().map(|d| (d.handle, d.start, d.orig_img_x, d.orig_img_y, d.orig_font_size, d.orig_box_width, d.orig_box_height, d.orig_rotation, d.orig_rot_start_angle));
+
                     if let (Some(id), Some((handle, drag_start, orig_ix, orig_iy, orig_fs, orig_bw, orig_bh, orig_rot, orig_rot_start))) = (self.selected_text, drag_data) {
                         let zoom: f32 = self.zoom;
                         let anchor_screen: egui::Pos2 = self.image_to_screen(orig_ix, orig_iy);
@@ -668,12 +686,14 @@ impl ImageEditor {
                         let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
                         let ox: f32 = canvas.center().x - img_w * zoom / 2.0 + self.pan.x;
                         let oy: f32 = canvas.center().y - img_h * zoom / 2.0 + self.pan.y;
+
                         let orig_w_screen: f32 = orig_bw.map(|bw| bw * zoom).unwrap_or_else(|| {
                             self.text_layers.iter().find(|l| l.id == id).map(|l| l.max_line_chars()).unwrap_or(1) as f32 * orig_fs * 0.58 * zoom
                         });
                         let orig_h_screen: f32 = orig_bh.map(|bh| bh * zoom).unwrap_or_else(|| {
                             self.text_layers.iter().find(|l| l.id == id).map(|l| l.line_count()).unwrap_or(1) as f32 * orig_fs * 1.35 * zoom
                         });
+
                         let rot_center: egui::Pos2 = anchor_screen + egui::vec2(orig_w_screen / 2.0, orig_h_screen / 2.0);
                         if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
                             let min_sz: f32 = orig_fs * 0.5 * zoom;

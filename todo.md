@@ -16,7 +16,7 @@
   - [ ] Change checkmark close/open sidebar to a small arrow.
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [x] Unified Top Bar Handling
-- [ ] Better File System
+- [x] Better File System
 
 ## Screens
 
@@ -88,6 +88,7 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [ ] Save warning dialogue does not show up on application close
+- [ ] Can click on buttons in the background of the main menu with patchnotes/settings modal up
 
 ## Features
 
