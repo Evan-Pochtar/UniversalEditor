@@ -11,6 +11,14 @@ pub enum ViewMode {
     Markdown,
 }
 
+pub(super) struct LineHeightCache {
+    pub version: u64,
+    pub font_size: f32,
+    pub wrap_width: f32,
+    pub is_dark: bool,
+    pub heights: Vec<Vec<f32>>,
+}
+
 pub struct TextEditor {
     pub(super) file_path: Option<PathBuf>,
     pub(super) content: String,
@@ -20,6 +28,11 @@ pub struct TextEditor {
     pub(super) view_mode: ViewMode,
     pub(super) last_cursor_range: Option<egui::text::CCursorRange>,
     pub(super) pending_cursor_pos: Option<usize>,
+    pub(super) content_version: u64,
+    pub(super) cached_word_count: usize,
+    pub(super) cached_char_count: usize,
+    pub(super) cached_counts_version: u64,
+    pub(super) line_height_cache: Option<LineHeightCache>,
 }
 
 impl TextEditor {
@@ -33,6 +46,11 @@ impl TextEditor {
             view_mode: ViewMode::Plain,
             last_cursor_range: None,
             pending_cursor_pos: None,
+            content_version: 0,
+            cached_word_count: 0,
+            cached_char_count: 0,
+            cached_counts_version: u64::MAX,
+            line_height_cache: None,
         }
     }
 
@@ -54,6 +72,11 @@ impl TextEditor {
             view_mode,
             last_cursor_range: None,
             pending_cursor_pos: None,
+            content_version: 0,
+            cached_word_count: 0,
+            cached_char_count: 0,
+            cached_counts_version: u64::MAX,
+            line_height_cache: None,
         }
     }
 

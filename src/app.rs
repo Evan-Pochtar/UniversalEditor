@@ -1262,6 +1262,8 @@ impl eframe::App for UniversalEditor {
             }
         });
 
-        self.render_unsaved_dialog(ctx);
+        if self.show_unsaved_dialog {
+            ctx.set_cursor_icon(egui::CursorIcon::Default);
+        }
     }
 }

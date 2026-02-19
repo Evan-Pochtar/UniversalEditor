@@ -51,6 +51,11 @@ impl TextEditor {
         }
 
         if show_file_info {
+            if self.cached_counts_version != self.content_version {
+                self.cached_char_count = self.count_visible_chars();
+                self.cached_word_count = self.count_words();
+                self.cached_counts_version = self.content_version;
+            }
             ui.horizontal(|ui: &mut egui::Ui| {
                 let is_dark: bool = ui.visuals().dark_mode;
                 ui.label(format!("File: {}", self.get_file_name()));
@@ -62,9 +67,9 @@ impl TextEditor {
                 };
                 ui.label(egui::RichText::new(status).color(color));
                 ui.separator();
-                ui.label(format!("Characters: {}", self.count_visible_chars()));
+                ui.label(format!("Characters: {}", self.cached_char_count));
                 ui.separator();
-                ui.label(format!("Words: {}", self.count_words()));
+                ui.label(format!("Words: {}", self.cached_word_count));
             });
             ui.separator();
         }
@@ -88,7 +93,7 @@ impl TextEditor {
                     if let Some(state) = egui::TextEdit::load_state(ctx, response.id) {
                         if let Some(r) = state.cursor.char_range() { self.last_cursor_range = Some(r); }
                     }
-                    if response.changed() { self.dirty = true; }
+                    if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
                 });
             }
         }
@@ -134,28 +139,47 @@ impl TextEditor {
                 fence_line_flags.push(is_fence);
             }
 
-            let mut per_line_row_heights: Vec<Vec<f32>> = Vec::with_capacity(lines.len());
-            ui.fonts_mut(|fonts: &mut egui::epaint::FontsView<'_>| {
-                for (idx, line) in lines.iter().enumerate() {
-                    let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
-                    job.wrap.max_width = wrap_width;
-
-                    if fence_line_flags[idx] {
-                        Self::append_fence_line_job(line, &mut job, font_size, is_dark_mode, false, cursor_pos, 0);
-                    } else if code_line_flags[idx] {
-                        job.append(line, 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
-                    } else if line.trim().is_empty() {
-                        job.append(line, 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
-                    } else {
-                        Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, 0, is_dark_mode);
-                    }
-
-                    let galley: std::sync::Arc<egui::Galley> = fonts.layout_job(job);
-                    let mut row_heights: Vec<f32> = galley.rows.iter().map(|r: &egui::epaint::text::PlacedRow| r.height()).collect();
-                    if row_heights.is_empty() { row_heights.push((font_size * 1.25).max(16.0)); }
-                    per_line_row_heights.push(row_heights);
-                }
+            let cache_valid = self.line_height_cache.as_ref().map_or(false, |c| {
+                c.version == self.content_version
+                    && c.font_size == font_size
+                    && c.wrap_width == wrap_width
+                    && c.is_dark == is_dark_mode
+                    && c.heights.len() == lines.len()
             });
+
+            if !cache_valid {
+                let mut per_line_row_heights: Vec<Vec<f32>> = Vec::with_capacity(lines.len());
+                ui.fonts_mut(|fonts: &mut egui::epaint::FontsView<'_>| {
+                    for (idx, line) in lines.iter().enumerate() {
+                        let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
+                        job.wrap.max_width = wrap_width;
+
+                        if fence_line_flags[idx] {
+                            Self::append_fence_line_job(line, &mut job, font_size, is_dark_mode, false, cursor_pos, 0);
+                        } else if code_line_flags[idx] {
+                            job.append(line, 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
+                        } else if line.trim().is_empty() {
+                            job.append(line, 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                        } else {
+                            Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, 0, is_dark_mode);
+                        }
+
+                        let galley: std::sync::Arc<egui::Galley> = fonts.layout_job(job);
+                        let mut row_heights: Vec<f32> = galley.rows.iter().map(|r: &egui::epaint::text::PlacedRow| r.height()).collect();
+                        if row_heights.is_empty() { row_heights.push((font_size * 1.25).max(16.0)); }
+                        per_line_row_heights.push(row_heights);
+                    }
+                });
+                self.line_height_cache = Some(super::te_main::LineHeightCache {
+                    version: self.content_version,
+                    font_size,
+                    wrap_width,
+                    is_dark: is_dark_mode,
+                    heights: per_line_row_heights,
+                });
+            }
+
+            let per_line_row_heights: Vec<Vec<f32>> = self.line_height_cache.as_ref().unwrap().heights.clone();
 
             let desired_size: egui::Vec2 = ui.available_size();
             let (outer_rect, _) = ui.allocate_exact_size(desired_size, Sense::click());
@@ -233,7 +257,7 @@ impl TextEditor {
             if let Some(state) = egui::TextEdit::load_state(ctx, response.id) {
                 if let Some(r) = state.cursor.char_range() { self.last_cursor_range = Some(r); }
             }
-            if response.changed() { self.dirty = true; }
+            if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
         });
     }
 

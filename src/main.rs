@@ -19,6 +19,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Universal Editor",
         options,
-        Box::new(|cc| Ok(Box::new(UniversalEditor::new(cc)))),
+        Box::new(|cc| {
+            cc.egui_ctx.style_mut(|s| s.visuals.text_cursor.blink = false);
+            Ok(Box::new(UniversalEditor::new(cc)))
+        }),
     )
 }

@@ -77,5 +77,6 @@
 #### Debugging
 - **IMG EDITOR**: Eraser now properly erases to white background
 - **IMG EDITOR**: Cursor now no longer disappears on color picker
+- **IMG EDITOR**: Cursor now no longer disappears on unsaved changes screen
 - **GENERAL**: Console no longer opens on build executable
 - **GENERAL**: Menu version now displays cargo package version
