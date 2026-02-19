@@ -643,7 +643,7 @@ impl UniversalEditor {
                 if !contributions.image_items.is_empty() {
                     ui.menu_button("Image", |ui| {
                         for (item, action) in &contributions.image_items {
-                            if item.label == "Seperator" {
+                            if item.label == "Separator" {
                                 ui.separator();
                                 continue;
                             }
@@ -911,7 +911,7 @@ impl UniversalEditor {
                             theme,
                         ).clicked() { open_file = true; }
                     });
-                    if open_new  { action = Some(HomeAction::NewTextFile); }
+                    if open_new { action = Some(HomeAction::NewTextFile); }
                     if open_file { action = Some(HomeAction::OpenFile); }
 
                     ui.add_space(32.0);
@@ -925,7 +925,7 @@ impl UniversalEditor {
                         if style::tool_card(
                             &mut cols[0],
                             "Text Editor",
-                            "Rich editing with undo history",
+                            "Rich editing in both markdown and plaintext",
                             ColorPalette::BLUE_500,
                             theme,
                         ).clicked() { open_text_ed = true; }
@@ -1002,10 +1002,10 @@ impl UniversalEditor {
                 ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
             });
 
-        let (bg, border, heading, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
+        let (bg, border, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
         } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
         };
 
         let mut sys_clicked = false;
@@ -1023,9 +1023,6 @@ impl UniversalEditor {
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Settings").size(20.0).strong().color(heading));
-                ui.add_space(16.0);
-
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     let tabs = [(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor")];
@@ -1121,10 +1118,10 @@ impl UniversalEditor {
                 ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
             });
 
-        let (bg, border, heading, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200, egui::Color32::from_rgb(30, 40, 60))
+        let (bg, border, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200, egui::Color32::from_rgb(30, 40, 60))
         } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
         };
 
         let mut open = self.show_patch_notes;
@@ -1141,8 +1138,6 @@ impl UniversalEditor {
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Patch Notes").size(20.0).strong().color(heading));
-                ui.add_space(20.0);
 
                 egui::ScrollArea::vertical()
                     .max_height(420.0)

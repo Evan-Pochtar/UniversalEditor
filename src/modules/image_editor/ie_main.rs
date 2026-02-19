@@ -578,7 +578,7 @@ impl EditorModule for ImageEditor {
             ],
             image_items: vec![
                 (MenuItem { label: "Resize Canvas...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Resize Canvas".to_string())),
-                (MenuItem { label: "Seperator".to_string(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Separator".to_string(), shortcut: None, enabled: false }, MenuAction::None),
                 (MenuItem { label: "Flip Horizontal".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Flip Horizontal".to_string())),
                 (MenuItem { label: "Flip Vertical".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Flip Vertical".to_string())),
                 (MenuItem { label: "Rotate CCW".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("Rotate CCW".to_string())),
