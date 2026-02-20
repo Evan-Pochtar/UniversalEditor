@@ -310,6 +310,7 @@ pub struct ImageEditor {
     pub(super) hex_input: String,
     pub(super) canvas_rect: Option<egui::Rect>,
     pub(super) color_picker_rect: Option<egui::Rect>,
+    pub(super) filter_panel_rect: Option<egui::Rect>,
 
     pub(super) filter_progress: Arc<Mutex<f32>>,
     pub(super) is_processing: bool,
@@ -344,6 +345,7 @@ impl ImageEditor {
             show_color_picker: false, color_history: ColorHistory::load(),
             hex_input: String::from("#000000FF"), canvas_rect: None,
             color_picker_rect: None,
+            filter_panel_rect: None,
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
@@ -591,6 +593,7 @@ impl EditorModule for ImageEditor {
                 (MenuItem { label: "Hue/Saturation...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("H/S".to_string())),
                 (MenuItem { label: "Blur...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Blur".to_string())),
                 (MenuItem { label: "Sharpen...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Sharpen".to_string())),
+                (MenuItem { label: "Separator".to_string(), shortcut: None, enabled: false }, MenuAction::None),
                 (MenuItem { label: "Grayscale".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Gray".to_string())),
                 (MenuItem { label: "Invert".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Invert".to_string())),
                 (MenuItem { label: "Sepia".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Sepia".to_string())),
@@ -637,11 +640,7 @@ impl EditorModule for ImageEditor {
         self.render_options_bar(ui, theme);
         ui.add_space(4.0);
 
-        if self.filter_panel != FilterPanel::None {
-            self.render_filter_panel(ui, theme);
-            ui.add_space(4.0);
-        }
-
+        if self.filter_panel != FilterPanel::None { self.render_filter_panel(ui, ctx, theme); }
         if self.show_color_picker { self.render_color_picker(ui, ctx, theme); }
         self.render_canvas(ui, ctx);
     }

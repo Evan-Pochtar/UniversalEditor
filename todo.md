@@ -174,6 +174,7 @@
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
 - [ ] Filter preview before apply
+- [x] Turn filter panel into it's own modal
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files

@@ -198,19 +198,32 @@ impl ImageEditor {
             });
     }
 
-    pub(super) fn render_filter_panel(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
-        ui.spacing_mut().slider_width = 120.0;
+    pub(super) fn render_filter_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, theme: ThemeMode) {
         if self.filter_panel == FilterPanel::None { return; }
         let (bg, border, text_col, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_800, ColorPalette::BLUE_600, ColorPalette::ZINC_100, ColorPalette::ZINC_400)
         } else {
             (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
         };
+        let title = match self.filter_panel {
+            FilterPanel::BrightnessContrast => "Brightness / Contrast",
+            FilterPanel::HueSaturation => "Hue / Saturation",
+            FilterPanel::Blur => "Gaussian Blur",
+            FilterPanel::Sharpen => "Sharpen",
+            FilterPanel::Resize => "Resize",
+            FilterPanel::Export => "Export",
+            FilterPanel::None => "",
+        };
 
-        egui::Frame::new()
-            .fill(bg).stroke(egui::Stroke::new(1.5, border))
-            .corner_radius(6.0).inner_margin(12.0)
-            .show(ui, |ui: &mut egui::Ui| {
+        let canvas_origin: egui::Pos2 = ui.available_rect_before_wrap().min;
+        let modal_pos: egui::Pos2 = canvas_origin + egui::vec2(10.0, 10.0);
+        let win_resp: Option<egui::InnerResponse<Option<()>>> = egui::Window::new(title)
+            .collapsible(false).resizable(false)
+            .fixed_pos(modal_pos)
+            .fixed_size(egui::vec2(320.0, 0.0))
+            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.5, border)).corner_radius(8.0).inner_margin(16.0))
+            .show(ctx, |ui: &mut egui::Ui| {
+                ui.spacing_mut().slider_width = 200.0;
                 if self.is_processing {
                     let progress_val: f32 = *self.filter_progress.lock().unwrap();
                     ui.label(egui::RichText::new("Processing Filter...").size(13.0).color(text_col));
@@ -230,7 +243,6 @@ impl ImageEditor {
                 }
                 match self.filter_panel {
                     FilterPanel::BrightnessContrast => {
-                        ui.label(egui::RichText::new("Brightness / Contrast").size(13.0).color(text_col));
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Brightness:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.brightness, -100.0..=100.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Contrast:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.contrast, -100.0..=100.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| {
@@ -239,7 +251,6 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::HueSaturation => {
-                        ui.label(egui::RichText::new("Hue / Saturation").size(13.0).color(text_col));
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Hue:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.hue, -180.0..=180.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Saturation:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.saturation, -100.0..=100.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| {
@@ -248,7 +259,6 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::Blur => {
-                        ui.label(egui::RichText::new("Gaussian Blur").size(13.0).color(text_col));
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Radius:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.blur_radius, 0.5..=20.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| {
                             if ui.button("Apply").clicked() { self.push_undo(); self.apply_blur(); }
@@ -256,7 +266,6 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::Sharpen => {
-                        ui.label(egui::RichText::new("Sharpen").size(13.0).color(text_col));
                         ui.horizontal(|ui: &mut egui::Ui| { ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col)); ui.add(egui::Slider::new(&mut self.sharpen_amount, 0.1..=5.0)); });
                         ui.horizontal(|ui: &mut egui::Ui| {
                             if ui.button("Apply").clicked() { self.push_undo(); self.apply_sharpen(); }
@@ -264,7 +273,6 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::Resize => {
-                        ui.label(egui::RichText::new("Resize").size(16.0).color(text_col));
                         ui.horizontal(|ui: &mut egui::Ui| {
                             ui.label(egui::RichText::new("Width:").size(12.0).color(label_col));
                             let old_w: u32 = self.resize_w;
@@ -292,7 +300,6 @@ impl ImageEditor {
                         });
                     }
                     FilterPanel::Export => {
-                        ui.label(egui::RichText::new("Export Image").size(13.0).color(text_col));
                         ui.label(egui::RichText::new("Format:").size(12.0).color(label_col));
                         ui.horizontal_wrapped(|ui: &mut egui::Ui| {
                             for format in ExportFormat::all() {
@@ -338,6 +345,7 @@ impl ImageEditor {
                     FilterPanel::None => {}
                 }
             });
+        self.filter_panel_rect = win_resp.map(|r| r.response.rect);
     }
 
     pub(super) fn render_color_picker(&mut self, _ui: &mut egui::Ui, ctx: &egui::Context, theme: ThemeMode) {
@@ -659,20 +667,19 @@ impl ImageEditor {
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
         if let Some(mp) = mouse_pos {
-            let over_picker = self.show_color_picker && self.color_picker_rect.map_or(false, |r| r.contains(mp));
-            if canvas_rect.contains(mp) {
+            let over_picker: bool = self.show_color_picker && self.color_picker_rect.map_or(false, |r| r.contains(mp));
+            let over_filter: bool = self.filter_panel != FilterPanel::None && self.filter_panel_rect.map_or(false, |r| r.contains(mp));
+            let over_modal: bool = over_picker || over_filter;
+            if response.hovered() && !over_modal {
                 match self.tool {
-                    Tool::Brush | Tool::Eraser => {
-                        if over_picker { ctx.set_cursor_icon(egui::CursorIcon::Default); }
-                        else { ctx.set_cursor_icon(egui::CursorIcon::None); }
-                    }
+                    Tool::Brush | Tool::Eraser => ctx.set_cursor_icon(egui::CursorIcon::None),
                     Tool::Fill | Tool::Eyedropper | Tool::Crop => ctx.set_cursor_icon(egui::CursorIcon::Crosshair),
                     Tool::Pan => ctx.set_cursor_icon(if response.dragged_by(egui::PointerButton::Primary) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::AllScroll }),
                     Tool::Text => ctx.set_cursor_icon(egui::CursorIcon::Text),
                 }
                 match self.tool {
-                    Tool::Brush => { if !over_picker { painter.circle_stroke(mp, self.brush_size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); } }
-                    Tool::Eraser => { if !over_picker { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); } }
+                    Tool::Brush  => { painter.circle_stroke(mp, self.brush_size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); }
+                    Tool::Eraser => { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); }
                     Tool::Text => {
                         if let Some(handles) = self.text_transform_handles() {
                             if let Some(h) = handles.hit_test(mp) { ctx.set_cursor_icon(TransformHandleSet::cursor_for(h)); }

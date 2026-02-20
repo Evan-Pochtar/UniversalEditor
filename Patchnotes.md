@@ -73,6 +73,7 @@
 - **IMG EDITOR**: Eraser now has option to remove background
 - **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
 - **IMG EDITOR**: Cursor now changes depending on current tool selected
+- **IMG EDITOR**: Filter panel is now it's own modal similar to the color picker
 
 #### Debugging
 - **IMG EDITOR**: Eraser now properly erases to white background

@@ -666,6 +666,10 @@ impl UniversalEditor {
                 if !contributions.filter_items.is_empty() {
                     ui.menu_button("Filter", |ui| {
                         for (item, action) in &contributions.filter_items {
+                            if item.label == "Separator" {
+                                ui.separator();
+                                continue;
+                            }
                             let label = if let Some(ref shortcut) = item.shortcut {
                                 format!("{} ({})", item.label, shortcut)
                             } else {
