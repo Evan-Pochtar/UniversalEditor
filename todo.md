@@ -69,7 +69,7 @@
 - [x] Text tool currently not working
 - [x] Text Corner Resizing delta too fast, hard to select
 - [x] Eraser doesn't erase to white background, completely removes background
-- [ ] Crop suddenly jumps when resizing vertically or horizontally
+- [x] Crop suddenly jumps when resizing vertically or horizontally
 - [x] Can't see cursor on unsaved changes popup
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved

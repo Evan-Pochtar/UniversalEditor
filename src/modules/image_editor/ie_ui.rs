@@ -747,7 +747,7 @@ impl ImageEditor {
                                 self.crop_state.end   = Some(e);
                             }
                         }
-                    } else {
+                    } else if !response.drag_started_by(egui::PointerButton::Primary) {
                         if let Some((ix, iy)) = self.screen_to_image(pos) {
                             if self.crop_state.start.is_none() { self.crop_state.start = Some((ix as f32, iy as f32)); }
                             self.crop_state.end = Some((ix as f32, iy as f32));

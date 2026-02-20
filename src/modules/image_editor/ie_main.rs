@@ -11,7 +11,7 @@ use std::fs;
 
 pub(super) const MAX_UNDO: usize = 20;
 pub(super) const MAX_COLOR_HISTORY: usize = 20;
-pub(super) const HANDLE_HIT: f32 = 18.0;
+pub(super) const HANDLE_HIT: f32 = 22.0;
 pub(super) const HANDLE_VIS: f32 = 8.0;
 pub(super) const ROTATE_DIST: f32 = 28.0;
 
