@@ -81,3 +81,4 @@
 - **IMG EDITOR**: Crop tool now properly resizes
 - **GENERAL**: Console no longer opens on build executable
 - **GENERAL**: Menu version now displays cargo package version
+- **GENERAL**: Can no longer click on buttons in the background with the patch notes or settings modal up

@@ -90,7 +90,7 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [ ] Save warning dialogue does not show up on application close
-- [ ] Can click on buttons in the background of the main menu with patch notes/settings modal up
+- [x] Can click on buttons in the background of the main menu with patch notes/settings modal up
 
 ## Features
 

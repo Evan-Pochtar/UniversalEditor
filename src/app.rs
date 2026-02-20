@@ -997,9 +997,11 @@ impl UniversalEditor {
         egui::Area::new(egui::Id::new("settings_overlay"))
             .fixed_pos(egui::pos2(0.0, 0.0))
             .order(egui::Order::Foreground)
-            .interactable(false)
+            .interactable(true)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
+                let screen = ctx.content_rect();
+                ui.painter().rect_filled(screen, 0.0, overlay);
+                ui.allocate_rect(screen, egui::Sense::click_and_drag());
             });
 
         let (bg, border, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
@@ -1113,9 +1115,11 @@ impl UniversalEditor {
         egui::Area::new(egui::Id::new("patchnotes_overlay"))
             .fixed_pos(egui::pos2(0.0, 0.0))
             .order(egui::Order::Foreground)
-            .interactable(false)
+            .interactable(true)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
+                let screen = ctx.content_rect();
+                ui.painter().rect_filled(screen, 0.0, overlay);
+                ui.allocate_rect(screen, egui::Sense::click_and_drag());
             });
 
         let (bg, border, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
