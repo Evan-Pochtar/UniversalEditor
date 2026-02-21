@@ -33,11 +33,12 @@ impl TextEditor {
                 ui.separator();
                 ui.label("Font:");
                 ui.vertical(|ui: &mut egui::Ui| {
+                    let is_roboto = matches!(&self.font_family, egui::FontFamily::Name(n) if n.as_ref() == "Roboto");
                     egui::ComboBox::from_id_salt("font_fam")
-                        .selected_text(if matches!(self.font_family, egui::FontFamily::Proportional) { "Sans" } else { "Mono" })
+                        .selected_text(if is_roboto { "Roboto" } else { "Ubuntu" })
                         .show_ui(ui, |ui: &mut egui::Ui| {
-                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Monospace, "Monospace");
-                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Proportional, "Sans-Serif");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Ubuntu".into()), "Ubuntu");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Roboto".into()), "Roboto");
                         });
                 });
 
@@ -215,7 +216,7 @@ impl TextEditor {
                         let marker_end: usize = char_offset + line.chars().count();
                         let cursor_in_range: bool = cursor_pos.map_or(false, |p: usize| p >= char_offset && p <= marker_end);
                         if cursor_in_range {
-                            job.append(line, 0.0, Self::markdown_syntax_format_static(font_size));
+                            job.append(line, 0.0, Self::markdown_syntax_format_static(font_size, &font_family));
                         } else {
                             Self::append_fence_line_job(line, &mut job, font_size, is_dark_mode, true, cursor_pos, char_offset);
                         }
@@ -312,11 +313,11 @@ impl TextEditor {
                 let header_end: usize = line_start_offset + line.chars().count();
                 let cursor_in: bool = cursor_pos.map_or(false, |p: usize| p >= line_start_offset && p <= header_end);
                 if cursor_in {
-                    job.append(prefix, 0.0, Self::markdown_syntax_format_static(font_size));
+                    job.append(prefix, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                     job.append(rest, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
                 } else {
                     job.append(prefix, 0.0, Self::invisible_format_static());
-                    job.append(rest, 0.0, Self::heading_format_static(font_size, *scale, is_dark_mode));
+                    job.append(rest, 0.0, Self::heading_format_static(font_size, *scale, font_family, is_dark_mode));
                 }
                 return;
             }
@@ -387,7 +388,7 @@ impl TextEditor {
                                 flush(&mut current_text, job);
                                 if cursor_in(current_pos, end_pos) {
                                     let r: String = chars[i..end_pos].iter().collect();
-                                    job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                                    job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                                 } else {
                                     let om: String = chars[i..i + mlen].iter().collect();
                                     job.append(&om, 0.0, Self::invisible_format_static());
@@ -405,7 +406,7 @@ impl TextEditor {
             }
 
             if i + 1 < chars.len() && chars[i] == '~' && chars[i + 1] == '~' && is_valid_start(i, 2) {
-                try_span!("~~", Self::strikethrough_format_static(font_size, is_dark_mode), 2);
+                try_span!("~~", Self::strikethrough_format_static(font_size, font_family, is_dark_mode), 2);
                 if i < chars.len() && chars[i] == '~' {
                     current_text.push(chars[i]); i += 1; continue;
                 }
@@ -421,11 +422,11 @@ impl TextEditor {
                     flush(&mut current_text, job);
                     if cursor_pos.map_or(false, |p| p >= current_pos && p <= text_start_offset + end) {
                         let r: String = chars[i..end].iter().collect();
-                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                     } else {
                         job.append("~", 0.0, Self::invisible_format_static());
                         let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::subscript_format_static(font_size, is_dark_mode));
+                        job.append(&content, 0.0, Self::subscript_format_static(font_size, font_family, is_dark_mode));
                     }
                     i = end; continue;
                 }
@@ -438,11 +439,11 @@ impl TextEditor {
                         flush(&mut current_text, job);
                         if cursor_in(current_pos, end_pos) {
                             let r: String = chars[i..end_pos].iter().collect();
-                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                         } else {
                             job.append("**", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::bold_format_static(font_size, is_dark_mode));
+                            job.append(&content, 0.0, Self::bold_format_static(font_size, font_family, is_dark_mode));
                             job.append("**", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
@@ -457,11 +458,11 @@ impl TextEditor {
                         flush(&mut current_text, job);
                         if cursor_in(current_pos, end_pos) {
                             let r: String = chars[i..end_pos].iter().collect();
-                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                         } else {
                             job.append("*", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 1..end].iter().collect();
-                            job.append(&content, 0.0, Self::italic_format_static(font_size, is_dark_mode));
+                            job.append(&content, 0.0, Self::italic_format_static(font_size, font_family, is_dark_mode));
                             job.append("*", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
@@ -476,11 +477,11 @@ impl TextEditor {
                         flush(&mut current_text, job);
                         if cursor_in(current_pos, end_pos) {
                             let r: String = chars[i..end_pos].iter().collect();
-                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                         } else {
                             job.append("__", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::underline_format_static(font_size, is_dark_mode));
+                            job.append(&content, 0.0, Self::underline_format_static(font_size, font_family, is_dark_mode));
                             job.append("__", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
@@ -498,7 +499,7 @@ impl TextEditor {
                         flush(&mut current_text, job);
                         if cursor_in(current_pos, end_pos) {
                             let r: String = chars[i..end_pos].iter().collect();
-                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                         } else {
                             job.append("`", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 1..end].iter().collect();
@@ -520,11 +521,11 @@ impl TextEditor {
                     flush(&mut current_text, job);
                     if cursor_pos.map_or(false, |p| p >= current_pos && p <= text_start_offset + end) {
                         let r: String = chars[i..end].iter().collect();
-                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                     } else {
                         job.append("^", 0.0, Self::invisible_format_static());
                         let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::superscript_format_static(font_size, is_dark_mode));
+                        job.append(&content, 0.0, Self::superscript_format_static(font_size, font_family, is_dark_mode));
                     }
                     i = end; continue;
                 }
@@ -538,11 +539,11 @@ impl TextEditor {
                             flush(&mut current_text, job);
                             if cursor_pos.map_or(false, |p| p >= current_pos && p <= text_start_offset + end_pos) {
                                 let r: String = chars[i..end_pos].iter().collect();
-                                job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size));
+                                job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
                             } else {
                                 job.append("[", 0.0, Self::invisible_format_static());
                                 let link_text: String = chars[i + 1..text_end].iter().collect();
-                                job.append(&link_text, 0.0, Self::link_format_static(font_size));
+                                job.append(&link_text, 0.0, Self::link_format_static(font_size, font_family));
                                 let tail: String = chars[text_end..end_pos].iter().collect();
                                 job.append(&tail, 0.0, Self::invisible_format_static());
                             }
@@ -563,7 +564,7 @@ impl TextEditor {
 
     pub(super) fn invisible_format_static() -> egui::TextFormat {
         egui::TextFormat {
-            font_id: egui::FontId::new(0.001, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(0.001, egui::FontFamily::Name("Ubuntu".into())),
             color: egui::Color32::TRANSPARENT,
             ..Default::default()
         }
@@ -571,7 +572,7 @@ impl TextEditor {
 
     pub(super) fn transparent_format_static(font_size: f32) -> egui::TextFormat {
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Name("Ubuntu".into())),
             color: egui::Color32::TRANSPARENT,
             ..Default::default()
         }
@@ -579,7 +580,7 @@ impl TextEditor {
 
     pub(super) fn zero_width_format_static() -> egui::TextFormat {
         egui::TextFormat {
-            font_id: egui::FontId::new(0.01, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(0.01, egui::FontFamily::Name("Ubuntu".into())),
             color: egui::Color32::TRANSPARENT,
             ..Default::default()
         }
@@ -594,40 +595,41 @@ impl TextEditor {
         }
     }
 
-    pub(super) fn bold_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn bold_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 };
+        let bold_family = Self::bold_family(font_family);
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 1.15, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size, bold_family),
             extra_letter_spacing: 2.5,
             color,
             ..Default::default()
         }
     }
 
-    pub(super) fn italic_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn italic_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let italic_family = Self::italic_family(font_family);
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
-            italics: true,
+            font_id: egui::FontId::new(font_size, italic_family),
             color,
             ..Default::default()
         }
     }
 
-    pub(super) fn underline_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn underline_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size, font_family.clone()),
             underline: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
             color,
             ..Default::default()
         }
     }
 
-    pub(super) fn strikethrough_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn strikethrough_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size, font_family.clone()),
             strikethrough: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
             color,
             ..Default::default()
@@ -641,7 +643,7 @@ impl TextEditor {
             (ColorPalette::ZINC_200, ColorPalette::AMBER_300)
         };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Name("Ubuntu".into())),
             background: bg_color,
             color: text_color,
             ..Default::default()
@@ -651,7 +653,7 @@ impl TextEditor {
     pub(super) fn code_block_background_format_static(font_size: f32, is_dark_mode: bool, _available_width: f32) -> egui::TextFormat {
         let text_color: egui::Color32 = if is_dark_mode { ColorPalette::SLATE_300 } else { ColorPalette::ZINC_800 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Name("Ubuntu".into())),
             color: text_color,
             ..Default::default()
         }
@@ -660,55 +662,70 @@ impl TextEditor {
     pub(super) fn code_block_label_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
         let text_color: egui::Color32 = if is_dark_mode { ColorPalette::BLUE_400 } else { ColorPalette::BLUE_600 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Name("Ubuntu".into())),
             color: text_color,
             ..Default::default()
         }
     }
 
-    pub(super) fn superscript_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn superscript_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size * 0.7, font_family.clone()),
             valign: egui::Align::TOP,
             color,
             ..Default::default()
         }
     }
 
-    pub(super) fn subscript_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn subscript_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * 0.7, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size * 0.7, font_family.clone()),
             valign: egui::Align::BOTTOM,
             color,
             ..Default::default()
         }
     }
 
-    pub(super) fn link_format_static(font_size: f32) -> egui::TextFormat {
+    pub(super) fn link_format_static(font_size: f32, font_family: &egui::FontFamily) -> egui::TextFormat {
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size, font_family.clone()),
             underline: egui::Stroke::new(1.0, ColorPalette::BLUE_500),
             color: ColorPalette::BLUE_500,
             ..Default::default()
         }
     }
 
-    pub(super) fn markdown_syntax_format_static(font_size: f32) -> egui::TextFormat {
+    pub(super) fn markdown_syntax_format_static(font_size: f32, font_family: &egui::FontFamily) -> egui::TextFormat {
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size, egui::FontFamily::Monospace),
+            font_id: egui::FontId::new(font_size, font_family.clone()),
             color: ColorPalette::ZINC_500,
             ..Default::default()
         }
     }
 
-    pub(super) fn heading_format_static(font_size: f32, scale: f32, is_dark_mode: bool) -> egui::TextFormat {
+    pub(super) fn heading_format_static(font_size: f32, scale: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 };
+        let bold_family = Self::bold_family(font_family);
         egui::TextFormat {
-            font_id: egui::FontId::new(font_size * scale, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(font_size * scale, bold_family),
             color,
             ..Default::default()
+        }
+    }
+
+    fn bold_family(font_family: &egui::FontFamily) -> egui::FontFamily {
+        match font_family {
+            egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Bold".into()),
+            _ => egui::FontFamily::Name("Ubuntu-Bold".into()),
+        }
+    }
+
+    fn italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
+        match font_family {
+            egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Italic".into()),
+            _ => egui::FontFamily::Name("Ubuntu-Italic".into()),
         }
     }
 }

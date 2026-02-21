@@ -42,7 +42,7 @@ impl TextEditor {
             content: String::new(),
             dirty: false,
             font_size: 14.0,
-            font_family: egui::FontFamily::Monospace,
+            font_family: egui::FontFamily::Name("Ubuntu".into()),
             view_mode: ViewMode::Plain,
             last_cursor_range: None,
             pending_cursor_pos: None,
@@ -68,7 +68,7 @@ impl TextEditor {
             content,
             dirty: false,
             font_size: 14.0,
-            font_family: egui::FontFamily::Monospace,
+            font_family: egui::FontFamily::Name("Ubuntu".into()),
             view_mode,
             last_cursor_range: None,
             pending_cursor_pos: None,
@@ -92,6 +92,11 @@ impl TextEditor {
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+
+    pub fn set_default_font(&mut self, family: egui::FontFamily, size: f32) {
+        self.font_family = family;
+        self.font_size = size;
     }
 
     pub(super) fn get_file_name(&self) -> String {

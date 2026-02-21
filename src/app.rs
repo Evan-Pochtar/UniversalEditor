@@ -7,6 +7,31 @@ use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::fs;
 
+static FONT_UB_REG: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Regular.ttf");
+static FONT_UB_BLD: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Bold.ttf");
+static FONT_UB_ITL: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Italic.ttf");
+static FONT_RB_REG: &[u8] = include_bytes!("../assets/Roboto/Roboto-Regular.ttf");
+static FONT_RB_BLD: &[u8] = include_bytes!("../assets/Roboto/Roboto-Bold.ttf");
+static FONT_RB_ITL: &[u8] = include_bytes!("../assets/Roboto/Roboto-Italic.ttf");
+
+
+pub(crate) fn register_app_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let entries: &[(&str, &'static [u8])] = &[
+        ("Ubuntu", FONT_UB_REG),
+        ("Ubuntu-Bold", FONT_UB_BLD),
+        ("Ubuntu-Italic", FONT_UB_ITL),
+        ("Roboto", FONT_RB_REG),
+        ("Roboto-Bold", FONT_RB_BLD),
+        ("Roboto-Italic", FONT_RB_ITL),
+    ];
+    for (name, bytes) in entries {
+        fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());
+        fonts.families.insert(egui::FontFamily::Name((*name).into()), vec![name.to_string()]);
+    }
+    ctx.set_fonts(fonts);
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct RecentFile { path: PathBuf, timestamp: i64 }
 
@@ -72,7 +97,15 @@ impl RecentFiles {
 pub enum ThemePreference { System, Light, Dark }
 
 #[derive(Serialize, Deserialize)]
-struct AppSettings { theme_preference: ThemePreference, show_toolbar: bool, show_file_info: bool }
+struct AppSettings {
+    theme_preference: ThemePreference,
+    show_toolbar: bool,
+    show_file_info: bool,
+    #[serde(default = "AppSettings::default_font")]
+    default_font: String,
+    #[serde(default = "AppSettings::default_font_size")]
+    default_font_size: f32,
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -80,11 +113,15 @@ impl Default for AppSettings {
             theme_preference: ThemePreference::System,
             show_toolbar: true,
             show_file_info: true,
+            default_font: "Ubuntu".to_string(),
+            default_font_size: 14.0,
         }
     }
 }
 
 impl AppSettings {
+    fn default_font() -> String { "Ubuntu".to_string() }
+    fn default_font_size() -> f32 { 14.0 }
     fn load() -> Self {
         let config_path = Self::get_config_path();
         if let Ok(contents) = fs::read_to_string(&config_path) {
@@ -138,6 +175,8 @@ pub struct UniversalEditor {
     recent_files_expanded: bool,
     show_toolbar: bool,
     show_file_info: bool,
+    default_font: String,
+    default_font_size: f32,
     show_unsaved_dialog: bool,
     show_patch_notes: bool,
     show_settings: bool,
@@ -165,6 +204,7 @@ impl UniversalEditor {
         };
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
+        register_app_fonts(&cc.egui_ctx);
         
         let (tx, rx) = sync_channel(20);
 
@@ -233,6 +273,8 @@ impl UniversalEditor {
             recent_files_expanded: false,
             show_toolbar: settings.show_toolbar,
             show_file_info: settings.show_file_info,
+            default_font: settings.default_font,
+            default_font_size: settings.default_font_size,
             show_unsaved_dialog: false,
             show_patch_notes: false,
             show_settings: false,
@@ -286,7 +328,7 @@ impl UniversalEditor {
                     }));
                     Box::new(editor)
                 }
-                _ => Box::new(TextEditor::load(path)),
+                _ => Box::new(self.create_text_editor_from_path(path)),
             };
             
             self.active_module = Some(module);
@@ -298,7 +340,7 @@ impl UniversalEditor {
             self.pending_action = Some(PendingAction::NewFile);
             self.show_unsaved_dialog = true;
         } else {
-            self.active_module = Some(Box::new(TextEditor::new_empty()));
+            self.active_module = Some(Box::new(self.create_text_editor_empty()));
         }
     }
 
@@ -340,13 +382,13 @@ impl UniversalEditor {
                             }));
                             Box::new(editor)
                         }
-                        _ => Box::new(TextEditor::load(path)),
+                        _ => Box::new(self.create_text_editor_from_path(path)),
                     };
                     
                     self.active_module = Some(module);
                 }
                 PendingAction::NewFile => {
-                    self.active_module = Some(Box::new(TextEditor::new_empty()));
+                    self.active_module = Some(Box::new(self.create_text_editor_empty()));
                 }
                 PendingAction::SwitchModule(module) => {
                     self.active_module = Some(module);
@@ -364,8 +406,22 @@ impl UniversalEditor {
             theme_preference: self.theme_preference,
             show_toolbar: self.show_toolbar,
             show_file_info: self.show_file_info,
+            default_font: self.default_font.clone(),
+            default_font_size: self.default_font_size,
         };
         settings.save();
+    }
+
+    fn create_text_editor_empty(&self) -> TextEditor {
+        let mut te = TextEditor::new_empty();
+        te.set_default_font(egui::FontFamily::Name(self.default_font.clone().into()), self.default_font_size);
+        te
+    }
+
+    fn create_text_editor_from_path(&self, path: PathBuf) -> TextEditor {
+        let mut te = TextEditor::load(path);
+        te.set_default_font(egui::FontFamily::Name(self.default_font.clone().into()), self.default_font_size);
+        te
     }
 
     fn create_image_editor_with_callback(&self) -> Box<dyn EditorModule> {
@@ -413,7 +469,7 @@ impl UniversalEditor {
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .order(egui::Order::Tooltip)
+            .order(egui::Order::Foreground)
             .frame(egui::Frame::new()
                 .fill(bg_color)
                 .stroke(egui::Stroke::new(1.0, border_color))
@@ -1000,7 +1056,7 @@ impl UniversalEditor {
         let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
         egui::Area::new(egui::Id::new("settings_overlay"))
             .fixed_pos(egui::pos2(0.0, 0.0))
-            .order(egui::Order::Foreground)
+            .order(egui::Order::Middle)
             .interactable(true)
             .show(ctx, |ui| {
                 let screen = ctx.content_rect();
@@ -1027,7 +1083,7 @@ impl UniversalEditor {
             .min_width(400.0)
             .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
             .open(&mut open)
-            .order(egui::Order::Tooltip)
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -1076,6 +1132,31 @@ impl UniversalEditor {
                             ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
+                            });
+                        });
+                        ui.add_space(16.0);
+                        ui.label(egui::RichText::new("TYPOGRAPHY").size(11.0).color(muted));
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Default Font").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.selectable_label(self.default_font == "Roboto", "Roboto").clicked() {
+                                    self.default_font = "Roboto".to_string();
+                                    prefs_changed = true;
+                                }
+                                if ui.selectable_label(self.default_font == "Ubuntu", "Ubuntu").clicked() {
+                                    self.default_font = "Ubuntu".to_string();
+                                    prefs_changed = true;
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Default Font Size").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(egui::DragValue::new(&mut self.default_font_size).speed(0.5).range(8.0..=72.0)).changed() {
+                                    prefs_changed = true;
+                                }
                             });
                         });
                     }
@@ -1144,7 +1225,7 @@ impl UniversalEditor {
             .max_width(560.0)
             .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
             .open(&mut open)
-            .order(egui::Order::Tooltip)
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
 
                 egui::ScrollArea::vertical()

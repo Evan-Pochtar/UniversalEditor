@@ -43,7 +43,7 @@
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Can't Combine Formatting - Medium
-- [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [ ] Changing fonts sometimes causes code blocks to desync
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
 - [x] Can click to non-existent line in markdown mode, desyncing cursor.
@@ -114,6 +114,9 @@
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
 - [x] Opening .md file automatically sets markdown mode
+- [ ] Markdown checkbox lists (for example this one)
+- [x] Use given fonts instead of egui font families (E.g ubuntu and roboto)
+- [x] Default font and font size support
 - [ ] Latex?
 
 ### Image Editor
@@ -155,6 +158,7 @@
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
   - [ ] Add opacity to color picker
+  - [ ] Add Favorites to color picker (with keyboard shortcuts)
 - [x] Better text selection/writing tool
   - [x] Easy selection of text
   - [x] Resize by corner drag
@@ -173,7 +177,7 @@
 - [x] Export with metadata
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
-- [ ] Filter preview before apply
+- [ ] Filter preview before apply (on filter panel)
 - [x] Turn filter panel into it's own modal
 - [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller

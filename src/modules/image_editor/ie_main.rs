@@ -349,7 +349,7 @@ impl ImageEditor {
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
-            fonts_registered: false,
+            fonts_registered: true,
         }
     }
 

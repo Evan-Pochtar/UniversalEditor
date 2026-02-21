@@ -74,6 +74,8 @@
 - **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
 - **IMG EDITOR**: Cursor now changes depending on current tool selected
 - **IMG EDITOR**: Filter panel is now it's own modal similar to the color picker
+- **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
+- **TEXT EDITOR**: Default font size and font type can now be selected in settings
 
 #### Debugging
 - **IMG EDITOR**: Eraser now properly erases to white background
