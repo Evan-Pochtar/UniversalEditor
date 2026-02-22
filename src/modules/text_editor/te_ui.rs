@@ -596,18 +596,17 @@ impl TextEditor {
     }
 
     pub(super) fn bold_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 };
         let bold_family = Self::bold_family(font_family);
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, bold_family),
-            extra_letter_spacing: 2.5,
             color,
             ..Default::default()
         }
     }
 
     pub(super) fn italic_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
         let italic_family = Self::italic_family(font_family);
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, italic_family),
@@ -617,7 +616,7 @@ impl TextEditor {
     }
 
     pub(super) fn underline_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, font_family.clone()),
             underline: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
@@ -627,10 +626,11 @@ impl TextEditor {
     }
 
     pub(super) fn strikethrough_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
+        let strikethrough_color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_900 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size, font_family.clone()),
-            strikethrough: egui::Stroke::new(1.0, ColorPalette::ZINC_500),
+            strikethrough: egui::Stroke::new(font_size/8.0, strikethrough_color),
             color,
             ..Default::default()
         }
@@ -638,9 +638,9 @@ impl TextEditor {
 
     pub(super) fn code_format_static(font_size: f32, is_dark_mode: bool) -> egui::TextFormat {
         let (bg_color, text_color) = if is_dark_mode {
-            (ColorPalette::ZINC_800, ColorPalette::AMBER_300)
+            (ColorPalette::ZINC_800, ColorPalette::AMBER_400)
         } else {
-            (ColorPalette::ZINC_200, ColorPalette::AMBER_300)
+            (ColorPalette::ZINC_200, ColorPalette::AMBER_600)
         };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.9, egui::FontFamily::Name("Ubuntu".into())),
