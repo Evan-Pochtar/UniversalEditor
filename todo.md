@@ -71,6 +71,7 @@
 - [x] Eraser doesn't erase to white background, completely removes background
 - [x] Crop suddenly jumps when resizing vertically or horizontally
 - [x] Can't see cursor on unsaved changes popup
+- [ ] Star brush type doesn't really look star like
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -143,13 +144,9 @@
   - [ ] Saturation
   - [ ] Temperature
   - [ ] Brightness
-- [ ] Writing tools
-  - [ ] Pen
-  - [ ] Pencil
-  - [ ] Crayon
 - [ ] Shape tool
 - [ ] Performance
-  - [ ] Brush is slightly laggy, make more smooth on large images
+  - [x] Brush is slightly laggy, make more smooth on large images
   - [x] Increase performance of filters on bigger images (E.g Blur)
   - [ ] General performance and usability improvements
   - [x] Add loading screen for filters etc.
@@ -166,8 +163,19 @@
   - [x] Bold/Italics/Underlined Text
   - [x] Font picker
   - [x] Rotate
-- [ ] More brush presets or options
-  - [ ] Custom brush shapes
+- [ ] Brush Settings Panel
+  - [x] Writing tools
+    - [x] Pen
+    - [x] Pencil
+    - [x] Crayon
+  - [x] Custom brush shapes
+  - [ ] Improve Presets to be more "realistic"
+  - [ ] Keyboard shortcuts to change between presets/favorite brushes
+  - [ ] Export custom brushes
+  - [ ] Improve realism of canvas and paper texture type
+  - [ ] Hover tooltips for more information about parameters
+  - [ ] Brush preview
+  - [ ] Library of custom brushes?
 - [x] Keyboard Shortcuts
 - [ ] Import Images into Canvas
 - [ ] Pattern/texture fill

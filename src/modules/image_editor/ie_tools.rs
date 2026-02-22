@@ -9,6 +9,7 @@ use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, CropState, TransformHandleSet,
     FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL,
+    BrushShape, BrushTextureMode,
 };
 
 impl ImageEditor {
@@ -18,59 +19,163 @@ impl ImageEditor {
                 *img = DynamicImage::ImageRgba8(img.to_rgba8());
             }
         }
-        let buf: &mut ImageBuffer<Rgba<u8>, Vec<u8>> = match self.image.as_mut() { Some(DynamicImage::ImageRgba8(b)) => b, _ => return };
+        let buf: &mut ImageBuffer<Rgba<u8>, Vec<u8>> = match self.image.as_mut() {
+            Some(DynamicImage::ImageRgba8(b)) => b, _ => return
+        };
         if self.stroke_points.len() < 2 { return; }
 
-        let width: u32 = buf.width(); let height = buf.height();
-        let (r, g, b, base_a) = if self.tool == Tool::Eraser {
+        let width: u32  = buf.width();
+        let height: u32 = buf.height();
+
+        let is_eraser: bool = self.tool == Tool::Eraser;
+        let (r, g, b_ch, base_a) = if is_eraser {
             if self.eraser_transparent { (0u8, 0u8, 0u8, 0u8) } else { (255u8, 255u8, 255u8, 255u8) }
         } else {
             (self.color.r(), self.color.g(), self.color.b(), self.color.a())
         };
-        let radius: f32  = if self.tool == Tool::Eraser { self.eraser_size / 2.0 } else { self.brush_size / 2.0 };
-        let opacity: f32 = if self.tool == Tool::Eraser { 1.0 } else { self.brush_opacity };
-        let radius_sq: f32 = radius * radius;
+
+        let bs: super::ie_main::BrushSettings = self.brush.clone();
+        let radius: f32 = if is_eraser { self.eraser_size / 2.0 } else { bs.size / 2.0 };
+        let opacity: f32 = if is_eraser { 1.0 } else { bs.opacity };
+        let softness: f32 = if is_eraser { 0.0 } else { bs.softness };
+        let flow: f32 = if is_eraser { 1.0 } else { bs.flow };
+        let shape: BrushShape  = if is_eraser { BrushShape::Circle } else { bs.shape };
+        let scatter: f32 = if is_eraser { 0.0 } else { bs.scatter };
+        let angle_rad: f32 = if is_eraser { 0.0 } else { bs.angle.to_radians() };
+        let angle_jitter_rad: f32 = if is_eraser { 0.0 } else { bs.angle_jitter.to_radians() };
+        let tex_mode: BrushTextureMode = if is_eraser { BrushTextureMode::None } else { bs.texture_mode };
+        let tex_str: f32 = if is_eraser { 0.0 } else { bs.texture_strength };
+        let aspect: f32 = bs.aspect_ratio.clamp(0.05, 1.0);
+        let wetness: f32 = if is_eraser { 0.0 } else { bs.wetness.clamp(0.0, 1.0) };
+        let spray_mode: bool = !is_eraser && bs.spray_mode;
+
+        let step_dist: f32 = if spray_mode {
+            radius.max(1.0)
+        } else {
+            (radius * 2.0 * bs.step).max(0.5)
+        };
+
+        if spray_mode {
+            for (si, &(cx, cy)) in self.stroke_points.iter().enumerate() {
+                let n = bs.spray_particles as usize;
+                for pi in 0..n {
+                    let seed: u64 = si as u64 * 65537 + pi as u64 * 1031 + cx as u64 * 17 + cy as u64 * 13;
+                    let r1: f32 = brush_rand(seed).sqrt();
+                    let r2: f32 = brush_rand(seed.wrapping_add(1));
+                    let particle_angle: f32 = r2 * std::f32::consts::TAU;
+                    let dist: f32 = r1 * radius;
+                    let px_f: f32 = cx + particle_angle.cos() * dist;
+                    let py_f: f32 = cy + particle_angle.sin() * dist;
+                    let px: u32 = px_f as i32 as u32;
+                    let py: u32 = py_f as i32 as u32;
+                    if px >= width || py >= height { continue; }
+
+                    let t: f32 = dist / radius;
+                    let falloff: f32 = 1.0 - t * t;
+                    let alpha: u8 = ((falloff * flow * opacity) * 255.0).clamp(0.0, 255.0) as u8;
+                    if alpha == 0 { continue; }
+
+                    unsafe {
+                        let pixel: Rgba<u8> = buf.unsafe_get_pixel(px, py);
+                        let [er, eg, eb, ea] = pixel.0;
+                        let fa: u16 = alpha as u16;
+                        let base_factor: u16 = (base_a as u16 * fa) / 255;
+                        let fb: u16 = 255 - base_factor;
+                        buf.unsafe_put_pixel(px, py, Rgba([
+                            ((r as u16 * base_factor + er as u16 * fb) / 255) as u8,
+                            ((g as u16 * base_factor + eg as u16 * fb) / 255) as u8,
+                            ((b_ch as u16 * base_factor + eb as u16 * fb) / 255) as u8,
+                            ((base_factor + ea as u16 * fb / 255).min(255)) as u8,
+                        ]));
+                    }
+                }
+            }
+            self.dirty = true; self.texture_dirty = true;
+            return;
+        }
 
         for i in 0..self.stroke_points.len().saturating_sub(1) {
             let (x0, y0) = self.stroke_points[i];
             let (x1, y1) = self.stroke_points[i + 1];
-            let dx: f32 = x1 - x0; let dy = y1 - y0;
-            let dist: f32  = (dx * dx + dy * dy).sqrt();
-            let steps: usize = (dist / (radius * 0.4).max(1.0)).ceil() as usize;
+            let dx: f32 = x1 - x0;
+            let dy: f32 = y1 - y0;
+            let seg_len: f32 = (dx * dx + dy * dy).sqrt();
+            let steps: usize = (seg_len / step_dist).ceil() as usize;
 
             for s in 0..=steps {
-                let t: f32  = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
-                let cx: f32 = x0 + dx * t; let cy = y0 + dy * t;
-                let min_x: u32 = (cx - radius).max(0.0) as u32;
-                let max_x: u32 = ((cx + radius).ceil() as u32).min(width);
-                let min_y: u32 = (cy - radius).max(0.0) as u32;
-                let max_y: u32 = ((cy + radius).ceil() as u32).min(height);
+                let t: f32 = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
+                let mut cx: f32 = x0 + dx * t;
+                let mut cy: f32 = y0 + dy * t;
+
+                let stamp_seed: u64 = (i as u64).wrapping_mul(99991)
+                    .wrapping_add(s as u64 * 7919)
+                    .wrapping_add(cx as u64 * 131)
+                    .wrapping_add(cy as u64 * 97);
+
+                if scatter > 0.0 {
+                    let sx: f32 = (brush_rand(stamp_seed) * 2.0 - 1.0) * scatter;
+                    let sy: f32 = (brush_rand(stamp_seed.wrapping_add(1)) * 2.0 - 1.0) * scatter;
+                    cx += sx; cy += sy;
+                }
+
+                let cur_angle: f32 = if angle_jitter_rad > 0.0 {
+                    let j: f32 = (brush_rand(stamp_seed.wrapping_add(2)) * 2.0 - 1.0) * angle_jitter_rad;
+                    angle_rad + j
+                } else {
+                    angle_rad
+                };
+
+                let min_x: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
+                let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
+                let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
+                let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
 
                 for py in min_y..max_y {
-                    let dy_sq: f32 = (py as f32 - cy).powi(2);
+                    let dy_local: f32 = py as f32 - cy;
                     for px in min_x..max_x {
-                        let dist_sq: f32 = (px as f32 - cx).powi(2) + dy_sq;
-                        if dist_sq <= radius_sq {
-                            let falloff: f32 = 1.0 - (dist_sq / radius_sq).sqrt();
-                            let alpha: u8   = (falloff * opacity * 255.0) as u8;
-                            unsafe {
-                                let pixel: Rgba<u8> = buf.unsafe_get_pixel(px, py);
-                                let [er, eg, eb, ea] = pixel.0;
-                                let new_pixel: Rgba<u8> = if self.tool == Tool::Eraser && self.eraser_transparent {
-                                    Rgba([er, eg, eb, ea.saturating_sub(alpha)])
-                                } else {
-                                    let fa: u16 = alpha as u16;
-                                    let base_factor: u16 = (base_a as u16 * fa) / 255;
-                                    let fb: u16 = 255 - base_factor;
-                                    Rgba([
-                                        ((r as u16 * base_factor + er as u16 * fb) / 255) as u8,
-                                        ((g as u16 * base_factor + eg as u16 * fb) / 255) as u8,
-                                        ((b as u16 * base_factor + eb as u16 * fb) / 255) as u8,
-                                        ((base_factor + ea as u16 * fb / 255).min(255)) as u8,
-                                    ])
-                                };
-                                buf.unsafe_put_pixel(px, py, new_pixel);
-                            }
+                        let dx_local: f32 = px as f32 - cx;
+
+                        let falloff: f32 = brush_shape_falloff(
+                            dx_local, dy_local, radius, aspect, cur_angle, softness, shape,
+                        );
+                        if falloff <= 0.0 { continue; }
+
+                        let tex_mul: f32 = if tex_str > 0.0 {
+                            let noise: f32 = brush_texture_noise(px, py, tex_mode);
+                            1.0 - tex_str * noise
+                        } else { 1.0 };
+
+                        let alpha: u8 = (falloff * flow * opacity * tex_mul * 255.0).clamp(0.0, 255.0) as u8;
+                        if alpha == 0 { continue; }
+
+                        unsafe {
+                            let pixel: Rgba<u8> = buf.unsafe_get_pixel(px, py);
+                            let [er, eg, eb, ea] = pixel.0;
+
+                            let new_pixel: Rgba<u8> = if is_eraser && self.eraser_transparent {
+                                Rgba([er, eg, eb, ea.saturating_sub(alpha)])
+                            } else {
+                                let fa: u16 = alpha as u16;
+                                let base_factor: u16 = (base_a as u16 * fa) / 255;
+                                let fb: u16 = 255 - base_factor;
+
+                                let (paint_r, paint_g, paint_b) = if wetness > 0.0 {
+                                    let w: f32 = wetness;
+                                    (
+                                        ((r as f32 * (1.0 - w) + er as f32 * w) as u16).min(255) as u8,
+                                        ((g as f32 * (1.0 - w) + eg as f32 * w) as u16).min(255) as u8,
+                                        ((b_ch as f32 * (1.0 - w) + eb as f32 * w) as u16).min(255) as u8,
+                                    )
+                                } else { (r, g, b_ch) };
+
+                                Rgba([
+                                    ((paint_r as u16 * base_factor + er as u16 * fb) / 255) as u8,
+                                    ((paint_g as u16 * base_factor + eg as u16 * fb) / 255) as u8,
+                                    ((paint_b as u16 * base_factor + eb as u16 * fb) / 255) as u8,
+                                    ((base_factor + ea as u16 * fb / 255).min(255)) as u8,
+                                ])
+                            };
+                            buf.unsafe_put_pixel(px, py, new_pixel);
                         }
                     }
                 }
@@ -647,5 +752,81 @@ impl ImageEditor {
         export_image(&composite, &path, self.export_format, self.export_jpeg_quality, 6, 100.0, self.export_auto_scale_ico)?;
         self.filter_panel = FilterPanel::None;
         Ok(path)
+    }
+}
+
+#[inline(always)]
+pub(super) fn brush_rand(seed: u64) -> f32 {
+    let x: u64 = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let x: u64 = x ^ (x >> 33);
+    let x: u64 = x.wrapping_mul(0xff51afd7ed558ccd);
+    let x: u64 = x ^ (x >> 33);
+    let x: u64 = x.wrapping_mul(0xc4ceb9fe1a85ec53);
+    let x: u64 = x ^ (x >> 33);
+    (x >> 11) as f32 / (1u64 << 53) as f32
+}
+
+#[inline]
+pub(super) fn brush_shape_falloff(
+    dx: f32, dy: f32,
+    radius: f32, aspect: f32, angle: f32,
+    softness: f32, shape: BrushShape,
+) -> f32 {
+    let (cos_a, sin_a) = (angle.cos(), angle.sin());
+    let lx: f32 = dx * cos_a + dy * sin_a;
+    let ly: f32 = -dx * sin_a + dy * cos_a;
+
+    let t: f32 = match shape {
+        BrushShape::Circle => {
+            ((dx * dx + dy * dy) / (radius * radius)).sqrt()
+        }
+        BrushShape::Square => {
+            lx.abs().max(ly.abs()) / radius
+        }
+        BrushShape::Diamond => {
+            (lx.abs() + ly.abs()) / radius
+        }
+        BrushShape::CalligraphyFlat => {
+            let r_minor: f32 = radius * aspect;
+            ((lx / radius).powi(2) + (ly / r_minor).powi(2)).sqrt()
+        }
+        BrushShape::Star => {
+            let r: f32 = (dx * dx + dy * dy).sqrt();
+            if r < 0.0001 { return 1.0; }
+            let theta: f32 = dy.atan2(dx) + angle;
+            let a: f32 = (theta * 2.5).cos();
+            let star_r: f32 = radius * (0.38 + 0.62 * ((a + 1.0) * 0.5));
+            r / star_r
+        }
+    };
+
+    if t >= 1.0 { return 0.0; }
+    if softness < 0.001 { return 1.0; }
+
+    let soft_inner: f32 = 1.0 - softness;
+    if t <= soft_inner { return 1.0; }
+    let s: f32 = ((t - soft_inner) / softness).clamp(0.0, 1.0);
+    1.0 - s * s * (3.0 - 2.0 * s)
+}
+
+#[inline]
+pub(super) fn brush_texture_noise(px: u32, py: u32, mode: BrushTextureMode) -> f32 {
+    match mode {
+        BrushTextureMode::None => 0.0,
+        BrushTextureMode::Rough => {
+            brush_rand(px as u64 * 37 ^ py as u64 * 1009 ^ 0xDEAD)
+        }
+        BrushTextureMode::Canvas => {
+            let cx: u64 = (px / 4) as u64;
+            let cy: u64 = (py / 4) as u64;
+            let cell: f32 = brush_rand(cx * 31 ^ cy * 127 ^ 0xCAFE);
+            let fine: f32 = brush_rand(px as u64 * 53 ^ py as u64 * 79 ^ 0xBEEF) * 0.25;
+            (cell * 0.75 + fine).clamp(0.0, 1.0)
+        }
+        BrushTextureMode::Paper => {
+            let cx: u64 = (px / 3) as u64;
+            let cy: u64 = (py / 3) as u64;
+            brush_rand(cx * 43 ^ cy * 97 ^ 0xF00D) * 0.9
+        }
     }
 }

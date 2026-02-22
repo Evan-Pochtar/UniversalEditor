@@ -93,8 +93,185 @@ impl ColorHistory {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(super) enum BrushShape { Circle, Square, Diamond, CalligraphyFlat, Star, }
+
+impl BrushShape {
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            BrushShape::Circle => "Circle",
+            BrushShape::Square => "Square",
+            BrushShape::Diamond => "Diamond",
+            BrushShape::CalligraphyFlat => "Flat",
+            BrushShape::Star => "Star",
+        }
+    }
+    pub(super) fn all() -> &'static [BrushShape] { &[BrushShape::Circle, BrushShape::Square, BrushShape::Diamond, BrushShape::CalligraphyFlat, BrushShape::Star] }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(super) enum BrushTextureMode { None, Rough, Canvas, Paper, }
+
+impl BrushTextureMode {
+    pub(super) fn label(&self) -> &'static str { match self { Self::None => "None", Self::Rough => "Rough", Self::Canvas => "Canvas", Self::Paper => "Paper" } }
+    pub(super) fn all() -> &'static [BrushTextureMode] { &[Self::None, Self::Rough, Self::Canvas, Self::Paper] }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) struct BrushSettings {
+    pub size: f32,
+    pub opacity: f32,
+    pub softness: f32,
+    pub step: f32,
+    pub flow: f32,
+    pub angle: f32,
+    pub angle_jitter: f32,
+    pub scatter: f32,
+    pub aspect_ratio: f32,
+    pub texture_mode: BrushTextureMode,
+    pub texture_strength: f32,
+    pub shape: BrushShape,
+    pub spray_mode: bool,
+    pub spray_particles: u32,
+    pub wetness: f32,
+}
+
+impl Default for BrushSettings {
+    fn default() -> Self {
+        Self {
+            size: 12.0, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
+            angle: 0.0, angle_jitter: 0.0, scatter: 0.0,
+            aspect_ratio: 0.3, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+            shape: BrushShape::Circle, spray_mode: false, spray_particles: 40, wetness: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) enum BrushPreset { Regular, Pencil, Pen, Crayon, Marker, Calligraphy, SprayPaint, Watercolor, Charcoal, Airbrush, }
+
+impl BrushPreset {
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            Self::Regular => "Regular",
+            Self::Pencil => "Pencil",
+            Self::Pen => "Pen",
+            Self::Crayon => "Crayon",
+            Self::Marker => "Marker",
+            Self::Calligraphy => "Calligraphy",
+            Self::SprayPaint => "Spray",
+            Self::Watercolor => "Watercolor",
+            Self::Charcoal => "Charcoal",
+            Self::Airbrush => "Airbrush",
+        }
+    }
+
+    pub(super) fn all() -> &'static [BrushPreset] {
+        &[
+            Self::Regular, Self::Pencil, Self::Pen, Self::Crayon, Self::Marker,
+            Self::Calligraphy, Self::SprayPaint, Self::Watercolor, Self::Charcoal, Self::Airbrush,
+        ]
+    }
+
+    pub(super) fn settings(&self, current_size: f32) -> BrushSettings {
+        let sz = current_size;
+        match self {
+            Self::Regular => BrushSettings {
+                size: sz, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
+                shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Pencil => BrushSettings {
+                size: sz, opacity: 0.85, softness: 0.0, step: 0.35, flow: 0.75,
+                shape: BrushShape::Circle, scatter: sz * 0.08, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.45,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Pen => BrushSettings {
+                size: sz, opacity: 1.0, softness: 0.0, step: 0.12, flow: 1.0,
+                shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Crayon => BrushSettings {
+                size: sz, opacity: 0.75, softness: 0.05, step: 0.20, flow: 0.65,
+                shape: BrushShape::Square, scatter: sz * 0.18, angle: 15.0, angle_jitter: 12.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.55,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Marker => BrushSettings {
+                size: sz, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.90,
+                shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Calligraphy => BrushSettings {
+                size: sz, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,
+                shape: BrushShape::CalligraphyFlat, scatter: 0.0, angle: 45.0, angle_jitter: 0.0,
+                aspect_ratio: 0.18, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::SprayPaint => BrushSettings {
+                size: sz.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.06,
+                shape: BrushShape::Circle, scatter: sz * 0.6, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: true, spray_particles: 60, wetness: 0.0,
+            },
+            Self::Watercolor => BrushSettings {
+                size: sz, opacity: 0.70, softness: 0.90, step: 0.15, flow: 0.25,
+                shape: BrushShape::Circle, scatter: sz * 0.12, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::Paper, texture_strength: 0.30,
+                spray_mode: false, spray_particles: 40, wetness: 0.40,
+            },
+            Self::Charcoal => BrushSettings {
+                size: sz, opacity: 0.80, softness: 0.08, step: 0.28, flow: 0.55,
+                shape: BrushShape::Diamond, scatter: sz * 0.14, angle: 30.0, angle_jitter: 18.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::Canvas, texture_strength: 0.50,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+            Self::Airbrush => BrushSettings {
+                size: sz, opacity: 0.80, softness: 1.0, step: 0.12, flow: 0.12,
+                shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
+                aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.0,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) struct SavedBrush { pub name: String, pub settings: BrushSettings, }
+
+#[derive(Serialize, Deserialize)]
+pub(super) struct BrushFavorites { pub brushes: Vec<SavedBrush>, }
+
+impl BrushFavorites {
+    pub(super) fn new() -> Self { Self { brushes: Vec::new() } }
+
+    pub(super) fn load() -> Self {
+        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
+            if let Ok(h) = serde_json::from_str(&s) { return h; }
+        }
+        Self::new()
+    }
+
+    pub(super) fn save(&self) {
+        let path: PathBuf = Self::get_config_path();
+        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
+        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
+    }
+
+    fn get_config_path() -> PathBuf {
+        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        p.push("universal_editor");
+        p.push("brush_favorites.json");
+        p
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum FilterPanel { None, BrightnessContrast, HueSaturation, Blur, Sharpen, Resize, Export }
+pub(super) enum FilterPanel { None, BrightnessContrast, HueSaturation, Blur, Sharpen, Resize, Export, Brush }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum THandle { Move, N, S, E, W, NE, NW, SE, SW, Rotate }
@@ -262,8 +439,9 @@ pub struct ImageEditor {
     pub(super) fit_on_next_frame: bool,
 
     pub(super) tool: Tool,
-    pub(super) brush_size: f32,
-    pub(super) brush_opacity: f32,
+    pub(super) brush: BrushSettings,
+    pub(super) brush_favorites: BrushFavorites,
+    pub(super) brush_fav_name: String,
     pub(super) eraser_size: f32,
     pub(super) eraser_transparent: bool,
     pub(super) color: egui::Color32,
@@ -326,7 +504,8 @@ impl ImageEditor {
             undo_stack: VecDeque::new(), redo_stack: VecDeque::new(),
             zoom: 1.0, pan: egui::Vec2::ZERO, fit_on_next_frame: true,
             tool: Tool::Brush,
-            brush_size: 12.0, brush_opacity: 1.0, eraser_size: 20.0, eraser_transparent: false,
+            brush: BrushSettings::default(), brush_favorites: BrushFavorites::load(), brush_fav_name: String::new(),
+            eraser_size: 20.0, eraser_transparent: false,
             color: egui::Color32::BLACK,
             stroke_points: Vec::new(), is_dragging: false,
             text_layers: Vec::new(), selected_text: None, editing_text: false,
@@ -349,7 +528,7 @@ impl ImageEditor {
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
-            fonts_registered: true,
+            fonts_registered: false,
         }
     }
 

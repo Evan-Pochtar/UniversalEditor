@@ -74,6 +74,11 @@
 - **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
 - **IMG EDITOR**: Cursor now changes depending on current tool selected
 - **IMG EDITOR**: Filter panel is now it's own modal similar to the color picker
+- **IMG EDITOR**: Brush presets now available (Regular, Pen, Pencil, Crayon, Marker, Calligraphy Pen, Spray, Watercolor, Charcoal, Airbrush)
+- **IMG EDITOR**: Brush shapes now available (Circle, Square, Diamond, Flat (Calligraphy style), Star)
+- **IMG EDITOR**: Brush parameters are now changeable
+- **IMG EDITOR**: Saving custom brushes as favorites now available
+- **IMG EDITOR**: Brush Textures of different types (Rough, Paper, Canvas)
 - **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
 - **TEXT EDITOR**: Default font size and font type can now be selected in settings
 
