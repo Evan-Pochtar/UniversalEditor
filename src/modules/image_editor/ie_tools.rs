@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use std::sync::{Arc};
 use std::thread;
 use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont};
+use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL};
 use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, CropState, TransformHandleSet,
-    FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL,
     BrushShape, BrushTextureMode,
 };
 

@@ -33,28 +33,12 @@ pub(super) fn hsv_to_rgb_f32(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
 }
 
 pub(super) fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
-    let max: f32 = r.max(g).max(b);
-    let min: f32 = r.min(g).min(b);
-    let delta: f32 = max - min;
-    let v: f32 = max;
-    let s: f32 = if max == 0.0 { 0.0 } else { delta / max };
-    let h: f32 = if delta == 0.0 { 0.0 }
-        else if max == r { 60.0 * (((g - b) / delta) % 6.0) }
-        else if max == g { 60.0 * ((b - r) / delta + 2.0) }
-        else { 60.0 * ((r - g) / delta + 4.0) };
-    (if h < 0.0 { h + 360.0 } else { h }, s, v)
+    rgb_to_hsv_f32(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
 }
 
 pub(super) fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
-    let c: f32 = v * s;
-    let x: f32 = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let m: f32 = v - c;
-    let (r, g, b) = match h as u32 {
-        0..=59   => (c, x, 0.0), 60..=119 => (x, c, 0.0), 120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c), 240..=299 => (x, 0.0, c), _ => (c, 0.0, x),
-    };
-    (((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
+    let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+    ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
 }
 
 pub(super) fn crop_handle_positions(r: egui::Rect) -> [(THandle, egui::Pos2); 9] {

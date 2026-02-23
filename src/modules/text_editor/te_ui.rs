@@ -834,7 +834,7 @@ impl TextEditor {
     }
 
     pub(super) fn superscript_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.7, font_family.clone()),
             valign: egui::Align::TOP,
@@ -844,7 +844,7 @@ impl TextEditor {
     }
 
     pub(super) fn subscript_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
-        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_700 };
         egui::TextFormat {
             font_id: egui::FontId::new(font_size * 0.7, font_family.clone()),
             valign: egui::Align::BOTTOM,

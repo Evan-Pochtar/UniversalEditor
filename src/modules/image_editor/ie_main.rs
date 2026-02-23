@@ -17,15 +17,6 @@ pub(super) const HANDLE_HIT: f32 = 22.0;
 pub(super) const HANDLE_VIS: f32 = 8.0;
 pub(super) const ROTATE_DIST: f32 = 28.0;
 
-pub(super) static FONT_UB_REG: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Regular.ttf");
-pub(super) static FONT_UB_BLD: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Bold.ttf");
-pub(super) static FONT_UB_ITL: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Italic.ttf");
-pub(super) static FONT_UB_BLD_ITL: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-BoldItalic.ttf");
-pub(super) static FONT_RB_REG: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Regular.ttf");
-pub(super) static FONT_RB_BLD: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Bold.ttf");
-pub(super) static FONT_RB_ITL: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Italic.ttf");
-pub(super) static FONT_RB_BLD_ITL: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-BoldItalic.ttf");
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(super) struct RgbaColor { pub r: u8, pub g: u8, pub b: u8, pub a: u8 }
 
@@ -551,7 +542,6 @@ pub struct ImageEditor {
     pub(super) filter_progress: Arc<Mutex<f32>>,
     pub(super) is_processing: bool,
     pub(super) pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
-    pub(super) fonts_registered: bool,
 }
 
 impl ImageEditor {
@@ -587,7 +577,6 @@ impl ImageEditor {
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
-            fonts_registered: false,
         }
     }
 
@@ -667,30 +656,6 @@ impl ImageEditor {
         self.resize_w = w; self.resize_h = h;
         self.texture_dirty = true; self.file_path = None;
         self.dirty = true; self.fit_on_next_frame = true;
-    }
-
-    pub(super) fn ensure_fonts_registered(&mut self, ctx: &egui::Context) {
-        if self.fonts_registered { return; }
-        self.fonts_registered = true;
-        let mut fonts: egui::FontDefinitions = egui::FontDefinitions::default();
-        let entries: &[(&str, &'static [u8])] = &[
-            ("Ubuntu", FONT_UB_REG),
-            ("Ubuntu-Bold", FONT_UB_BLD),
-            ("Ubuntu-Italic", FONT_UB_ITL),
-            ("Ubuntu-BoldItalic", FONT_UB_BLD_ITL),
-            ("Roboto", FONT_RB_REG),
-            ("Roboto-Bold", FONT_RB_BLD),
-            ("Roboto-Italic", FONT_RB_ITL),
-            ("Roboto-BoldItalic", FONT_RB_BLD_ITL),
-        ];
-        for (name, bytes) in entries {
-            fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());
-            fonts.families.insert(
-                egui::FontFamily::Name((*name).into()),
-                vec![name.to_string()],
-            );
-        }
-        ctx.set_fonts(fonts);
     }
 
     pub(super) fn ensure_texture(&mut self, ctx: &egui::Context) {
@@ -880,7 +845,6 @@ impl EditorModule for ImageEditor {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme: ThemeMode = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
 
-        self.ensure_fonts_registered(ctx);
         self.handle_keyboard(ctx);
         self.check_filter_completion();
 

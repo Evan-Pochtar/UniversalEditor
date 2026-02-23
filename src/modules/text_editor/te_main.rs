@@ -59,7 +59,6 @@ impl TextEditor {
             .unwrap_or_default();
 
         let view_mode: ViewMode = Self::detect_view_mode(&path);
-
         Self {
             file_path: Some(path),
             content,
@@ -87,14 +86,8 @@ impl TextEditor {
             .unwrap_or(ViewMode::Plain)
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    pub fn set_default_font(&mut self, family: egui::FontFamily, size: f32) {
-        self.font_family = family;
-        self.font_size = size;
-    }
+    pub fn is_dirty(&self) -> bool { self.dirty }
+    pub fn set_default_font(&mut self, family: egui::FontFamily, size: f32) { self.font_family = family; self.font_size = size; }
 
     pub(super) fn get_file_name(&self) -> String {
         self.file_path.as_ref()
@@ -109,11 +102,8 @@ impl EditorModule for TextEditor {
     fn as_any(&self) -> &dyn std::any::Any { self }
 
     fn get_title(&self) -> String {
-        let name = self.file_path.as_ref()
-            .and_then(|p: &PathBuf| p.file_name())
-            .and_then(|n: &std::ffi::OsStr| n.to_str())
-            .unwrap_or("Untitled");
-        if self.dirty { format!("{} *", name) } else { name.to_string() }
+        let name = self.get_file_name();
+        if self.dirty { format!("{} *", name) } else { name }
     }
 
     fn save(&mut self) -> Result<(), String> {
@@ -154,12 +144,7 @@ impl EditorModule for TextEditor {
         }
     }
 
-    fn handle_menu_action(&mut self, action: MenuAction) -> bool {
-        match action {
-            MenuAction::Undo | MenuAction::Redo => false,
-            _ => false,
-        }
-    }
+    fn handle_menu_action(&mut self, _action: MenuAction) -> bool { false }
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, show_toolbar: bool, show_file_info: bool) {
         self.render_editor_ui(ui, ctx, show_toolbar, show_file_info);
