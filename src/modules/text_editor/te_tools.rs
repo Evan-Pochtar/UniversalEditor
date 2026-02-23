@@ -82,6 +82,96 @@ impl TextEditor {
         self.content.split_whitespace().filter(|w: &&str| !w.is_empty()).count()
     }
 
+    pub(super) fn is_horizontal_rule(line: &str) -> bool {
+        let trimmed: &str = line.trim();
+        if trimmed.len() < 3 { return false; }
+        let first: char = match trimmed.chars().next() {
+            Some(c) if matches!(c, '-' | '*' | '_') => c,
+            _ => return false,
+        };
+        let count = trimmed.chars().filter(|&c| c == first).count();
+        count >= 3 && trimmed.chars().all(|c| c == first || c == ' ')
+    }
+
+    pub(super) fn format_blockquote(&mut self) {
+        if let Some(range) = self.last_cursor_range {
+            let byte_idx: usize = self.char_index_to_byte_index(range.primary.index);
+            let start_byte: usize = self.content[..byte_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let end_byte: usize = self.content[byte_idx..].find('\n').map(|i| byte_idx + i).unwrap_or(self.content.len());
+            let line: &str = &self.content[start_byte..end_byte];
+            let new_line: String = if line.starts_with("> ") {
+                line[2..].to_string()
+            } else {
+                format!("> {}", line)
+            };
+            self.content.replace_range(start_byte..end_byte, &new_line);
+            self.dirty = true;
+        }
+    }
+
+    pub(super) fn insert_checklist_item(&mut self) {
+        if let Some(range) = self.last_cursor_range {
+            let byte_idx: usize = self.char_index_to_byte_index(range.primary.index);
+            let start_byte: usize = self.content[..byte_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let end_byte: usize = self.content[byte_idx..].find('\n').map(|i| byte_idx + i).unwrap_or(self.content.len());
+            let line: &str = &self.content[start_byte..end_byte];
+            let new_line: String = if line.starts_with("- [ ] ") || line.starts_with("- [x] ") || line.starts_with("- [X] ") {
+                line[6..].to_string()
+            } else if line.starts_with("- ") {
+                format!("- [ ] {}", &line[2..])
+            } else {
+                format!("- [ ] {}", line)
+            };
+            self.content.replace_range(start_byte..end_byte, &new_line);
+            self.dirty = true;
+        }
+    }
+
+    pub(super) fn try_toggle_checkbox(&mut self) {
+        if let Some(range) = self.last_cursor_range {
+            let cursor_char: usize = range.primary.index;
+            let content_chars: Vec<char> = self.content.chars().collect();
+            let safe_cursor: usize = cursor_char.min(content_chars.len());
+
+            let line_start_char: usize = content_chars[..safe_cursor]
+                .iter().rposition(|&c| c == '\n')
+                .map(|i| i + 1)
+                .unwrap_or(0);
+
+            let line_start_byte: usize = self.char_index_to_byte_index(line_start_char);
+            let line_end_byte: usize = {
+                let after = &self.content[line_start_byte..];
+                after.find('\n').map(|i| line_start_byte + i).unwrap_or(self.content.len())
+            };
+            let line: String = self.content[line_start_byte..line_end_byte].to_string();
+
+            let cursor_offset_in_line: usize = safe_cursor.saturating_sub(line_start_char);
+            if cursor_offset_in_line > 5 { return; }
+            for prefix in &["- [ ] ", "* [ ] ", "+ [ ] "] {
+                if line.starts_with(prefix) {
+                    let list_char: char = line.chars().next().unwrap();
+                    let checked_prefix: String = format!("{} [x] ", list_char);
+                    let end: usize = line_start_byte + prefix.len();
+                    self.content.replace_range(line_start_byte..end, &checked_prefix);
+                    self.dirty = true;
+                    self.content_version = self.content_version.wrapping_add(1);
+                    return;
+                }
+            }
+            for prefix in &["- [x] ", "- [X] ", "* [x] ", "* [X] ", "+ [x] ", "+ [X] "] {
+                if line.starts_with(prefix) {
+                    let list_char: char = line.chars().next().unwrap();
+                    let unchecked_prefix: String = format!("{} [ ] ", list_char);
+                    let end: usize = line_start_byte + prefix.len();
+                    self.content.replace_range(line_start_byte..end, &unchecked_prefix);
+                    self.dirty = true;
+                    self.content_version = self.content_version.wrapping_add(1);
+                    return;
+                }
+            }
+        }
+    }
+
     pub(super) fn count_visible_chars(&self) -> usize {
         use super::te_main::ViewMode;
         if self.view_mode != ViewMode::Markdown {
@@ -114,8 +204,20 @@ impl TextEditor {
                 continue;
             }
 
+            if Self::is_horizontal_rule(&line) {
+                if line_end < chars.len() { count += 1; }
+                i = line_end + 1;
+                continue;
+            }
+
+            let effective_line: String = if line.starts_with("> ") {
+                line[2..].to_string()
+            } else {
+                line.clone()
+            };
+
             for prefix in &["#### ", "### ", "## ", "# "] {
-                if let Some(rest) = line.strip_prefix(prefix) {
+                if let Some(rest) = effective_line.strip_prefix(prefix) {
                     count += rest.chars().count();
                     if line_end < chars.len() { count += 1; }
                     i = line_end + 1;
@@ -124,19 +226,39 @@ impl TextEditor {
             }
             if i == line_end + 1 || i > line_end { continue; }
 
-            let line_chars: Vec<char> = line.chars().collect();
+            let line_chars: Vec<char> = effective_line.chars().collect();
             let mut j: usize = 0;
+            let indent_count: usize = line_chars.iter().take_while(|&&c| c == ' ').count();
+            let check_line: &str = &effective_line[indent_count..];
 
-            if line.starts_with("- ") || line.starts_with("* ") || line.starts_with("+ ") {
-                count += 1;
-                j = 2;
+            let checkbox_variants: &[(&str, bool)] = &[
+                ("- [ ] ", false), ("- [x] ", true), ("- [X] ", true),
+                ("* [ ] ", false), ("* [x] ", true), ("* [X] ", true),
+                ("+ [ ] ", false), ("+ [x] ", true), ("+ [X] ", true),
+            ];
+            let mut is_checkbox = false;
+            for (prefix, _) in checkbox_variants {
+                if check_line.starts_with(prefix) {
+                    count += 4;
+                    j = indent_count + prefix.chars().count();
+                    is_checkbox = true;
+                    break;
+                }
             }
 
-            let mut k: usize = 0;
-            while k < line_chars.len() && line_chars[k].is_ascii_digit() { k += 1; }
-            if k > 0 && k < line_chars.len() && line_chars[k] == '.' && k + 1 < line_chars.len() && line_chars[k + 1] == ' ' {
-                count += k + 2;
-                j = k + 2;
+            if !is_checkbox {
+                if check_line.starts_with("- ") || check_line.starts_with("* ") || check_line.starts_with("+ ") {
+                    count += 1;
+                    j = indent_count + 2;
+                } else {
+                    j = 0;
+                    let mut k: usize = 0;
+                    while k < line_chars.len() && line_chars[k].is_ascii_digit() { k += 1; }
+                    if k > 0 && k < line_chars.len() && line_chars[k] == '.' && k + 1 < line_chars.len() && line_chars[k + 1] == ' ' {
+                        count += k + 2;
+                        j = k + 2;
+                    }
+                }
             }
 
             while j < line_chars.len() {

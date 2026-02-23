@@ -18,9 +18,11 @@ pub(super) const ROTATE_DIST: f32 = 28.0;
 pub(super) static FONT_UB_REG: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Regular.ttf");
 pub(super) static FONT_UB_BLD: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Bold.ttf");
 pub(super) static FONT_UB_ITL: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-Italic.ttf");
+pub(super) static FONT_UB_BLD_ITL: &[u8] = include_bytes!("../../../assets/Ubuntu/Ubuntu-BoldItalic.ttf");
 pub(super) static FONT_RB_REG: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Regular.ttf");
 pub(super) static FONT_RB_BLD: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Bold.ttf");
 pub(super) static FONT_RB_ITL: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-Italic.ttf");
+pub(super) static FONT_RB_BLD_ITL: &[u8] = include_bytes!("../../../assets/Roboto/Roboto-BoldItalic.ttf");
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(super) struct RgbaColor { pub r: u8, pub g: u8, pub b: u8, pub a: u8 }
@@ -618,9 +620,11 @@ impl ImageEditor {
             ("Ubuntu", FONT_UB_REG),
             ("Ubuntu-Bold", FONT_UB_BLD),
             ("Ubuntu-Italic", FONT_UB_ITL),
+            ("Ubuntu-BoldItalic", FONT_UB_BLD_ITL),
             ("Roboto", FONT_RB_REG),
             ("Roboto-Bold", FONT_RB_BLD),
             ("Roboto-Italic", FONT_RB_ITL),
+            ("Roboto-BoldItalic", FONT_RB_BLD_ITL),
         ];
         for (name, bytes) in entries {
             fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());

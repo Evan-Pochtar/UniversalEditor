@@ -6,10 +6,7 @@ use std::path::PathBuf;
 use crate::modules::{EditorModule, MenuAction, MenuItem, MenuContribution};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ViewMode {
-    Plain,
-    Markdown,
-}
+pub enum ViewMode { Plain, Markdown, }
 
 pub(super) struct LineHeightCache {
     pub version: u64,

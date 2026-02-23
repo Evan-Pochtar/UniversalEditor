@@ -17,6 +17,9 @@ impl TextEditor {
                     if ui.button("H2").on_hover_text("Header 2 (Ctrl+2)").clicked() { self.format_heading(2); }
                     if ui.button("H3").on_hover_text("Header 3 (Ctrl+3)").clicked() { self.format_heading(3); }
                     if ui.button("H4").on_hover_text("Header 4 (Ctrl+4)").clicked() { self.format_heading(4); }
+                    ui.separator();
+                    if ui.button(">").on_hover_text("Blockquote (Ctrl+Shift+Q)").clicked() { self.format_blockquote(); }
+                    if ui.button("[ ]").on_hover_text("Checklist Item (Ctrl+Shift+L)").clicked() { self.insert_checklist_item(); }
                 });
 
                 ui.separator();
@@ -112,6 +115,8 @@ impl TextEditor {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num2) { self.format_heading(2); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num3) { self.format_heading(3); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num4) { self.format_heading(4); }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Q) { self.format_blockquote(); }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::L) { self.insert_checklist_item(); }
         });
     }
 
@@ -130,14 +135,21 @@ impl TextEditor {
             let mut lines: Vec<&str> = Vec::new();
             let mut code_line_flags: Vec<bool> = Vec::new();
             let mut fence_line_flags: Vec<bool> = Vec::new();
+            let mut blockquote_flags: Vec<bool> = Vec::new();
+            let mut hrule_flags: Vec<bool> = Vec::new();
             let mut in_code_block = false;
 
             for line in self.content.lines() {
                 let is_fence: bool = line.trim().starts_with("```");
                 if is_fence { in_code_block = !in_code_block; }
+                let is_code: bool = !is_fence && in_code_block;
+                let is_blockquote: bool = !is_code && !is_fence && line.starts_with("> ");
+                let is_hrule: bool = !is_code && !is_fence && Self::is_horizontal_rule(line);
                 lines.push(line);
-                code_line_flags.push(!is_fence && in_code_block);
+                code_line_flags.push(is_code);
                 fence_line_flags.push(is_fence);
+                blockquote_flags.push(is_blockquote);
+                hrule_flags.push(is_hrule);
             }
 
             let cache_valid = self.line_height_cache.as_ref().map_or(false, |c| {
@@ -188,11 +200,30 @@ impl TextEditor {
             let mut y: f32 = outer_rect.min.y + top_padding;
             let full_width: f32 = outer_rect.width().max(0.0);
             let code_bg: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
+            let blockquote_bg: egui::Color32 = if is_dark_mode {
+                egui::Color32::from_rgba_unmultiplied(59, 130, 246, 15)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(59, 130, 246, 10)
+            };
+            let blockquote_bar: egui::Color32 = if is_dark_mode { ColorPalette::BLUE_500 } else { ColorPalette::BLUE_400 };
+            let hrule_color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_600 } else { ColorPalette::ZINC_400 };
 
             for (line_idx, row_heights) in per_line_row_heights.iter().enumerate() {
                 if fence_line_flags[line_idx] || code_line_flags[line_idx] {
                     for &h in row_heights {
                         painter.rect_filled(Rect::from_min_size(pos2(outer_rect.min.x, y), vec2(full_width, h)), 0.0, code_bg);
+                        y += h;
+                    }
+                } else if blockquote_flags[line_idx] {
+                    for &h in row_heights {
+                        painter.rect_filled(Rect::from_min_size(pos2(outer_rect.min.x, y), vec2(full_width, h)), 0.0, blockquote_bg);
+                        painter.rect_filled(Rect::from_min_size(pos2(outer_rect.min.x, y), vec2(3.0, h)), 0.0, blockquote_bar);
+                        y += h;
+                    }
+                } else if hrule_flags[line_idx] {
+                    for &h in row_heights {
+                        let mid_y: f32 = y + h * 0.5;
+                        painter.hline(outer_rect.min.x..=outer_rect.max.x, mid_y, egui::Stroke::new(1.0, hrule_color));
                         y += h;
                     }
                 } else {
@@ -246,6 +277,10 @@ impl TextEditor {
                         ctx.open_url(egui::OpenUrl::new_tab(&final_url));
                     }
                 }
+            }
+
+            if response.clicked() && !ctx.input(|i: &egui::InputState| i.modifiers.ctrl || i.modifiers.command) {
+                self.try_toggle_checkbox();
             }
 
             if let Some(new_pos) = self.pending_cursor_pos.take() {
@@ -307,6 +342,24 @@ impl TextEditor {
         line_start_offset: usize,
         is_dark_mode: bool,
     ) {
+        if Self::is_horizontal_rule(line) {
+            job.append(line, 0.0, Self::transparent_format_static(font_size));
+            return;
+        }
+
+        if let Some(rest) = line.strip_prefix("> ") {
+            let cursor_in_line: bool = cursor_pos.map_or(false, |p| {
+                p >= line_start_offset && p <= line_start_offset + line.chars().count()
+            });
+            if cursor_in_line {
+                job.append("> ", 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+            } else {
+                job.append("> ", 0.0, Self::invisible_format_static());
+            }
+            Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + 2, is_dark_mode);
+            return;
+        }
+
         let headings: &[(&str, f32)] = &[("#### ", 1.1), ("### ", 1.2), ("## ", 1.4), ("# ", 1.6)];
         for (prefix, scale) in headings {
             if let Some(rest) = line.strip_prefix(prefix) {
@@ -319,6 +372,51 @@ impl TextEditor {
                     job.append(prefix, 0.0, Self::invisible_format_static());
                     job.append(rest, 0.0, Self::heading_format_static(font_size, *scale, font_family, is_dark_mode));
                 }
+                return;
+            }
+        }
+
+        let indent_count: usize = line.len() - line.trim_start_matches(' ').len();
+        if indent_count >= 2 {
+            let trimmed_line: &str = &line[indent_count..];
+            let indent_visual: String = " ".repeat(indent_count);
+
+            let checkbox_variants: &[(&str, bool)] = &[
+                ("- [ ] ", false), ("- [x] ", true), ("- [X] ", true),
+                ("* [ ] ", false), ("* [x] ", true), ("* [X] ", true),
+                ("+ [ ] ", false), ("+ [x] ", true), ("+ [X] ", true),
+            ];
+            for (prefix, checked) in checkbox_variants {
+                if let Some(rest) = trimmed_line.strip_prefix(prefix) {
+                    job.append(&indent_visual, 0.0, Self::transparent_format_static(font_size));
+                    job.append("\u{2022} ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+                    Self::append_checkbox_marker(job, *checked, font_size, font_family, is_dark_mode);
+                    let content_offset: usize = line_start_offset + indent_count + prefix.chars().count();
+                    Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, content_offset, is_dark_mode);
+                    return;
+                }
+            }
+            for prefix in &["- ", "* ", "+ "] {
+                if let Some(rest) = trimmed_line.strip_prefix(prefix) {
+                    job.append(&indent_visual, 0.0, Self::transparent_format_static(font_size));
+                    job.append("\u{2022} ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+                    Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, line_start_offset + indent_count + 2, is_dark_mode);
+                    return;
+                }
+            }
+        }
+
+        let checkbox_prefixes: &[(&str, bool)] = &[
+            ("- [ ] ", false), ("- [x] ", true), ("- [X] ", true),
+            ("* [ ] ", false), ("* [x] ", true), ("* [X] ", true),
+            ("+ [ ] ", false), ("+ [x] ", true), ("+ [X] ", true),
+        ];
+        for (prefix, checked) in checkbox_prefixes {
+            if let Some(rest) = line.strip_prefix(prefix) {
+                job.append("\u{2022} ", 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+                Self::append_checkbox_marker(job, *checked, font_size, font_family, is_dark_mode);
+                let content_offset: usize = line_start_offset + prefix.chars().count();
+                Self::parse_inline_formatting_static(rest, job, font_size, font_family, cursor_pos, content_offset, is_dark_mode);
                 return;
             }
         }
@@ -346,6 +444,18 @@ impl TextEditor {
         Self::parse_inline_formatting_static(line, job, font_size, font_family, cursor_pos, line_start_offset, is_dark_mode);
     }
 
+    fn append_checkbox_marker(
+        job: &mut egui::text::LayoutJob,
+        checked: bool,
+        font_size: f32,
+        font_family: &egui::FontFamily,
+        is_dark_mode: bool,
+    ) {
+        let fmt: egui::TextFormat = Self::checkbox_format_static(checked, font_size, font_family, is_dark_mode);
+        let marker: &str = if checked { "[x] " } else { "[ ] " };
+        job.append(marker, 0.0, fmt);
+    }
+
     pub(super) fn parse_inline_formatting_static(
         text: &str,
         job: &mut egui::text::LayoutJob,
@@ -355,13 +465,36 @@ impl TextEditor {
         text_start_offset: usize,
         is_dark_mode: bool,
     ) {
+        Self::parse_inline_with_context(text, job, font_size, font_family, cursor_pos, text_start_offset, is_dark_mode, false, false);
+    }
+
+    fn parse_inline_with_context(
+        text: &str,
+        job: &mut egui::text::LayoutJob,
+        font_size: f32,
+        font_family: &egui::FontFamily,
+        cursor_pos: Option<usize>,
+        text_start_offset: usize,
+        is_dark_mode: bool,
+        is_bold: bool,
+        is_italic: bool,
+    ) {
         let chars: Vec<char> = text.chars().collect();
         let mut i: usize = 0;
         let mut current_text: String = String::new();
 
+        let ctx_format = |b: bool, it: bool| -> egui::TextFormat {
+            match (b, it) {
+                (true, true)  => Self::bold_italic_format_static(font_size, font_family, is_dark_mode),
+                (true, false) => Self::bold_format_static(font_size, font_family, is_dark_mode),
+                (false, true) => Self::italic_format_static(font_size, font_family, is_dark_mode),
+                (false, false) => Self::default_format_static(font_size, font_family, is_dark_mode),
+            }
+        };
+
         let flush = |current_text: &mut String, job: &mut egui::text::LayoutJob| {
             if !current_text.is_empty() {
-                job.append(current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+                job.append(current_text, 0.0, ctx_format(is_bold, is_italic));
                 current_text.clear();
             }
         };
@@ -377,62 +510,81 @@ impl TextEditor {
 
         while i < chars.len() {
             let current_pos: usize = text_start_offset + i;
-
-            macro_rules! try_span {
-                ($marker:expr, $format:expr, $min_content:expr) => {{
-                    let mlen = $marker.chars().count();
-                    if is_valid_start(i, mlen) {
-                        if let Some(end) = Self::find_closing_marker(&chars, i + mlen, $marker) {
-                            if end > i + mlen {
-                                let end_pos = end + mlen;
-                                flush(&mut current_text, job);
-                                if cursor_in(current_pos, end_pos) {
-                                    let r: String = chars[i..end_pos].iter().collect();
-                                    job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
-                                } else {
-                                    let om: String = chars[i..i + mlen].iter().collect();
-                                    job.append(&om, 0.0, Self::invisible_format_static());
-                                    let content: String = chars[i + mlen..end].iter().collect();
-                                    job.append(&content, 0.0, $format);
-                                    let cm: String = chars[end..end_pos].iter().collect();
-                                    job.append(&cm, 0.0, Self::invisible_format_static());
-                                }
-                                i = end_pos;
-                                continue;
-                            }
-                        }
-                    }
-                }};
-            }
-
             if i + 1 < chars.len() && chars[i] == '~' && chars[i + 1] == '~' && is_valid_start(i, 2) {
-                try_span!("~~", Self::strikethrough_format_static(font_size, font_family, is_dark_mode), 2);
-                if i < chars.len() && chars[i] == '~' {
-                    current_text.push(chars[i]); i += 1; continue;
+                if let Some(end) = Self::find_closing_marker(&chars, i + 2, "~~") {
+                    if end > i + 2 {
+                        let end_pos = end + 2;
+                        flush(&mut current_text, job);
+                        if cursor_in(current_pos, end_pos) {
+                            let r: String = chars[i..end_pos].iter().collect();
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+                        } else {
+                            job.append("~~", 0.0, Self::invisible_format_static());
+                            let content: String = chars[i + 2..end].iter().collect();
+                            job.append(&content, 0.0, Self::strikethrough_format_static(font_size, font_family, is_dark_mode));
+                            job.append("~~", 0.0, Self::invisible_format_static());
+                        }
+                        i = end_pos; continue;
+                    }
                 }
             }
 
             if chars[i] == '~' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() && chars[i + 1] != '~' {
-                let mut end: usize = i + 1;
-                while end < chars.len() && chars[end] != '~' {
-                    if chars[end].is_whitespace() || chars[end].is_ascii_punctuation() { break; }
-                    end += 1;
-                }
-                if end > i + 1 {
-                    flush(&mut current_text, job);
-                    if cursor_pos.map_or(false, |p| p >= current_pos && p <= text_start_offset + end) {
-                        let r: String = chars[i..end].iter().collect();
-                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
-                    } else {
-                        job.append("~", 0.0, Self::invisible_format_static());
-                        let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::subscript_format_static(font_size, font_family, is_dark_mode));
+                if let Some(end) = Self::find_closing_marker(&chars, i + 1, "~") {
+                    let content_chars: &[char] = &chars[i + 1..end];
+                    let valid: bool = end > i + 1
+                        && !content_chars.is_empty()
+                        && !content_chars.iter().any(|&c| c.is_whitespace())
+                        && !(end + 1 < chars.len() && chars[end + 1] == '~');
+                    if valid {
+                        let end_pos: usize = end + 1;
+                        flush(&mut current_text, job);
+                        if cursor_pos.map_or(false, |p| p >= current_pos && p < text_start_offset + end_pos) {
+                            let r: String = chars[i..end_pos].iter().collect();
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+                        } else {
+                            job.append("~", 0.0, Self::invisible_format_static());
+                            let content: String = content_chars.iter().collect();
+                            job.append(&content, 0.0, Self::subscript_format_static(font_size, font_family, is_dark_mode));
+                            job.append("~", 0.0, Self::invisible_format_static());
+                        }
+                        i = end_pos; continue;
                     }
-                    i = end; continue;
                 }
             }
 
-            if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' && is_valid_start(i, 2) {
+            if !is_bold && !is_italic
+                && i + 2 < chars.len()
+                && chars[i] == '*' && chars[i + 1] == '*' && chars[i + 2] == '*'
+                && is_valid_start(i, 3)
+            {
+                if let Some(end) = Self::find_closing_marker(&chars, i + 3, "***") {
+                    if end > i + 3 {
+                        let end_pos: usize = end + 3;
+                        flush(&mut current_text, job);
+                        if cursor_in(current_pos, end_pos) {
+                            let r: String = chars[i..end_pos].iter().collect();
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+                        } else {
+                            job.append("***", 0.0, Self::invisible_format_static());
+                            let content: String = chars[i + 3..end].iter().collect();
+                            Self::parse_inline_with_context(
+                                &content, job, font_size, font_family, cursor_pos,
+                                text_start_offset + i + 3, is_dark_mode, true, true,
+                            );
+                            job.append("***", 0.0, Self::invisible_format_static());
+                        }
+                        i = end_pos; continue;
+                    }
+                }
+            }
+
+            if !is_bold
+                && i + 1 < chars.len()
+                && chars[i] == '*' && chars[i + 1] == '*'
+                && !(i + 2 < chars.len() && chars[i + 2] == '*')
+                && is_valid_start(i, 2)
+            {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 2, "**") {
                     if end > i + 2 {
                         let end_pos: usize = end + 2;
@@ -443,7 +595,10 @@ impl TextEditor {
                         } else {
                             job.append("**", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 2..end].iter().collect();
-                            job.append(&content, 0.0, Self::bold_format_static(font_size, font_family, is_dark_mode));
+                            Self::parse_inline_with_context(
+                                &content, job, font_size, font_family, cursor_pos,
+                                text_start_offset + i + 2, is_dark_mode, true, is_italic,
+                            );
                             job.append("**", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
@@ -451,7 +606,11 @@ impl TextEditor {
                 }
             }
 
-            if chars[i] == '*' && !(i + 1 < chars.len() && chars[i + 1] == '*') && is_valid_start(i, 1) {
+            if !is_italic
+                && chars[i] == '*'
+                && !(i + 1 < chars.len() && chars[i + 1] == '*')
+                && is_valid_start(i, 1)
+            {
                 if let Some(end) = Self::find_closing_marker(&chars, i + 1, "*") {
                     if end > i + 1 {
                         let end_pos = end + 1;
@@ -462,7 +621,10 @@ impl TextEditor {
                         } else {
                             job.append("*", 0.0, Self::invisible_format_static());
                             let content: String = chars[i + 1..end].iter().collect();
-                            job.append(&content, 0.0, Self::italic_format_static(font_size, font_family, is_dark_mode));
+                            Self::parse_inline_with_context(
+                                &content, job, font_size, font_family, cursor_pos,
+                                text_start_offset + i + 1, is_dark_mode, is_bold, true,
+                            );
                             job.append("*", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
@@ -512,22 +674,25 @@ impl TextEditor {
             }
 
             if chars[i] == '^' && i + 1 < chars.len() && !chars[i + 1].is_whitespace() {
-                let mut end: usize = i + 1;
-                while end < chars.len() && chars[end] != '^' {
-                    if chars[end].is_whitespace() || chars[end].is_ascii_punctuation() { break; }
-                    end += 1;
-                }
-                if end > i + 1 {
-                    flush(&mut current_text, job);
-                    if cursor_pos.map_or(false, |p| p >= current_pos && p <= text_start_offset + end) {
-                        let r: String = chars[i..end].iter().collect();
-                        job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
-                    } else {
-                        job.append("^", 0.0, Self::invisible_format_static());
-                        let content: String = chars[i + 1..end].iter().collect();
-                        job.append(&content, 0.0, Self::superscript_format_static(font_size, font_family, is_dark_mode));
+                if let Some(end) = Self::find_closing_marker(&chars, i + 1, "^") {
+                    let content_chars: &[char] = &chars[i + 1..end];
+                    let valid: bool = end > i + 1
+                        && !content_chars.is_empty()
+                        && !content_chars.iter().any(|&c| c.is_whitespace());
+                    if valid {
+                        let end_pos: usize = end + 1;
+                        flush(&mut current_text, job);
+                        if cursor_pos.map_or(false, |p| p >= current_pos && p < text_start_offset + end_pos) {
+                            let r: String = chars[i..end_pos].iter().collect();
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+                        } else {
+                            job.append("^", 0.0, Self::invisible_format_static());
+                            let content: String = content_chars.iter().collect();
+                            job.append(&content, 0.0, Self::superscript_format_static(font_size, font_family, is_dark_mode));
+                            job.append("^", 0.0, Self::invisible_format_static());
+                        }
+                        i = end_pos; continue;
                     }
-                    i = end; continue;
                 }
             }
 
@@ -558,7 +723,7 @@ impl TextEditor {
         }
 
         if !current_text.is_empty() {
-            job.append(&current_text, 0.0, Self::default_format_static(font_size, font_family, is_dark_mode));
+            job.append(&current_text, 0.0, ctx_format(is_bold, is_italic));
         }
     }
 
@@ -705,6 +870,19 @@ impl TextEditor {
         }
     }
 
+    pub(super) fn checkbox_format_static(checked: bool, font_size: f32, _font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
+        let color: egui::Color32 = if checked {
+            if is_dark_mode { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }
+        } else {
+            if is_dark_mode { ColorPalette::ZINC_500 } else { ColorPalette::ZINC_400 }
+        };
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, egui::FontFamily::Name("Ubuntu".into())),
+            color,
+            ..Default::default()
+        }
+    }
+
     pub(super) fn heading_format_static(font_size: f32, scale: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
         let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 };
         let bold_family = Self::bold_family(font_family);
@@ -726,6 +904,23 @@ impl TextEditor {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Italic".into()),
             _ => egui::FontFamily::Name("Ubuntu-Italic".into()),
+        }
+    }
+
+    fn bold_italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
+        match font_family {
+            egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-BoldItalic".into()),
+            _ => egui::FontFamily::Name("Ubuntu-BoldItalic".into()),
+        }
+    }
+
+    pub(super) fn bold_italic_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
+        let color: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 };
+        let bi_family: egui::FontFamily = Self::bold_italic_family(font_family);
+        egui::TextFormat {
+            font_id: egui::FontId::new(font_size, bi_family),
+            color,
+            ..Default::default()
         }
     }
 }

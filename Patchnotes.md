@@ -81,6 +81,9 @@
 - **IMG EDITOR**: Brush Textures of different types (Rough, Paper, Canvas)
 - **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
 - **TEXT EDITOR**: Default font size and font type can now be selected in settings
+- **TEXT EDITOR**: Adding functionality for checkbox lists
+- **TEXT EDITOR**: Adding functionality for block quotes
+- **TEXT EDITOR**: Adding functionality for bold and italic text together
 
 #### Debugging
 - **IMG EDITOR**: Eraser now properly erases to white background

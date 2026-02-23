@@ -42,7 +42,7 @@
 ### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
-- [ ] Can't Combine Formatting - Medium
+- [x] Can't Combine Formatting - Medium
 - [ ] Changing fonts sometimes causes code blocks to desync
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
@@ -115,7 +115,7 @@
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
 - [x] Opening .md file automatically sets markdown mode
-- [ ] Markdown checkbox lists (for example this one)
+- [x] Markdown checkbox lists (for example this one)
 - [x] Use given fonts instead of egui font families (E.g ubuntu and roboto)
 - [x] Default font and font size support
 - [ ] Latex?
