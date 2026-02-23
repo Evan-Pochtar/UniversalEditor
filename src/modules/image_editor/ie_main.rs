@@ -11,6 +11,8 @@ use std::fs;
 
 pub(super) const MAX_UNDO: usize = 20;
 pub(super) const MAX_COLOR_HISTORY: usize = 20;
+pub(super) const MAX_COLOR_FAVORITES: usize = 30;
+pub(super) const COLOR_FAV_HOTKEYS: usize = 10;
 pub(super) const HANDLE_HIT: f32 = 22.0;
 pub(super) const HANDLE_VIS: f32 = 8.0;
 pub(super) const ROTATE_DIST: f32 = 28.0;
@@ -90,6 +92,58 @@ impl ColorHistory {
         self.save();
     }
     pub(super) fn get_colors(&self) -> &VecDeque<RgbaColor> { &self.colors }
+}
+
+#[derive(Serialize, Deserialize)]
+pub(super) struct ColorFavorites { pub colors: Vec<RgbaColor> }
+
+impl ColorFavorites {
+    pub(super) fn new() -> Self { Self { colors: Vec::new() } }
+
+    pub(super) fn load() -> Self {
+        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
+            if let Ok(h) = serde_json::from_str(&s) { return h; }
+        }
+        Self::new()
+    }
+
+    pub(super) fn save(&self) {
+        let path: PathBuf = Self::get_config_path();
+        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
+        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
+    }
+
+    fn get_config_path() -> PathBuf {
+        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        p.push("universal_editor");
+        p.push("color_favorites.json");
+        p
+    }
+
+    pub(super) fn toggle(&mut self, color: RgbaColor) -> bool {
+        if let Some(pos) = self.colors.iter().position(|c| *c == color) {
+            self.colors.remove(pos);
+            self.save();
+            false
+        } else if self.colors.len() < MAX_COLOR_FAVORITES {
+            self.colors.push(color);
+            self.save();
+            true
+        } else {
+            true
+        }
+    }
+
+    pub(super) fn contains(&self, color: RgbaColor) -> bool {
+        self.colors.iter().any(|c| *c == color)
+    }
+
+    pub(super) fn move_item(&mut self, from: usize, to: usize) {
+        if from == to || from >= self.colors.len() || to >= self.colors.len() { return; }
+        let item = self.colors.remove(from);
+        self.colors.insert(to, item);
+        self.save();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -487,6 +541,8 @@ pub struct ImageEditor {
 
     pub(super) show_color_picker: bool,
     pub(super) color_history: ColorHistory,
+    pub(super) color_favorites: ColorFavorites,
+    pub(super) color_fav_drag_src: Option<usize>,
     pub(super) hex_input: String,
     pub(super) canvas_rect: Option<egui::Rect>,
     pub(super) color_picker_rect: Option<egui::Rect>,
@@ -524,6 +580,7 @@ impl ImageEditor {
             export_jpeg_quality: 90, export_preserve_metadata: true,
             export_auto_scale_ico: true, export_callback: None,
             show_color_picker: false, color_history: ColorHistory::load(),
+            color_favorites: ColorFavorites::load(), color_fav_drag_src: None,
             hex_input: String::from("#000000FF"), canvas_rect: None,
             color_picker_rect: None,
             filter_panel_rect: None,
@@ -695,7 +752,19 @@ impl ImageEditor {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::D) { self.commit_or_discard_active_text(); self.tool = Tool::Eyedropper; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::C) { self.commit_or_discard_active_text(); self.tool = Tool::Crop; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::P) { self.commit_or_discard_active_text(); self.tool = Tool::Pan; }
-                if i.consume_key(egui::Modifiers::NONE, egui::Key::Num0) { self.fit_image(); }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::Num0) {
+                    if let Some(c) = self.color_favorites.colors.get(9) { let mut col = *c; col.a = 255; self.color = col.to_egui(); self.hex_input = col.to_hex(); }
+                }
+                for (key, slot) in [
+                    (egui::Key::Num1, 0usize), (egui::Key::Num2, 1), (egui::Key::Num3, 2),
+                    (egui::Key::Num4, 3), (egui::Key::Num5, 4), (egui::Key::Num6, 5),
+                    (egui::Key::Num7, 6), (egui::Key::Num8, 7), (egui::Key::Num9, 8),
+                ] {
+                    if i.consume_key(egui::Modifiers::NONE, key) {
+                        if let Some(c) = self.color_favorites.colors.get(slot) { let mut col = *c; col.a = 255; self.color = col.to_egui(); self.hex_input = col.to_hex(); }
+                    }
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::Home) { self.fit_image(); }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Plus)  { self.zoom *= 1.25; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Minus) { self.zoom = (self.zoom / 1.25).max(0.01); }
             });

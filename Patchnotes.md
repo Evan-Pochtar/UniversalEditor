@@ -79,6 +79,7 @@
 - **IMG EDITOR**: Brush parameters are now changeable
 - **IMG EDITOR**: Saving custom brushes as favorites now available
 - **IMG EDITOR**: Brush Textures of different types (Rough, Paper, Canvas)
+- **IMG EDITOR**: Favorites added to the color picker (with keyboard shortcuts)
 - **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
 - **TEXT EDITOR**: Default font size and font type can now be selected in settings
 - **TEXT EDITOR**: Adding functionality for checkbox lists

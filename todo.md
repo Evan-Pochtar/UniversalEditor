@@ -155,7 +155,7 @@
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
   - [ ] Add opacity to color picker
-  - [ ] Add Favorites to color picker (with keyboard shortcuts)
+  - [x] Add Favorites to color picker (with keyboard shortcuts)
 - [x] Better text selection/writing tool
   - [x] Easy selection of text
   - [x] Resize by corner drag
@@ -178,6 +178,7 @@
   - [ ] Library of custom brushes?
 - [x] Keyboard Shortcuts
 - [ ] Import Images into Canvas
+  - [ ] Drag-and-drop image open
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
@@ -187,7 +188,6 @@
 - [ ] Snap to grid for text/crop
 - [ ] Filter preview before apply (on filter panel)
 - [x] Turn filter panel into it's own modal
-- [ ] Drag-and-drop image open
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files
 - [x] Make image converter and image editor use the same export function

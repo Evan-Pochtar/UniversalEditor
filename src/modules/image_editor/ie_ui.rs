@@ -504,6 +504,160 @@ impl ImageEditor {
                     }
                 });
 
+                ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
+
+                let current_rgba = RgbaColor::from_egui(self.color);
+                let is_fav = self.color_favorites.contains(current_rgba);
+                let fav_count = self.color_favorites.colors.len();
+                ui.horizontal(|ui: &mut egui::Ui| {
+                    ui.label(egui::RichText::new("Favorites").size(13.0).color(text_col));
+                    ui.label(egui::RichText::new(format!("{}/30", fav_count)).size(11.0).color(weak_col));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let add_label = if is_fav { "Remove" } else { "Add Current" };
+                        let add_enabled = is_fav || fav_count < super::ie_main::MAX_COLOR_FAVORITES;
+                        if ui.add_enabled(add_enabled, egui::Button::new(egui::RichText::new(add_label).size(11.0))).clicked() {
+                            self.color_favorites.toggle(current_rgba);
+                        }
+                    });
+                });
+                ui.label(egui::RichText::new("Keys 1-9, 0 activate the first 10. Drag to reorder.").size(10.0).color(weak_col));
+                ui.add_space(2.0);
+
+                let swatch_size: f32 = 28.0;
+                let swatch_spacing: f32 = 4.0;
+                let available_w: f32 = ui.available_width();
+                let swatches_per_row: usize = ((available_w + swatch_spacing) / (swatch_size + swatch_spacing)).max(1.0) as usize;
+                let fav_colors_snapshot: Vec<RgbaColor> = self.color_favorites.colors.clone();
+                let n = fav_colors_snapshot.len();
+                let rows = (n + swatches_per_row - 1).max(1) / swatches_per_row.max(1);
+                let total_h = rows as f32 * (swatch_size + swatch_spacing) - if rows > 0 { swatch_spacing } else { 0.0 };
+                let grid_start = ui.cursor().min;
+                let (grid_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(available_w, total_h.max(swatch_size)),
+                    egui::Sense::hover(),
+                );
+
+                let pointer_pos: Option<egui::Pos2> = ctx.pointer_latest_pos();
+                let pointer_released: bool = ctx.input(|i| i.pointer.any_released());
+                let pointer_down: bool = ctx.input(|i| i.pointer.any_down());
+
+                let mut swatch_rects: Vec<egui::Rect> = Vec::with_capacity(n);
+                for idx in 0..n {
+                    let row = idx / swatches_per_row.max(1);
+                    let col = idx % swatches_per_row.max(1);
+                    let x = grid_start.x + col as f32 * (swatch_size + swatch_spacing);
+                    let y = grid_start.y + row as f32 * (swatch_size + swatch_spacing);
+                    swatch_rects.push(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(swatch_size, swatch_size)));
+                }
+
+                let hovered_drop_idx: Option<usize> = if self.color_fav_drag_src.is_some() {
+                    pointer_pos.and_then(|pp| swatch_rects.iter().position(|r| r.expand(2.0).contains(pp)))
+                } else { None };
+
+                if self.color_fav_drag_src.is_none() && pointer_down {
+                    if let Some(pp) = pointer_pos {
+                        if let Some(drag_idx) = swatch_rects.iter().position(|r| r.contains(pp)) {
+                            let pressed_this_frame = ctx.input(|i| i.pointer.any_pressed());
+                            if pressed_this_frame {
+                                self.color_fav_drag_src = Some(drag_idx);
+                            }
+                        }
+                    }
+                }
+
+                if pointer_released {
+                    if let (Some(src), Some(dst)) = (self.color_fav_drag_src, hovered_drop_idx) {
+                        if src != dst {
+                            self.color_favorites.move_item(src, dst);
+                        }
+                    }
+                    if let Some(src) = self.color_fav_drag_src {
+                        if hovered_drop_idx.is_none() || hovered_drop_idx == Some(src) {
+                            let drag_delta = ctx.input(|i| i.pointer.delta().length());
+                            if drag_delta < 2.0 {
+                                if let Some(c) = fav_colors_snapshot.get(src) {
+                                    let mut col = *c; col.a = 255; self.color = col.to_egui(); self.hex_input = col.to_hex();
+                                }
+                            }
+                        }
+                    }
+                    self.color_fav_drag_src = None;
+                }
+
+                let painter = ui.painter_at(grid_rect);
+                let is_dragging = self.color_fav_drag_src.is_some();
+
+                for (idx, (color, rect)) in fav_colors_snapshot.iter().zip(swatch_rects.iter()).enumerate() {
+                    let egui_color = color.to_egui();
+                    let is_drag_src = self.color_fav_drag_src == Some(idx);
+                    let is_drop_target = hovered_drop_idx == Some(idx) && self.color_fav_drag_src.map_or(false, |s| s != idx);
+                    let is_active_key_slot = idx < super::ie_main::COLOR_FAV_HOTKEYS;
+                    let alpha = if is_drag_src { 80u8 } else { 255u8 };
+                    let draw_color = egui::Color32::from_rgba_premultiplied(
+                        ((egui_color.r() as u32 * alpha as u32) / 255) as u8,
+                        ((egui_color.g() as u32 * alpha as u32) / 255) as u8,
+                        ((egui_color.b() as u32 * alpha as u32) / 255) as u8,
+                        alpha,
+                    );
+                    painter.rect_filled(*rect, 4.0, draw_color);
+
+                    if is_drop_target {
+                        painter.rect_stroke(*rect, 4.0, egui::Stroke::new(2.5, egui::Color32::WHITE), egui::StrokeKind::Outside);
+                        let line_x = rect.min.x - 3.0;
+                        painter.line_segment(
+                            [egui::pos2(line_x, rect.min.y), egui::pos2(line_x, rect.max.y)],
+                            egui::Stroke::new(3.0, egui::Color32::WHITE),
+                        );
+                    } else {
+                        let border_col = if matches!(theme, ThemeMode::Dark) {
+                            egui::Color32::from_rgba_unmultiplied(255,255,255,40)
+                        } else {
+                            egui::Color32::from_rgba_unmultiplied(0,0,0,40)
+                        };
+                        painter.rect_stroke(*rect, 4.0, egui::Stroke::new(1.0, border_col), egui::StrokeKind::Outside);
+                    }
+
+                    if is_active_key_slot && !is_drag_src {
+                        let key_label = if idx == 9 { "0".to_string() } else { format!("{}", idx + 1) };
+                        let badge_rect = egui::Rect::from_min_size(rect.min, egui::vec2(12.0, 12.0));
+                        painter.rect_filled(badge_rect, egui::CornerRadius { nw: 4, ne: 0, sw: 0, se: 4 },
+                            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+                        painter.text(badge_rect.center(), egui::Align2::CENTER_CENTER, &key_label,
+                            egui::FontId::monospace(8.0), egui::Color32::WHITE);
+                    }
+
+                    if !is_dragging {
+                        if let Some(pp) = pointer_pos {
+                            if rect.contains(pp) {
+                                ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(src_idx) = self.color_fav_drag_src {
+                    if pointer_down {
+                        if let Some(pp) = pointer_pos {
+                            if let Some(drag_col) = fav_colors_snapshot.get(src_idx) {
+                                let float_rect = egui::Rect::from_center_size(pp, egui::vec2(swatch_size, swatch_size));
+                                let float_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fav_drag_float")));
+                                float_painter.rect_filled(float_rect, 4.0, drag_col.to_egui());
+                                float_painter.rect_stroke(float_rect, 4.0, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Outside);
+                                ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(pp) = pointer_pos {
+                    if let Some(ctx_idx) = swatch_rects.iter().position(|r| r.contains(pp)) {
+                        if ctx.input(|i| i.pointer.secondary_clicked()) {
+                            self.color_favorites.colors.remove(ctx_idx);
+                            self.color_favorites.save();
+                        }
+                    }
+                }
+
                 ui.add_space(8.0);
                 ui.horizontal(|ui: &mut egui::Ui| {
                     if ui.button("Apply").clicked()  { self.add_color_to_history(); self.show_color_picker = false; }
