@@ -933,6 +933,65 @@ impl ImageEditor {
                             }
                         }
                     }
+
+                    RetouchMode::Pixelate => {
+                        let block: u32 = (2.0 + strength * 30.0).round() as u32;
+                        let block: u32 = block.max(2);
+                        let bx0: u32 = (min_x / block) * block;
+                        let by0: u32 = (min_y / block) * block;
+
+                        let mut bx: u32 = bx0;
+                        while bx < max_x {
+                            let mut by: u32 = by0;
+                            while by < max_y {
+                                let mut sr: u32 = 0; let mut sg: u32 = 0;
+                                let mut sb: u32 = 0; let mut sa: u32 = 0;
+                                let mut count: u32 = 0;
+                                let mut max_falloff: f32 = 0.0;
+
+                                for py in by..(by + block).min(height) {
+                                    for px in bx..(bx + block).min(width) {
+                                        let ddx: f32 = px as f32 - cx;
+                                        let ddy: f32 = py as f32 - cy;
+                                        let fo: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                        if fo <= 0.0 { continue; }
+                                        let p: Rgba<u8> = *buf.get_pixel(px, py);
+                                        sr += p.0[0] as u32; sg += p.0[1] as u32;
+                                        sb += p.0[2] as u32; sa += p.0[3] as u32;
+                                        count += 1;
+                                        if fo > max_falloff { max_falloff = fo; }
+                                    }
+                                }
+
+                                if count > 0 {
+                                    let avg: Rgba<u8> = Rgba([
+                                        (sr / count) as u8,
+                                        (sg / count) as u8,
+                                        (sb / count) as u8,
+                                        (sa / count) as u8,
+                                    ]);
+                                    for py in by..(by + block).min(height) {
+                                        for px in bx..(bx + block).min(width) {
+                                            let ddx: f32 = px as f32 - cx;
+                                            let ddy: f32 = py as f32 - cy;
+                                            let fo: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                            if fo <= 0.0 { continue; }
+                                            let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                            buf.put_pixel(px, py, Rgba([
+                                                retouch_lerp_u8(orig.0[0], avg.0[0], max_falloff),
+                                                retouch_lerp_u8(orig.0[1], avg.0[1], max_falloff),
+                                                retouch_lerp_u8(orig.0[2], avg.0[2], max_falloff),
+                                                retouch_lerp_u8(orig.0[3], avg.0[3], max_falloff),
+                                            ]));
+                                        }
+                                    }
+                                }
+
+                                by += block;
+                            }
+                            bx += block;
+                        }
+                    }
                 }
             }
         }

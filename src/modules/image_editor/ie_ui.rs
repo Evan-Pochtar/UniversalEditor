@@ -201,44 +201,44 @@ impl ImageEditor {
                             }
                         }
                         Tool::Retouch => {
-                            for mode in RetouchMode::all() {
-                                let active: bool = self.retouch_mode == *mode;
-                                let (btn_bg, btn_txt) = if active {
-                                    (ColorPalette::PURPLE_600, egui::Color32::WHITE)
-                                } else if matches!(theme, ThemeMode::Dark) {
-                                    (ColorPalette::ZINC_700, ColorPalette::ZINC_200)
-                                } else {
-                                    (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
-                                };
-                                ui.scope(|ui: &mut egui::Ui| {
-                                    let s: &mut egui::Style = ui.style_mut();
-                                    s.visuals.widgets.inactive.bg_fill = btn_bg;
-                                    s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                                    s.visuals.widgets.hovered.bg_fill = if active { ColorPalette::PURPLE_500 } else { btn_bg };
-                                    s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-                                    if ui.add(egui::Button::new(
-                                        egui::RichText::new(mode.label()).size(11.5).color(btn_txt)
-                                    ).min_size(egui::vec2(0.0, 24.0))).clicked() {
-                                        self.retouch_mode = *mode;
-                                    }
-                                });
-                            }
-                            ui.separator();
-                            ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
-                            ui.add(egui::Slider::new(&mut self.retouch_size, 4.0..=400.0).custom_formatter(|v, _| format!("{:.0}px", v)));
-                            ui.separator();
-                            let strength_label: &str = self.retouch_mode.strength_label();
-                            ui.label(egui::RichText::new(format!("{}:", strength_label)).size(12.0).color(label_col));
-                            ui.add(
-                                egui::Slider::new(&mut self.retouch_strength, 0.0..=1.0)
-                                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
-                            );
-                            ui.separator();
-                            ui.label(egui::RichText::new("Softness:").size(12.0).color(label_col));
-                            ui.add(
-                                egui::Slider::new(&mut self.retouch_softness, 0.0..=1.0)
-                                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
-                            );
+                            egui::ScrollArea::horizontal()
+                                .auto_shrink([false, true])
+                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                                .show(ui, |ui: &mut egui::Ui| {
+                                    ui.horizontal(|ui: &mut egui::Ui| {
+                                        for mode in RetouchMode::all() {
+                                            let (btn_bg, btn_txt) = if matches!(theme, ThemeMode::Dark) {
+                                                (ColorPalette::ZINC_700, ColorPalette::ZINC_200)
+                                            } else {
+                                                (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
+                                            };
+                                            let s: &mut egui::Style = ui.style_mut();
+                                            s.visuals.widgets.inactive.bg_fill = btn_bg;
+                                            s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                                            if ui.add(egui::Button::new(
+                                                egui::RichText::new(mode.label()).size(11.5).color(btn_txt)
+                                            ).min_size(egui::vec2(0.0, 24.0))).clicked() {
+                                                self.retouch_mode = *mode;
+                                            }
+                                        }
+                                        ui.separator();
+                                        ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
+                                        ui.add(egui::Slider::new(&mut self.retouch_size, 4.0..=400.0).custom_formatter(|v, _| format!("{:.0}px", v)));
+                                        ui.separator();
+                                        let strength_label: &str = self.retouch_mode.strength_label();
+                                        ui.label(egui::RichText::new(format!("{}:", strength_label)).size(12.0).color(label_col));
+                                        ui.add(
+                                            egui::Slider::new(&mut self.retouch_strength, 0.0..=1.0)
+                                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                                        );
+                                        ui.separator();
+                                        ui.label(egui::RichText::new("Softness:").size(12.0).color(label_col));
+                                        ui.add(
+                                            egui::Slider::new(&mut self.retouch_softness, 0.0..=1.0)
+                                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                                        );
+                                    });
+                            });
                         }
                         _ => {}
                     }

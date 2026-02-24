@@ -73,6 +73,7 @@
 - [x] Can't see cursor on unsaved changes popup
 - [ ] Star brush type doesn't really look star like
 - [ ] Weird sharpen artifacting on high amount in retouch 
+- [ ] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -145,6 +146,7 @@
   - [x] Saturation
   - [x] Temperature
   - [x] Brightness
+  - [x] Pixelate
   - [ ] Improve performance on bigger sizes
   - [ ] Clearer slider for dark/light amount on brightness
   - [ ] Clearer slider for cold/warm amount on temperature

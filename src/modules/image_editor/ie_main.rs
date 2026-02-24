@@ -141,7 +141,7 @@ impl ColorFavorites {
 pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan, Retouch }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub(super) enum RetouchMode { Blur, Sharpen, Smudge, Vibrance, Saturation, Temperature, Brightness, }
+pub(super) enum RetouchMode { Blur, Sharpen, Smudge, Vibrance, Saturation, Temperature, Brightness, Pixelate, }
 
 impl RetouchMode {
     pub(super) fn label(&self) -> &'static str {
@@ -152,7 +152,8 @@ impl RetouchMode {
             Self::Vibrance => "Vibrance",
             Self::Saturation => "Saturation",
             Self::Temperature => "Temperature",
-            Self::Brightness => "Brightness",
+            Self::Brightness  => "Brightness",
+            Self::Pixelate => "Pixelate",
         }
     }
     pub(super) fn strength_label(&self) -> &'static str {
@@ -164,12 +165,14 @@ impl RetouchMode {
             Self::Saturation => "Amount",
             Self::Temperature => "Shift",
             Self::Brightness => "Amount",
+            Self::Pixelate => "Block Size",
         }
     }
     pub(super) fn all() -> &'static [RetouchMode] {
         &[
             Self::Blur, Self::Sharpen, Self::Smudge,
             Self::Vibrance, Self::Saturation, Self::Temperature, Self::Brightness,
+            Self::Pixelate,
         ]
     }
 }
