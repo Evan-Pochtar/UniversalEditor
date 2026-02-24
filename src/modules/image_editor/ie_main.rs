@@ -138,7 +138,41 @@ impl ColorFavorites {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan }
+pub enum Tool { Brush, Eraser, Fill, Text, Eyedropper, Crop, Pan, Retouch }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(super) enum RetouchMode { Blur, Sharpen, Smudge, Vibrance, Saturation, Temperature, Brightness, }
+
+impl RetouchMode {
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            Self::Blur => "Blur",
+            Self::Sharpen => "Sharpen",
+            Self::Smudge => "Smudge",
+            Self::Vibrance => "Vibrance",
+            Self::Saturation => "Saturation",
+            Self::Temperature => "Temperature",
+            Self::Brightness => "Brightness",
+        }
+    }
+    pub(super) fn strength_label(&self) -> &'static str {
+        match self {
+            Self::Blur => "Radius",
+            Self::Sharpen => "Amount",
+            Self::Smudge => "Strength",
+            Self::Vibrance => "Boost",
+            Self::Saturation => "Amount",
+            Self::Temperature => "Shift",
+            Self::Brightness => "Amount",
+        }
+    }
+    pub(super) fn all() -> &'static [RetouchMode] {
+        &[
+            Self::Blur, Self::Sharpen, Self::Smudge,
+            Self::Vibrance, Self::Saturation, Self::Temperature, Self::Brightness,
+        ]
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(super) enum BrushShape { Circle, Square, Diamond, CalligraphyFlat, Star, }
@@ -542,6 +576,12 @@ pub struct ImageEditor {
     pub(super) filter_progress: Arc<Mutex<f32>>,
     pub(super) is_processing: bool,
     pub(super) pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
+
+    pub(super) retouch_mode: RetouchMode,
+    pub(super) retouch_size: f32,
+    pub(super) retouch_strength: f32,
+    pub(super) retouch_softness: f32,
+    pub(super) retouch_smudge_sample: [f32; 4],
 }
 
 impl ImageEditor {
@@ -577,6 +617,11 @@ impl ImageEditor {
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
+            retouch_mode: RetouchMode::Blur,
+            retouch_size: 40.0,
+            retouch_strength: 0.5,
+            retouch_softness: 0.7,
+            retouch_smudge_sample: [0.0; 4],
         }
     }
 
@@ -717,6 +762,7 @@ impl ImageEditor {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::D) { self.commit_or_discard_active_text(); self.tool = Tool::Eyedropper; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::C) { self.commit_or_discard_active_text(); self.tool = Tool::Crop; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::P) { self.commit_or_discard_active_text(); self.tool = Tool::Pan; }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::R) { self.commit_or_discard_active_text(); self.tool = Tool::Retouch; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Num0) {
                     if let Some(c) = self.color_favorites.colors.get(9) { let mut col = *c; col.a = 255; self.color = col.to_egui(); self.hex_input = col.to_hex(); }
                 }

@@ -72,6 +72,7 @@
 - [x] Crop suddenly jumps when resizing vertically or horizontally
 - [x] Can't see cursor on unsaved changes popup
 - [ ] Star brush type doesn't really look star like
+- [ ] Weird sharpen artifacting on high amount in retouch 
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -136,14 +137,19 @@
   - [ ] Linear
   - [ ] Radial
 - [ ] Cutout tool
-- [ ] Filter tool
-  - [ ] Blur
-  - [ ] Sharpen
-  - [ ] Smudge
-  - [ ] Vibrance
-  - [ ] Saturation
-  - [ ] Temperature
-  - [ ] Brightness
+- [ ] Retouch tool
+  - [x] Blur
+  - [x] Sharpen
+  - [x] Smudge
+  - [x] Vibrance
+  - [x] Saturation
+  - [x] Temperature
+  - [x] Brightness
+  - [ ] Improve performance on bigger sizes
+  - [ ] Clearer slider for dark/light amount on brightness
+  - [ ] Clearer slider for cold/warm amount on temperature
+  - [ ] Clearer slider for difference between vibrant and non vibrant for vibrance
+  - [ ] Max sharpen amount?
 - [ ] Shape tool
 - [ ] Performance
   - [x] Brush is slightly laggy, make more smooth on large images

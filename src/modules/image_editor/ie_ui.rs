@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::{ColorPalette, ThemeMode};
 use crate::modules::helpers::image_export::ExportFormat;
-use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT, BrushShape, BrushTextureMode, BrushPreset, SavedBrush};
+use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT, BrushShape, BrushTextureMode, BrushPreset, SavedBrush, RetouchMode};
 use super::ie_helpers::{rgb_to_hsv_f32, hsv_to_rgb_f32, crop_hit_handle, draw_crop_handles};
 
 impl ImageEditor {
@@ -30,6 +30,7 @@ impl ImageEditor {
                             self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, Some("D"), theme);
                             self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
                             self.tool_btn(ui, "Pan", Tool::Pan, Some("P"), theme);
+                            self.tool_btn(ui, "Retouch", Tool::Retouch, Some("R"), theme);
                         });
                     });
             });
@@ -198,6 +199,46 @@ impl ImageEditor {
                                 if ui.button("Apply Crop").clicked() { self.push_undo(); self.apply_crop(); }
                                 if ui.button("Cancel").clicked()     { self.crop_state = CropState::default(); }
                             }
+                        }
+                        Tool::Retouch => {
+                            for mode in RetouchMode::all() {
+                                let active: bool = self.retouch_mode == *mode;
+                                let (btn_bg, btn_txt) = if active {
+                                    (ColorPalette::PURPLE_600, egui::Color32::WHITE)
+                                } else if matches!(theme, ThemeMode::Dark) {
+                                    (ColorPalette::ZINC_700, ColorPalette::ZINC_200)
+                                } else {
+                                    (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
+                                };
+                                ui.scope(|ui: &mut egui::Ui| {
+                                    let s: &mut egui::Style = ui.style_mut();
+                                    s.visuals.widgets.inactive.bg_fill = btn_bg;
+                                    s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                                    s.visuals.widgets.hovered.bg_fill = if active { ColorPalette::PURPLE_500 } else { btn_bg };
+                                    s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                                    if ui.add(egui::Button::new(
+                                        egui::RichText::new(mode.label()).size(11.5).color(btn_txt)
+                                    ).min_size(egui::vec2(0.0, 24.0))).clicked() {
+                                        self.retouch_mode = *mode;
+                                    }
+                                });
+                            }
+                            ui.separator();
+                            ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
+                            ui.add(egui::Slider::new(&mut self.retouch_size, 4.0..=400.0).custom_formatter(|v, _| format!("{:.0}px", v)));
+                            ui.separator();
+                            let strength_label: &str = self.retouch_mode.strength_label();
+                            ui.label(egui::RichText::new(format!("{}:", strength_label)).size(12.0).color(label_col));
+                            ui.add(
+                                egui::Slider::new(&mut self.retouch_strength, 0.0..=1.0)
+                                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                            );
+                            ui.separator();
+                            ui.label(egui::RichText::new("Softness:").size(12.0).color(label_col));
+                            ui.add(
+                                egui::Slider::new(&mut self.retouch_softness, 0.0..=1.0)
+                                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                            );
                         }
                         _ => {}
                     }
@@ -850,10 +891,18 @@ impl ImageEditor {
                     Tool::Fill | Tool::Eyedropper | Tool::Crop => ctx.set_cursor_icon(egui::CursorIcon::Crosshair),
                     Tool::Pan => ctx.set_cursor_icon(if response.dragged_by(egui::PointerButton::Primary) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::AllScroll }),
                     Tool::Text => ctx.set_cursor_icon(egui::CursorIcon::Text),
+                    Tool::Retouch => ctx.set_cursor_icon(egui::CursorIcon::None),
                 }
                 match self.tool {
                     Tool::Brush  => { painter.circle_stroke(mp, self.brush.size  / 2.0 * self.zoom, egui::Stroke::new(1.5, self.color)); }
                     Tool::Eraser => { painter.circle_stroke(mp, self.eraser_size / 2.0 * self.zoom, egui::Stroke::new(1.5, ColorPalette::RED_400)); }
+                    Tool::Retouch => {
+                        let r: f32 = self.retouch_size / 2.0 * self.zoom;
+                        painter.circle_stroke(mp, r, egui::Stroke::new(1.5, ColorPalette::PURPLE_400));
+                        let tick: f32 = 4.0;
+                        painter.line_segment([mp - egui::vec2(tick, 0.0), mp + egui::vec2(tick, 0.0)], egui::Stroke::new(1.0, ColorPalette::PURPLE_400));
+                        painter.line_segment([mp - egui::vec2(0.0, tick), mp + egui::vec2(0.0, tick)], egui::Stroke::new(1.0, ColorPalette::PURPLE_400));
+                    }
                     Tool::Text => {
                         if let Some(handles) = self.text_transform_handles() {
                             if let Some(h) = handles.hit_test(mp) { ctx.set_cursor_icon(TransformHandleSet::cursor_for(h)); }
@@ -891,6 +940,17 @@ impl ImageEditor {
                         self.stroke_points.push((ix as f32, iy as f32));
                         if self.stroke_points.len() >= 2 {
                             self.apply_brush_stroke();
+                            let last: (f32, f32) = *self.stroke_points.last().unwrap();
+                            self.stroke_points.clear(); self.stroke_points.push(last);
+                        }
+                    }
+                }
+                Tool::Retouch => {
+                    if !self.is_dragging { self.push_undo(); self.is_dragging = true; self.stroke_points.clear(); }
+                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.stroke_points.push((ix as f32, iy as f32));
+                        if self.stroke_points.len() >= 2 {
+                            self.apply_retouch_stroke();
                             let last: (f32, f32) = *self.stroke_points.last().unwrap();
                             self.stroke_points.clear(); self.stroke_points.push(last);
                         }
@@ -1029,6 +1089,13 @@ impl ImageEditor {
             }
         }
 
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Retouch {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            if let Some((ix, iy)) = self.screen_to_image(pos) {
+                self.init_smudge_sample(ix, iy);
+            }
+        }
+
         if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
             let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
             let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
@@ -1077,7 +1144,7 @@ impl ImageEditor {
 
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
-                Tool::Brush | Tool::Eraser => { self.texture_dirty = true; self.stroke_points.clear(); self.is_dragging = false; }
+                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.texture_dirty = true; self.stroke_points.clear(); self.is_dragging = false; }
                 Tool::Text => { self.text_drag = None; }
                 Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
@@ -1096,6 +1163,17 @@ impl ImageEditor {
                         self.apply_brush_stroke();
                         self.stroke_points.clear();
                         if self.tool == Tool::Brush { self.add_color_to_history(); }
+                    }
+                }
+                Tool::Retouch => {
+                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.push_undo();
+                        self.init_smudge_sample(ix, iy);
+                        self.stroke_points.clear();
+                        self.stroke_points.push((ix as f32, iy as f32));
+                        self.stroke_points.push((ix as f32 + 0.1, iy as f32 + 0.1));
+                        self.apply_retouch_stroke();
+                        self.stroke_points.clear();
                     }
                 }
                 Tool::Fill => {

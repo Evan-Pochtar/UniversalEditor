@@ -9,7 +9,7 @@ use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_B
 use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, CropState, TransformHandleSet,
-    BrushShape, BrushTextureMode,
+    BrushShape, BrushTextureMode, RetouchMode,
 };
 
 impl ImageEditor {
@@ -689,6 +689,260 @@ impl ImageEditor {
         }
     }
 
+    pub(super) fn init_smudge_sample(&mut self, ix: u32, iy: u32) {
+        if let Some(DynamicImage::ImageRgba8(buf)) = &self.image {
+            if ix < buf.width() && iy < buf.height() {
+                let p = buf.get_pixel(ix, iy);
+                self.retouch_smudge_sample = [
+                    p.0[0] as f32 / 255.0,
+                    p.0[1] as f32 / 255.0,
+                    p.0[2] as f32 / 255.0,
+                    p.0[3] as f32 / 255.0,
+                ];
+            }
+        }
+    }
+
+    pub(super) fn apply_retouch_stroke(&mut self) {
+        if let Some(img) = self.image.as_mut() {
+            if !matches!(img, DynamicImage::ImageRgba8(_)) {
+                *img = DynamicImage::ImageRgba8(img.to_rgba8());
+            }
+        }
+
+        if self.stroke_points.len() < 2 { return; }
+
+        let mode: RetouchMode = self.retouch_mode;
+        let radius: f32 = (self.retouch_size / 2.0).max(1.0);
+        let strength: f32 = self.retouch_strength.clamp(0.0, 1.0);
+        let softness: f32 = self.retouch_softness.clamp(0.0, 1.0);
+        let stroke: Vec<(f32, f32)> = self.stroke_points.clone();
+        let mut smudge: [f32; 4] = self.retouch_smudge_sample;
+
+        let buf: &mut ImageBuffer<Rgba<u8>, Vec<u8>> = match self.image.as_mut() {
+            Some(DynamicImage::ImageRgba8(b)) => b,
+            _ => return,
+        };
+        let width: u32 = buf.width();
+        let height: u32 = buf.height();
+
+        let step_dist: f32 = (radius * 0.4).max(0.5);
+
+        for i in 0..stroke.len().saturating_sub(1) {
+            let (x0, y0) = stroke[i];
+            let (x1, y1) = stroke[i + 1];
+            let dx: f32 = x1 - x0;
+            let dy: f32 = y1 - y0;
+            let seg_len: f32 = (dx * dx + dy * dy).sqrt();
+            let steps: usize = ((seg_len / step_dist).ceil() as usize).max(1);
+
+            for s in 0..=steps {
+                let t: f32 = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
+                let cx: f32 = x0 + dx * t;
+                let cy: f32 = y0 + dy * t;
+
+                let min_x: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
+                let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
+                let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
+                let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+
+                match mode {
+                    RetouchMode::Blur => {
+                        let mut changes: Vec<(u32, u32, Rgba<u8>)> = Vec::with_capacity(
+                            ((max_x - min_x) * (max_y - min_y)) as usize
+                        );
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let (mut sr, mut sg, mut sb, mut sa, mut count) =
+                                    (0u32, 0u32, 0u32, 0u32, 0u32);
+                                for ky in -1i32..=1 {
+                                    for kx in -1i32..=1 {
+                                        let nx: i32 = px as i32 + kx;
+                                        let ny: i32 = py as i32 + ky;
+                                        if nx >= 0 && ny >= 0 && (nx as u32) < width && (ny as u32) < height {
+                                            let p: Rgba<u8> = *buf.get_pixel(nx as u32, ny as u32);
+                                            sr += p.0[0] as u32; sg += p.0[1] as u32;
+                                            sb += p.0[2] as u32; sa += p.0[3] as u32;
+                                            count += 1;
+                                        }
+                                    }
+                                }
+                                if count == 0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let blend: f32 = falloff * strength;
+                                changes.push((px, py, Rgba([
+                                    retouch_lerp_u8(orig.0[0], (sr / count) as u8, blend),
+                                    retouch_lerp_u8(orig.0[1], (sg / count) as u8, blend),
+                                    retouch_lerp_u8(orig.0[2], (sb / count) as u8, blend),
+                                    retouch_lerp_u8(orig.0[3], (sa / count) as u8, blend),
+                                ])));
+                            }
+                        }
+                        for (px, py, pixel) in changes {
+                            buf.put_pixel(px, py, pixel);
+                        }
+                    }
+
+                    RetouchMode::Sharpen => {
+                        let mut changes: Vec<(u32, u32, Rgba<u8>)> = Vec::with_capacity(
+                            ((max_x - min_x) * (max_y - min_y)) as usize
+                        );
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let (mut sr, mut sg, mut sb, mut count) = (0u32, 0u32, 0u32, 0u32);
+                                for ky in -1i32..=1 {
+                                    for kx in -1i32..=1 {
+                                        let nx: i32 = px as i32 + kx;
+                                        let ny: i32 = py as i32 + ky;
+                                        if nx >= 0 && ny >= 0 && (nx as u32) < width && (ny as u32) < height {
+                                            let p: Rgba<u8> = *buf.get_pixel(nx as u32, ny as u32);
+                                            sr += p.0[0] as u32; sg += p.0[1] as u32;
+                                            sb += p.0[2] as u32; count += 1;
+                                        }
+                                    }
+                                }
+                                if count == 0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let [r, g, b, a] = orig.0;
+                                let amt: f32 = falloff * strength * 2.0;
+                                let nr: u8 = ((r as i32 + ((r as i32 - (sr / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                let ng: u8 = ((g as i32 + ((g as i32 - (sg / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                let nb: u8 = ((b as i32 + ((b as i32 - (sb / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                changes.push((px, py, Rgba([nr, ng, nb, a])));
+                            }
+                        }
+                        for (px, py, pixel) in changes {
+                            buf.put_pixel(px, py, pixel);
+                        }
+                    }
+
+                    RetouchMode::Smudge => {
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let blend: f32 = falloff * strength;
+                                buf.put_pixel(px, py, Rgba([
+                                    retouch_lerp_u8(orig.0[0], (smudge[0] * 255.0) as u8, blend),
+                                    retouch_lerp_u8(orig.0[1], (smudge[1] * 255.0) as u8, blend),
+                                    retouch_lerp_u8(orig.0[2], (smudge[2] * 255.0) as u8, blend),
+                                    orig.0[3],
+                                ]));
+                            }
+                        }
+                        let cxi: u32 = cx.clamp(0.0, (width - 1) as f32) as u32;
+                        let cyi: u32 = cy.clamp(0.0, (height - 1) as f32) as u32;
+                        let p: Rgba<u8> = *buf.get_pixel(cxi, cyi);
+                        smudge = [
+                            p.0[0] as f32 / 255.0,
+                            p.0[1] as f32 / 255.0,
+                            p.0[2] as f32 / 255.0,
+                            p.0[3] as f32 / 255.0,
+                        ];
+                    }
+
+                    RetouchMode::Vibrance => {
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let [r, g, b, a] = orig.0;
+                                let (h, s, v) = rgb_to_hsv(r, g, b);
+                                let delta: f32 = (strength - 0.5) * 2.0;
+                                let vib_factor: f32 = if delta >= 0.0 { 1.0 - s } else { s };
+                                let new_s: f32 = (s + delta * vib_factor * falloff).clamp(0.0, 1.0);
+                                let (nr, ng, nb) = hsv_to_rgb(h, new_s, v);
+                                buf.put_pixel(px, py, Rgba([nr, ng, nb, a]));
+                            }
+                        }
+                    }
+
+                    RetouchMode::Saturation => {
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let [r, g, b, a] = orig.0;
+                                let (h, s, v) = rgb_to_hsv(r, g, b);
+                                let delta: f32 = (strength - 0.5) * 2.0;
+                                let new_s: f32 = if delta >= 0.0 {
+                                    (s + delta * (1.0 - s) * falloff).clamp(0.0, 1.0)
+                                } else {
+                                    (s + delta * s * falloff).clamp(0.0, 1.0)
+                                };
+                                let (nr, ng, nb) = hsv_to_rgb(h, new_s, v);
+                                buf.put_pixel(px, py, Rgba([nr, ng, nb, a]));
+                            }
+                        }
+                    }
+
+                    RetouchMode::Temperature => {
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let [r, g, b, a] = orig.0;
+                                let delta: f32 = (strength - 0.5) * 2.0 * falloff;
+                                let shift: i32 = (delta * 35.0) as i32;
+                                buf.put_pixel(px, py, Rgba([
+                                    (r as i32 + shift).clamp(0, 255) as u8,
+                                    g,
+                                    (b as i32 - shift).clamp(0, 255) as u8,
+                                    a,
+                                ]));
+                            }
+                        }
+                    }
+
+                    RetouchMode::Brightness => {
+                        for py in min_y..max_y {
+                            for px in min_x..max_x {
+                                let ddx: f32 = px as f32 - cx;
+                                let ddy: f32 = py as f32 - cy;
+                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                if falloff <= 0.0 { continue; }
+                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
+                                let [r, g, b, a] = orig.0;
+                                let delta: f32 = (strength - 0.5) * 2.0 * falloff * 45.0;
+                                buf.put_pixel(px, py, Rgba([
+                                    (r as f32 + delta).clamp(0.0, 255.0) as u8,
+                                    (g as f32 + delta).clamp(0.0, 255.0) as u8,
+                                    (b as f32 + delta).clamp(0.0, 255.0) as u8,
+                                    a,
+                                ]));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = buf;
+        self.retouch_smudge_sample = smudge;
+        self.dirty = true;
+        self.texture_dirty = true;
+    }
+
     pub(super) fn apply_flip_h(&mut self) {
         let (old_w, flipped) = match &self.image { Some(img) => (img.width(), img.fliph()), None => return };
         self.transform_text_flip_h(old_w); self.image = Some(flipped);
@@ -753,6 +1007,11 @@ impl ImageEditor {
         self.filter_panel = FilterPanel::None;
         Ok(path)
     }
+}
+
+#[inline(always)]
+pub(super) fn retouch_lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8
 }
 
 #[inline(always)]
