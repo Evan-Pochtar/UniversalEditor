@@ -56,8 +56,21 @@ impl ImageEditor {
         };
 
         if spray_mode {
+            let mut dr_x0: u32 = u32::MAX;
+            let mut dr_y0: u32 = u32::MAX;
+            let mut dr_x1: u32 = 0;
+            let mut dr_y1: u32 = 0;
             for (si, &(cx, cy)) in self.stroke_points.iter().enumerate() {
                 let n = bs.spray_particles as usize;
+                let spray_x0: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
+                let spray_y0: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
+                let spray_x1: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
+                let spray_y1: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+                dr_x0 = dr_x0.min(spray_x0);
+                dr_y0 = dr_y0.min(spray_y0);
+                dr_x1 = dr_x1.max(spray_x1);
+                dr_y1 = dr_y1.max(spray_y1);
+
                 for pi in 0..n {
                     let seed: u64 = si as u64 * 65537 + pi as u64 * 1031 + cx as u64 * 17 + cy as u64 * 13;
                     let r1: f32 = brush_rand(seed).sqrt();
@@ -90,9 +103,18 @@ impl ImageEditor {
                     }
                 }
             }
-            self.dirty = true; self.texture_dirty = true;
+            self.dirty = true;
+            if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
+                self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
+            }
+            self.texture_dirty = true;
             return;
         }
+
+        let mut dr_x0: u32 = u32::MAX;
+        let mut dr_y0: u32 = u32::MAX;
+        let mut dr_x1: u32 = 0;
+        let mut dr_y1: u32 = 0;
 
         for i in 0..self.stroke_points.len().saturating_sub(1) {
             let (x0, y0) = self.stroke_points[i];
@@ -129,6 +151,11 @@ impl ImageEditor {
                 let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
                 let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
                 let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+
+                dr_x0 = dr_x0.min(min_x);
+                dr_y0 = dr_y0.min(min_y);
+                dr_x1 = dr_x1.max(max_x);
+                dr_y1 = dr_y1.max(max_y);
 
                 for py in min_y..max_y {
                     let dy_local: f32 = py as f32 - cy;
@@ -181,7 +208,11 @@ impl ImageEditor {
                 }
             }
         }
-        self.dirty = true; self.texture_dirty = true;
+        self.dirty = true;
+        if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
+            self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
+        }
+        self.texture_dirty = true;
     }
 
     pub(super) fn flood_fill(&mut self, start_x: u32, start_y: u32) {
@@ -728,6 +759,11 @@ impl ImageEditor {
 
         let step_dist: f32 = (radius * 0.4).max(0.5);
 
+        let mut dr_x0: u32 = u32::MAX;
+        let mut dr_y0: u32 = u32::MAX;
+        let mut dr_x1: u32 = 0;
+        let mut dr_y1: u32 = 0;
+
         for i in 0..stroke.len().saturating_sub(1) {
             let (x0, y0) = stroke[i];
             let (x1, y1) = stroke[i + 1];
@@ -745,6 +781,11 @@ impl ImageEditor {
                 let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
                 let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
                 let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+
+                dr_x0 = dr_x0.min(min_x);
+                dr_y0 = dr_y0.min(min_y);
+                dr_x1 = dr_x1.max(max_x);
+                dr_y1 = dr_y1.max(max_y);
 
                 match mode {
                     RetouchMode::Blur => {
@@ -999,6 +1040,9 @@ impl ImageEditor {
         let _ = buf;
         self.retouch_smudge_sample = smudge;
         self.dirty = true;
+        if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
+            self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
+        }
         self.texture_dirty = true;
     }
 

@@ -512,6 +512,7 @@ pub struct ImageEditor {
     pub(super) image: Option<DynamicImage>,
     pub(super) texture: Option<egui::TextureId>,
     pub(super) texture_dirty: bool,
+    pub(super) texture_dirty_rect: Option<[u32; 4]>,
     pub(super) file_path: Option<PathBuf>,
     pub(super) dirty: bool,
 
@@ -590,7 +591,7 @@ pub struct ImageEditor {
 impl ImageEditor {
     pub fn new() -> Self {
         Self {
-            image: None, texture: None, texture_dirty: false,
+            image: None, texture: None, texture_dirty: false, texture_dirty_rect: None,
             file_path: None, dirty: false,
             undo_stack: VecDeque::new(), redo_stack: VecDeque::new(),
             zoom: 1.0, pan: egui::Vec2::ZERO, fit_on_next_frame: true,
@@ -708,22 +709,78 @@ impl ImageEditor {
 
     pub(super) fn ensure_texture(&mut self, ctx: &egui::Context) {
         if !self.texture_dirty { return; }
-        let img: &DynamicImage = match &self.image { Some(i) => i, None => { self.texture_dirty = false; return; } };
+
+        let img: &DynamicImage = match &self.image {
+            Some(i) => i,
+            None => { self.texture_dirty = false; self.texture_dirty_rect = None; return; }
+        };
+
+        if let (Some(tex_id), Some([rx0, ry0, rx1, ry1])) = (self.texture, self.texture_dirty_rect) {
+            let rgba: ImageBuffer<Rgba<u8>, Vec<u8>> = img.to_rgba8();
+            let iw: u32 = rgba.width();
+            let ih: u32 = rgba.height();
+
+            let x0: u32 = rx0.min(iw);
+            let y0: u32 = ry0.min(ih);
+            let x1: u32 = rx1.min(iw);
+            let y1: u32 = ry1.min(ih);
+
+            if x0 < x1 && y0 < y1 {
+                let pw: usize = (x1 - x0) as usize;
+                let ph: usize = (y1 - y0) as usize;
+                let mut pixels: Vec<egui::Color32> = Vec::with_capacity(pw * ph);
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        let p: &Rgba<u8> = rgba.get_pixel(x, y);
+                        pixels.push(egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3]));
+                    }
+                }
+                let partial: egui::ColorImage = egui::ColorImage {
+                    size: [pw, ph],
+                    source_size: egui::vec2(pw as f32, ph as f32),
+                    pixels,
+                };
+                ctx.tex_manager().write().set(
+                    tex_id,
+                    egui::epaint::ImageDelta::partial([x0 as usize, y0 as usize], partial, egui::TextureOptions::default()),
+                );
+                self.texture_dirty = false;
+                self.texture_dirty_rect = None;
+                return;
+            }
+        }
+
         let rgba: ImageBuffer<Rgba<u8>, Vec<u8>> = img.to_rgba8();
-        let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+        let (w, h): (usize, usize) = (rgba.width() as usize, rgba.height() as usize);
         let color_image: egui::ColorImage = egui::ColorImage {
             size: [w, h],
             source_size: egui::vec2(w as f32, h as f32),
-            pixels: rgba.pixels().map(|p| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect(),
+            pixels: rgba.pixels().map(|p: &Rgba<u8>| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect(),
         };
-
         if let Some(texture_id) = self.texture {
             ctx.tex_manager().write().set(texture_id, egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default()));
         } else {
             self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), egui::TextureOptions::default()));
         }
-
         self.texture_dirty = false;
+        self.texture_dirty_rect = None;
+    }
+
+    #[inline]
+    pub(super) fn expand_dirty_rect(&mut self, x0: u32, y0: u32, x1: u32, y1: u32) {
+        match self.texture_dirty_rect {
+            None => {
+                if !self.texture_dirty {
+                    self.texture_dirty_rect = Some([x0, y0, x1, y1]);
+                }
+            }
+            Some(ref mut r) => {
+                r[0] = r[0].min(x0);
+                r[1] = r[1].min(y0);
+                r[2] = r[2].max(x1);
+                r[3] = r[3].max(y1);
+            }
+        }
     }
 
     pub(super) fn check_filter_completion(&mut self) {
