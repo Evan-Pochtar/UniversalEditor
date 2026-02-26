@@ -37,12 +37,10 @@ impl ValType {
     pub fn is_container(&self) -> bool { matches!(self, ValType::Array(_) | ValType::Object(_)) }
 }
 
-fn truncate_preview(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max])
-    }
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    let mut chars = s.chars();
+    let head: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() { format!("{}...", head) } else { head }
 }
 
 #[derive(Debug, Clone)]

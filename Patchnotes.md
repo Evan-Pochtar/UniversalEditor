@@ -108,3 +108,4 @@
 - **JSON EDITOR**: First prototype of the Json Editor
 
 #### Debugging
+- **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's

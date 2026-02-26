@@ -95,6 +95,7 @@
 - [ ] File information and search bar backgrounds do not go all the way to the right of the screen
 - [ ] Compact formatting does not show up in the text view
 - [ ] Format and sort combobox not centered in the toolbar
+- [ ] Search not navigating to results properly
 
 ### Other Bugs
 
