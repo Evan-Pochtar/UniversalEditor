@@ -54,6 +54,7 @@ pub struct JsonEditor {
 }
 
 impl JsonEditor {
+    pub fn is_dirty(&self) -> bool { self.dirty }
     pub fn new_empty() -> Self {
         let root = Value::Object(serde_json::Map::new());
         Self::from_value(root, None)
