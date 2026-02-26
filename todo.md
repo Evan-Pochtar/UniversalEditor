@@ -72,8 +72,9 @@
 - [x] Crop suddenly jumps when resizing vertically or horizontally
 - [x] Can't see cursor on unsaved changes popup
 - [ ] Star brush type doesn't really look star like
-- [ ] Weird sharpen artifacting on high amount in retouch 
-- [ ] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
+- [ ] Retouch tool bar is placed randomly, some things very high, some very low
+- [x] Weird sharpen artifacting on high amount in retouch 
+- [x] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -148,10 +149,10 @@
   - [x] Brightness
   - [x] Pixelate
   - [ ] Improve performance on bigger sizes
-  - [ ] Clearer slider for dark/light amount on brightness
-  - [ ] Clearer slider for cold/warm amount on temperature
-  - [ ] Clearer slider for difference between vibrant and non vibrant for vibrance
-  - [ ] Max sharpen amount?
+  - [x] Clearer slider for dark/light amount on brightness
+  - [x] Clearer slider for cold/warm amount on temperature
+  - [x] Clearer slider for difference between vibrant and non vibrant for vibrance
+  - [x] Max sharpen amount?
 - [ ] Shape tool
 - [x] Color picker
   - [x] Recent colors option in color picker
@@ -189,7 +190,7 @@
 - [x] Export with metadata
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
-- [ ] Filter preview before apply (on filter panel)
+- [x] Filter preview before apply (on filter panel)
 - [x] Turn filter panel into it's own modal
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files

@@ -579,6 +579,7 @@ pub struct ImageEditor {
 
     pub(super) filter_progress: Arc<Mutex<f32>>,
     pub(super) is_processing: bool,
+    pub(super) processing_is_preview: bool,
     pub(super) pending_filter_result: Arc<Mutex<Option<DynamicImage>>>,
 
     pub(super) retouch_mode: RetouchMode,
@@ -586,6 +587,10 @@ pub struct ImageEditor {
     pub(super) retouch_strength: f32,
     pub(super) retouch_softness: f32,
     pub(super) retouch_smudge_sample: [f32; 4],
+    pub(super) retouch_pixelate_block: u32,
+
+    pub(super) filter_preview_active: bool,
+    pub(super) filter_preview_image: Option<DynamicImage>,
 }
 
 impl ImageEditor {
@@ -620,12 +625,16 @@ impl ImageEditor {
             filter_panel_rect: None,
             filter_progress: Arc::new(Mutex::new(0.0)),
             is_processing: false,
+            processing_is_preview: false,
             pending_filter_result: Arc::new(Mutex::new(None)),
             retouch_mode: RetouchMode::Blur,
             retouch_size: 40.0,
             retouch_strength: 0.5,
             retouch_softness: 0.7,
             retouch_smudge_sample: [0.0; 4],
+            retouch_pixelate_block: 12,
+            filter_preview_active: false,
+            filter_preview_image: None,
         }
     }
 
@@ -651,6 +660,29 @@ impl ImageEditor {
             if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
             self.redo_stack.clear();
         }
+    }
+
+    pub(super) fn push_undo_from(&mut self, img: DynamicImage) {
+        self.undo_stack.push_back(img);
+        if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
+        self.redo_stack.clear();
+    }
+
+    pub(super) fn cancel_filter_preview(&mut self) {
+        if let Some(original) = self.filter_preview_image.take() {
+            self.image = Some(original);
+            self.texture_dirty = true;
+            self.dirty = true;
+        }
+        self.filter_preview_active = false;
+        self.processing_is_preview = false;
+    }
+
+    pub(super) fn accept_filter_preview(&mut self) {
+        if let Some(pre_preview) = self.filter_preview_image.take() {
+            self.push_undo_from(pre_preview);
+        }
+        self.filter_preview_active = false;
     }
     pub(super) fn undo(&mut self) {
         if let Some(prev) = self.undo_stack.pop_back() {
@@ -791,8 +823,12 @@ impl ImageEditor {
                 self.resize_w = result.width(); self.resize_h = result.height();
                 self.image = Some(result);
                 self.texture_dirty = true; self.dirty = true; self.is_processing = false;
-                self.filter_panel = FilterPanel::None;
-                if self.resize_w != 0 { self.fit_on_next_frame = true; }
+                if self.processing_is_preview {
+                    self.processing_is_preview = false;
+                } else {
+                    self.filter_panel = FilterPanel::None;
+                    if self.resize_w != 0 { self.fit_on_next_frame = true; }
+                }
             }
         }
     }

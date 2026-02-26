@@ -82,6 +82,8 @@
 - **IMG EDITOR**: Favorites added to the color picker (with keyboard shortcuts)
 - **IMG EDITOR**: Retouch tool added (Blur, Sharpen, Smudge, Vibrance, Saturation, Temperature, and Brightness)
 - **IMG EDITOR**: Added pixelate to retouch tool
+- **IMG EDITOR**: Added Gradient sliders for Hue, Brightness, Temperature, and Vibrance on both Filter Panel and Retouch tool
+- **IMG EDITOR**: Added Filter panel preview
 - **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
 - **TEXT EDITOR**: Default font size and font type can now be selected in settings
 - **TEXT EDITOR**: Adding functionality for checkbox lists
@@ -93,6 +95,9 @@
 - **IMG EDITOR**: Cursor now no longer disappears on color picker
 - **IMG EDITOR**: Cursor now no longer disappears on unsaved changes screen
 - **IMG EDITOR**: Crop tool now properly resizes
+- **IMG EDITOR**: Brushes, eraser, and retouch filters now no longer lag on large images
+- **IMG EDITOR**: Sharpen tool no longer immediately causes artifacting
+- **IMG EDITOR**: Zoom, Aspect Ratio, and Color Picker no longer are shown in Retouch tool
 - **GENERAL**: Console no longer opens on build executable
 - **GENERAL**: Menu version now displays cargo package version
 - **GENERAL**: Can no longer click on buttons in the background with the patch notes or settings modal up

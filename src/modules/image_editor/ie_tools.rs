@@ -853,7 +853,7 @@ impl ImageEditor {
                                 if count == 0 { continue; }
                                 let orig: Rgba<u8> = *buf.get_pixel(px, py);
                                 let [r, g, b, a] = orig.0;
-                                let amt: f32 = falloff * strength * 2.0;
+                                let amt: f32 = falloff * strength * 0.16;
                                 let nr: u8 = ((r as i32 + ((r as i32 - (sr / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
                                 let ng: u8 = ((g as i32 + ((g as i32 - (sg / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
                                 let nb: u8 = ((b as i32 + ((b as i32 - (sb / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
@@ -976,8 +976,7 @@ impl ImageEditor {
                     }
 
                     RetouchMode::Pixelate => {
-                        let block: u32 = (2.0 + strength * 30.0).round() as u32;
-                        let block: u32 = block.max(2);
+                        let block: u32 = self.retouch_pixelate_block.max(2);
                         let bx0: u32 = (min_x / block) * block;
                         let by0: u32 = (min_y / block) * block;
 
