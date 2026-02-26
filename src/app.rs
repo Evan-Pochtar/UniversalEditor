@@ -706,6 +706,7 @@ impl UniversalEditor {
                         
                         let mut new_text_file_clicked = false;
                         let mut image_editor_clicked = false;
+                        let mut json_editor_clicked = false;
                         let mut image_converter_clicked = false;
                         
                         let theme_mode = self.theme_mode;
@@ -717,14 +718,14 @@ impl UniversalEditor {
                             if style::sidebar_item(ui, "Image Editor", "I", theme_mode).clicked() {
                                 image_editor_clicked = true;
                             }
+                            if style::sidebar_item(ui, "Json Editor", "J", theme_mode).clicked() {
+                                json_editor_clicked = true;
+                            }
                         });
                         
-                        if new_text_file_clicked {
-                            self.new_text_file();
-                        }
-                        if image_editor_clicked {
-                            self.switch_to_module(self.create_image_editor_with_callback());
-                        }
+                        if new_text_file_clicked { self.new_text_file(); }
+                        if image_editor_clicked { self.switch_to_module(self.create_image_editor_with_callback()); }
+                        if json_editor_clicked { self.switch_to_module(Box::new(JsonEditor::new_empty())); }
                                                 
                         style::sidebar_section(ui, "Converters", &mut self.converters_expanded, theme_mode, |ui| {
                             if style::sidebar_item(ui, "Image Converter", "C", theme_mode).clicked() {
