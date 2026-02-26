@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
 use crate::modules::image_export::{ExportFormat, export_image};
-use super::EditorModule;
+use crate::modules::EditorModule;
 
 #[derive(Debug, Clone)]
 struct ImageFile {

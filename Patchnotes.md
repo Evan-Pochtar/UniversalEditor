@@ -1,9 +1,9 @@
-# Universal Editor Patchnotes
+# Universal Editor Patch Notes
 
 ## V0.0.1
 
 #### Features
-- **IMG2IMG COVNERTER**: Img2Img Converter added (jpeg, png, webp, bmp, tiff, ico file options)
+- **IMG2IMG CONVERTER**: Img2Img Converter added (jpeg, png, webp, bmp, tiff, ico file options)
 - **TEXT EDITOR**: Header Level 4 on Markdown Mode (E.g ####)
 - **TEXT EDITOR**: Adding warning dialogue for leaving an unsaved file.
 - **GENERAL**: Adding Logo
@@ -21,8 +21,8 @@
 - **IMG EDITOR**: Exporting to other image types now allowed (jpeg, png, webp, bmp, tiff, ico)
 - **IMG EDITOR**: Option for preservation of metadata
 - **IMG EDITOR**: Loading screen for applying filters
-- **IMG EDITOR**: Color picker now supports hexcodes
-- **IMG2IMG CONVERTER**: Error's in image processing now dispalyed on UI
+- **IMG EDITOR**: Color picker now supports hex codes
+- **IMG2IMG CONVERTER**: Error's in image processing now displayed on UI
 - **IMG2IMG CONVERTER**: .ico now has auto-scale to 256px option
 - **TEXT EDITOR**: Saved Toolbar/File info settings between sessions
 - **TEXT EDITOR**: Tooltips for Headers include Keyboard Shortcut
@@ -50,7 +50,7 @@
 - **GENERAL**: Adding icon to release build executable
 - **GENERAL**: Improved Home Page
 - **GENERAL**: Can now navigate to home page from any screen or converter
-- **GENERAL**: Improved Settings Menu and Patchnotes Parsing
+- **GENERAL**: Improved Settings Menu and Patch notes Parsing
 - **GENERAL**: Modals now close when clicked off from instead of just using the "x"
   
 #### Debugging
@@ -64,4 +64,40 @@
 - **IMG EDITOR**: Selecting another tool now properly deselects active textbox
 - **IMG EDITOR**: Sentences now wrap within text boxes
 - **IMG EDITOR**: Text boxes now use selected font properly
-- **IMG EDITOR**: Cusor no longer gets disconnected from text in text box
+- **IMG EDITOR**: Cursor no longer gets disconnected from text in text box
+
+## V0.0.4
+
+#### Features
+- **IMG EDITOR**: Filters and Transformations moved to top menu bar under "Image" and "Filter"
+- **IMG EDITOR**: Eraser now has option to remove background
+- **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
+- **IMG EDITOR**: Cursor now changes depending on current tool selected
+- **IMG EDITOR**: Filter panel is now it's own modal similar to the color picker
+- **IMG EDITOR**: Brush presets now available (Regular, Pen, Pencil, Crayon, Marker, Calligraphy Pen, Spray, Watercolor, Charcoal, Airbrush)
+- **IMG EDITOR**: Brush shapes now available (Circle, Square, Diamond, Flat (Calligraphy style), Star)
+- **IMG EDITOR**: Brush parameters are now changeable
+- **IMG EDITOR**: Saving custom brushes as favorites now available
+- **IMG EDITOR**: Brush Textures of different types (Rough, Paper, Canvas)
+- **IMG EDITOR**: Favorites added to the color picker (with keyboard shortcuts)
+- **IMG EDITOR**: Retouch tool added (Blur, Sharpen, Smudge, Vibrance, Saturation, Temperature, and Brightness)
+- **IMG EDITOR**: Added pixelate to retouch tool
+- **IMG EDITOR**: Added Gradient sliders for Hue, Brightness, Temperature, and Vibrance on both Filter Panel and Retouch tool
+- **IMG EDITOR**: Added Filter panel preview
+- **TEXT EDITOR**: Now uses Ubuntu and Roboto fonts instead of Mono and Sans
+- **TEXT EDITOR**: Default font size and font type can now be selected in settings
+- **TEXT EDITOR**: Adding functionality for checkbox lists
+- **TEXT EDITOR**: Adding functionality for block quotes
+- **TEXT EDITOR**: Adding functionality for bold and italic text together
+
+#### Debugging
+- **IMG EDITOR**: Eraser now properly erases to white background
+- **IMG EDITOR**: Cursor now no longer disappears on color picker
+- **IMG EDITOR**: Cursor now no longer disappears on unsaved changes screen
+- **IMG EDITOR**: Crop tool now properly resizes
+- **IMG EDITOR**: Brushes, eraser, and retouch filters now no longer lag on large images
+- **IMG EDITOR**: Sharpen tool no longer immediately causes artifacting
+- **IMG EDITOR**: Zoom, Aspect Ratio, and Color Picker no longer are shown in Retouch tool
+- **GENERAL**: Console no longer opens on build executable
+- **GENERAL**: Menu version now displays cargo package version
+- **GENERAL**: Can no longer click on buttons in the background with the patch notes or settings modal up

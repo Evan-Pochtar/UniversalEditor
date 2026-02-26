@@ -2,6 +2,8 @@
 
 Universal Editor is an all-in-one native desktop application built with Rust. The goal is to create a single environment where you can handle text, images, video, and data files without the overhead of web-based frameworks like Electron. It focuses on using systems-level programming to stay fast and light, even when dealing with files that are several gigabytes in size. This is extremely early in production and only an idea/prototype at the moment.
 
+Currently only tested on Windows 11.
+
 ## Core Approach
 
 The project is built around a "Kernel and Module" architecture. The main shell handles the windowing, GPU rendering, and global styling, while specific editors are plugged in as modules. By using egui, the interface stays responsive because it’s rendered directly on your graphics card. For text (so far), it uses a Rope data structure, which allows you to edit massive files by treating the text as a tree of chunks rather than one giant block of memory.

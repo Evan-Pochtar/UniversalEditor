@@ -16,7 +16,7 @@
   - [ ] Change checkmark close/open sidebar to a small arrow.
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [x] Unified Top Bar Handling
-- [ ] Better File System
+- [x] Better File System
 
 ## Screens
 
@@ -42,16 +42,16 @@
 ### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
-- [ ] Can't Combine Formatting - Medium
-- [ ] At 20 Font size with Sans font, code block doesn't format correctly.
+- [x] Can't Combine Formatting - Medium
+- [ ] Changing fonts sometimes causes code blocks to desync
 - [x] Code block cursor desync
 - [x] Code block desync with words right after/before code block
-- [x] Can click to non-existant line in markdown mode, desyncing cursor.
+- [x] Can click to non-existent line in markdown mode, desyncing cursor.
 - [x] Cannot use strikethrough keyboard shortcut.
 - [x] Punctuation after Underlined/Bolding/Italics doesn't render properly
 - [x] If there is a asterisk MUCH after the last italicized word, It will think it connected
   - Basically, make sure to not check asterisks that are actively being used in words.
-- [x] Bolding is barely noticable
+- [x] Bolding is barely noticeable
   - Seems like just turning the markdown text into same color as the plaintext will help a lot.
 - [x] Can't put punctuation after subscript or superscript.
 - [x] Features in top tool bar are not aligned.
@@ -62,12 +62,19 @@
 
 - [x] Can't just click to color for brush, must drag
 - [x] Color picker
-  - [x] Hexcode Does not update properly on color picker
+  - [x] Hex code Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
 - [x] Resize does not work if not aspect ratio locked
 - [x] Text tool currently not working
 - [x] Text Corner Resizing delta too fast, hard to select
+- [x] Eraser doesn't erase to white background, completely removes background
+- [x] Crop suddenly jumps when resizing vertically or horizontally
+- [x] Can't see cursor on unsaved changes popup
+- [ ] Star brush type doesn't really look star like
+- [ ] Retouch tool bar is placed randomly, some things very high, some very low
+- [x] Weird sharpen artifacting on high amount in retouch 
+- [x] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
 - [ ] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -75,7 +82,7 @@
   - [x] Cannot highlight text within text box
   - [x] When selecting another tool, text box should be deselected
   - [x] Text doesn't rotate with canvas on transform
-  - [x] Sentances don't wrap properly within text boxes
+  - [x] Sentences don't wrap properly within text boxes
   - [x] Doesn't actually use font's listed in text box
   - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
   - [x] Cursor getting disconnected from where text is actually being written.
@@ -87,6 +94,7 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [ ] Save warning dialogue does not show up on application close
+- [x] Can click on buttons in the background of the main menu with patch notes/settings modal up
 
 ## Features
 
@@ -110,6 +118,9 @@
   - [x] Add newlines after and before code in code block.
 - [x] Showing saved/unsaved
 - [x] Opening .md file automatically sets markdown mode
+- [x] Markdown checkbox lists (for example this one)
+- [x] Use given fonts instead of egui font families (E.g ubuntu and roboto)
+- [x] Default font and font size support
 - [ ] Latex?
 
 ### Image Editor
@@ -123,19 +134,32 @@
   - [ ] Ellipse
   - [ ] Free-hand lasso
   - [ ] Magic wand
+  - [ ] Copy/paste/cut within selection
 - [ ] Gradient tool
   - [ ] Linear
   - [ ] Radial
-- [ ] Performance
-  - [ ] Brush is slightly laggy, make more smooth on large images
-  - [x] Increase performance of filters on bigger images (E.g Blur)
-  - [ ] General performance and usability improvements
-  - [x] Add loading screen for filters etc.
+- [ ] Cutout tool
+- [ ] Retouch tool
+  - [x] Blur
+  - [x] Sharpen
+  - [x] Smudge
+  - [x] Vibrance
+  - [x] Saturation
+  - [x] Temperature
+  - [x] Brightness
+  - [x] Pixelate
+  - [ ] Improve performance on bigger sizes
+  - [x] Clearer slider for dark/light amount on brightness
+  - [x] Clearer slider for cold/warm amount on temperature
+  - [x] Clearer slider for difference between vibrant and non vibrant for vibrance
+  - [x] Max sharpen amount?
+- [ ] Shape tool
 - [x] Color picker
   - [x] Recent colors option in color picker
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
   - [ ] Add opacity to color picker
+  - [x] Add Favorites to color picker (with keyboard shortcuts)
 - [x] Better text selection/writing tool
   - [x] Easy selection of text
   - [x] Resize by corner drag
@@ -143,25 +167,36 @@
   - [x] Bold/Italics/Underlined Text
   - [x] Font picker
   - [x] Rotate
-- [ ] More brush presets or options
-  - [ ] Custom brush shapes?
+- [ ] Brush Settings Panel
+  - [x] Writing tools
+    - [x] Pen
+    - [x] Pencil
+    - [x] Crayon
+  - [x] Custom brush shapes
+  - [ ] Improve Presets to be more "realistic"
+  - [ ] Keyboard shortcuts to change between presets/favorite brushes
+  - [ ] Export custom brushes
+  - [ ] Improve realism of canvas and paper texture type
+  - [ ] Hover tooltips for more information about parameters
+  - [ ] Brush preview
+  - [ ] Library of custom brushes?
 - [x] Keyboard Shortcuts
 - [ ] Import Images into Canvas
-- [ ] Copy/paste/cut within selection
+  - [ ] Drag-and-drop image open
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
-- [ ] Canvas size (extend without scaling)
+- [x] Canvas size (extend without scaling)
 - [x] Export with metadata
 - [x] Export to other image types
 - [ ] Snap to grid for text/crop
-- [ ] Filter preview before apply
-- [ ] Drag-and-drop image open
+- [x] Filter preview before apply (on filter panel)
+- [x] Turn filter panel into it's own modal
 - [x] Improve button look when the screen/resolution is smaller
 - [x] Images show up in recent files
 - [x] Make image converter and image editor use the same export function
-- [ ] Add different cursors for different functions/tools
-- [ ] Crop should show preview of the size of the image
+- [x] Add different cursors for different functions/tools
+- [x] Crop should show preview of the size of the image
 
 ### CONVERTER: Img 2 Img
 

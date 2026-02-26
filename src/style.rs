@@ -1,9 +1,47 @@
 use eframe::egui;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ThemeMode {
-    Light,
-    Dark,
+pub enum ThemeMode { Light, Dark, }
+
+pub(crate) static FONT_UB_REG: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Regular.ttf");
+pub(crate) static FONT_UB_BLD: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Bold.ttf");
+pub(crate) static FONT_UB_ITL: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-Italic.ttf");
+pub(crate) static FONT_UB_BLD_ITL: &[u8] = include_bytes!("../assets/Ubuntu/Ubuntu-BoldItalic.ttf");
+pub(crate) static FONT_RB_REG: &[u8] = include_bytes!("../assets/Roboto/Roboto-Regular.ttf");
+pub(crate) static FONT_RB_BLD: &[u8] = include_bytes!("../assets/Roboto/Roboto-Bold.ttf");
+pub(crate) static FONT_RB_ITL: &[u8] = include_bytes!("../assets/Roboto/Roboto-Italic.ttf");
+pub(crate) static FONT_RB_BLD_ITL: &[u8] = include_bytes!("../assets/Roboto/Roboto-BoldItalic.ttf");
+
+pub fn register_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let entries: &[(&str, &'static [u8])] = &[
+        ("Ubuntu", FONT_UB_REG),
+        ("Ubuntu-Bold", FONT_UB_BLD),
+        ("Ubuntu-Italic", FONT_UB_ITL),
+        ("Ubuntu-BoldItalic", FONT_UB_BLD_ITL),
+        ("Roboto", FONT_RB_REG),
+        ("Roboto-Bold", FONT_RB_BLD),
+        ("Roboto-Italic", FONT_RB_ITL),
+        ("Roboto-BoldItalic", FONT_RB_BLD_ITL),
+    ];
+    for (name, bytes) in entries {
+        fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());
+        fonts.families.insert(egui::FontFamily::Name((*name).into()), vec![name.to_string()]);
+    }
+    ctx.set_fonts(fonts);
+}
+
+pub fn draw_modal_overlay(ctx: &egui::Context, id_salt: &str, alpha: u8) {
+    let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, alpha);
+    egui::Area::new(egui::Id::new(id_salt))
+        .fixed_pos(egui::pos2(0.0, 0.0))
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let screen = ctx.content_rect();
+            ui.painter().rect_filled(screen, 0.0, overlay);
+            ui.allocate_rect(screen, egui::Sense::click_and_drag());
+        });
 }
 
 pub struct ColorPalette;
@@ -108,6 +146,9 @@ impl ColorPalette {
     pub const TEAL_700: egui::Color32 = egui::Color32::from_rgb(15, 118, 110);
     pub const TEAL_800: egui::Color32 = egui::Color32::from_rgb(17, 94, 89);
     pub const TEAL_900: egui::Color32 = egui::Color32::from_rgb(19, 78, 74);
+
+    pub const MODAL_TAG_BG_DARK: egui::Color32 = egui::Color32::from_rgb(30, 40, 60);
+    pub const CHIP_BG_DARK: egui::Color32 = egui::Color32::from_rgb(35, 40, 55);
 }
 
 pub fn apply_theme(ctx: &egui::Context, theme: ThemeMode) {
@@ -198,11 +239,8 @@ fn apply_light_theme(style: &mut egui::Style) {
     style.visuals.hyperlink_color = ColorPalette::BLUE_600;
 }
 
-pub fn primary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui::Response {
-    let (bg_color, hover_color) = match theme {
-        ThemeMode::Dark => (ColorPalette::BLUE_600, ColorPalette::BLUE_500),
-        ThemeMode::Light => (ColorPalette::BLUE_600, ColorPalette::BLUE_500),
-    };
+pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let (bg_color, hover_color) = (ColorPalette::BLUE_600, ColorPalette::BLUE_500);
     
     ui.scope(|ui| {
         let style = ui.style_mut();

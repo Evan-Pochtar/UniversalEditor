@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_editor::TextEditor, image_converter::ImageConverter, image_editor::ImageEditor};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -71,8 +71,19 @@ impl RecentFiles {
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum ThemePreference { System, Light, Dark }
 
+fn default_font_name() -> String { "Ubuntu".to_string() }
+fn default_font_size() -> f32 { 14.0 }
+
 #[derive(Serialize, Deserialize)]
-struct AppSettings { theme_preference: ThemePreference, show_toolbar: bool, show_file_info: bool }
+struct AppSettings {
+    theme_preference: ThemePreference,
+    show_toolbar: bool,
+    show_file_info: bool,
+    #[serde(default = "default_font_name")]
+    default_font: String,
+    #[serde(default = "default_font_size")]
+    default_font_size: f32,
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -80,6 +91,8 @@ impl Default for AppSettings {
             theme_preference: ThemePreference::System,
             show_toolbar: true,
             show_file_info: true,
+            default_font: default_font_name(),
+            default_font_size: default_font_size(),
         }
     }
 }
@@ -138,6 +151,8 @@ pub struct UniversalEditor {
     recent_files_expanded: bool,
     show_toolbar: bool,
     show_file_info: bool,
+    default_font: String,
+    default_font_size: f32,
     show_unsaved_dialog: bool,
     show_patch_notes: bool,
     show_settings: bool,
@@ -165,7 +180,8 @@ impl UniversalEditor {
         };
         
         style::apply_theme(&cc.egui_ctx, initial_theme);
-        
+        style::register_fonts(&cc.egui_ctx);
+
         let (tx, rx) = sync_channel(20);
 
         let patch_content = include_str!("../Patchnotes.md");
@@ -233,6 +249,8 @@ impl UniversalEditor {
             recent_files_expanded: false,
             show_toolbar: settings.show_toolbar,
             show_file_info: settings.show_file_info,
+            default_font: settings.default_font,
+            default_font_size: settings.default_font_size,
             show_unsaved_dialog: false,
             show_patch_notes: false,
             show_settings: false,
@@ -265,31 +283,41 @@ impl UniversalEditor {
         false
     }
 
+    fn apply_default_font(&self, editor: &mut TextEditor) {
+        editor.set_default_font(
+            egui::FontFamily::Name(self.default_font.clone().into()),
+            self.default_font_size,
+        );
+    }
+
+    fn module_from_path(&self, path: PathBuf) -> Box<dyn EditorModule> {
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase());
+
+        match ext.as_deref() {
+            Some("jpg") | Some("jpeg") | Some("png") | Some("webp") |
+            Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
+                let mut editor = ImageEditor::load(path);
+                let tx = self.recent_file_tx.clone();
+                editor.set_file_callback(Box::new(move |p: PathBuf| { let _ = tx.send(p); }));
+                Box::new(editor)
+            }
+            _ => {
+                let mut editor = TextEditor::load(path);
+                self.apply_default_font(&mut editor);
+                Box::new(editor)
+            }
+        }
+    }
+
     fn open_file(&mut self, path: PathBuf) {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::OpenFile(path));
             self.show_unsaved_dialog = true;
         } else {
             self.recent_files.add_file(path.clone());
-            
-            let ext = path.extension()
-                .and_then(|e| e.to_str())
-                .map(|s| s.to_lowercase());
-            
-            let module: Box<dyn EditorModule> = match ext.as_deref() {
-                Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
-                Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
-                    let mut editor = ImageEditor::load(path);
-                    let tx = self.recent_file_tx.clone();
-                    editor.set_file_callback(Box::new(move |p: PathBuf| {
-                        let _ = tx.send(p);
-                    }));
-                    Box::new(editor)
-                }
-                _ => Box::new(TextEditor::load(path)),
-            };
-            
-            self.active_module = Some(module);
+            self.active_module = Some(self.module_from_path(path));
         }
     }
 
@@ -298,7 +326,9 @@ impl UniversalEditor {
             self.pending_action = Some(PendingAction::NewFile);
             self.show_unsaved_dialog = true;
         } else {
-            self.active_module = Some(Box::new(TextEditor::new_empty()));
+            let mut editor = TextEditor::new_empty();
+            self.apply_default_font(&mut editor);
+            self.active_module = Some(Box::new(editor));
         }
     }
 
@@ -325,28 +355,12 @@ impl UniversalEditor {
             match action {
                 PendingAction::OpenFile(path) => {
                     self.recent_files.add_file(path.clone());
-                    
-                    let ext = path.extension()
-                        .and_then(|e| e.to_str())
-                        .map(|s| s.to_lowercase());
-                    
-                    let module: Box<dyn EditorModule> = match ext.as_deref() {
-                        Some("jpg") | Some("jpeg") | Some("png") | Some("webp") | 
-                        Some("bmp") | Some("tiff") | Some("tif") | Some("gif") | Some("ico") => {
-                            let mut editor = ImageEditor::load(path);
-                            editor.set_file_callback(Box::new(move |p: PathBuf| {
-                                let mut recent = RecentFiles::load();
-                                recent.add_file(p);
-                            }));
-                            Box::new(editor)
-                        }
-                        _ => Box::new(TextEditor::load(path)),
-                    };
-                    
-                    self.active_module = Some(module);
+                    self.active_module = Some(self.module_from_path(path));
                 }
                 PendingAction::NewFile => {
-                    self.active_module = Some(Box::new(TextEditor::new_empty()));
+                    let mut editor = TextEditor::new_empty();
+                    self.apply_default_font(&mut editor);
+                    self.active_module = Some(Box::new(editor));
                 }
                 PendingAction::SwitchModule(module) => {
                     self.active_module = Some(module);
@@ -364,6 +378,8 @@ impl UniversalEditor {
             theme_preference: self.theme_preference,
             show_toolbar: self.show_toolbar,
             show_file_info: self.show_file_info,
+            default_font: self.default_font.clone(),
+            default_font_size: self.default_font_size,
         };
         settings.save();
     }
@@ -383,31 +399,13 @@ impl UniversalEditor {
             return;
         }
 
-        let (bg_color, border_color, text_color, overlay_color) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (
-                ColorPalette::ZINC_800,
-                ColorPalette::ZINC_700,
-                ColorPalette::ZINC_100,
-                egui::Color32::from_rgba_premultiplied(0, 0, 0, 200),
-            )
+        let (bg_color, border_color, text_color) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_100)
         } else {
-            (
-                egui::Color32::WHITE,
-                ColorPalette::GRAY_300,
-                ColorPalette::GRAY_900,
-                egui::Color32::from_rgba_premultiplied(0, 0, 0, 150),
-            )
+            (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900)
         };
 
-        egui::Area::new(egui::Id::new("overlay"))
-            .fixed_pos(egui::pos2(0.0, 0.0))
-            .order(egui::Order::Foreground)
-            .interactable(false)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.content_rect();
-                let painter = ui.painter();
-                painter.rect_filled(screen_rect, 0.0, overlay_color);
-            });
+        style::draw_modal_overlay(ctx, "unsaved_overlay", 200);
 
         egui::Window::new("Unsaved Changes")
             .collapsible(false)
@@ -442,7 +440,7 @@ impl UniversalEditor {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 12.0;
                         
-                        let save_clicked = style::primary_button(ui, "Save", self.theme_mode).clicked();
+                        let save_clicked = style::primary_button(ui, "Save").clicked();
                         let dont_save_clicked = style::secondary_button(ui, "Don't Save", self.theme_mode).clicked();
                         let cancel_clicked = style::secondary_button(ui, "Cancel", self.theme_mode).clicked();
                         
@@ -639,6 +637,52 @@ impl UniversalEditor {
                         ui.close();
                     }
                 });
+
+                if !contributions.image_items.is_empty() {
+                    ui.menu_button("Image", |ui| {
+                        for (item, action) in &contributions.image_items {
+                            if item.label == "Separator" {
+                                ui.separator();
+                                continue;
+                            }
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+
+                if !contributions.filter_items.is_empty() {
+                    ui.menu_button("Filter", |ui| {
+                        for (item, action) in &contributions.filter_items {
+                            if item.label == "Separator" {
+                                ui.separator();
+                                continue;
+                            }
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
+                            
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
             });
             ui.add_space(4.0);
         });
@@ -798,7 +842,7 @@ impl UniversalEditor {
                                     .inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 })
                                     .show(ui, |ui| {
                                         ui.label(
-                                            egui::RichText::new("v0.0.3")
+                                            egui::RichText::new("v".to_owned() + env!("CARGO_PKG_VERSION"))
                                                 .size(11.0)
                                                 .color(ver_text_col),
                                         );
@@ -869,7 +913,7 @@ impl UniversalEditor {
                             theme,
                         ).clicked() { open_file = true; }
                     });
-                    if open_new  { action = Some(HomeAction::NewTextFile); }
+                    if open_new { action = Some(HomeAction::NewTextFile); }
                     if open_file { action = Some(HomeAction::OpenFile); }
 
                     ui.add_space(32.0);
@@ -883,7 +927,7 @@ impl UniversalEditor {
                         if style::tool_card(
                             &mut cols[0],
                             "Text Editor",
-                            "Rich editing with undo history",
+                            "Rich editing in both markdown and plaintext",
                             ColorPalette::BLUE_500,
                             theme,
                         ).clicked() { open_text_ed = true; }
@@ -951,19 +995,13 @@ impl UniversalEditor {
 
     fn render_settings_modal(&mut self, ctx: &egui::Context) {
         if !self.show_settings { return; }
-        let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
-        egui::Area::new(egui::Id::new("settings_overlay"))
-            .fixed_pos(egui::pos2(0.0, 0.0))
-            .order(egui::Order::Foreground)
-            .interactable(false)
-            .show(ctx, |ui| {
-                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
-            });
 
-        let (bg, border, heading, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
+        style::draw_modal_overlay(ctx, "settings_overlay", 160);
+
+        let (bg, border, muted, text) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
         } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
         };
 
         let mut sys_clicked = false;
@@ -981,9 +1019,6 @@ impl UniversalEditor {
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Settings").size(20.0).strong().color(heading));
-                ui.add_space(16.0);
-
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     let tabs = [(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor")];
@@ -1011,9 +1046,9 @@ impl UniversalEditor {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Theme").size(14.0).color(text));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                dark_clicked  = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark),   "Dark").clicked();
-                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light),  "Light").clicked();
-                                sys_clicked   = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
+                                dark_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark), "Dark").clicked();
+                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light), "Light").clicked();
+                                sys_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").clicked();
                             });
                         });
                     }
@@ -1033,6 +1068,43 @@ impl UniversalEditor {
                                 if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
                             });
                         });
+
+                        ui.add_space(16.0);
+                        ui.label(egui::RichText::new("TYPOGRAPHY").size(11.0).color(muted));
+                        ui.add_space(10.0);
+                        let font_changed = false;
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Default Font").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.selectable_label(self.default_font == "Roboto", "Roboto").clicked() {
+                                    self.default_font = "Roboto".to_string();
+                                    prefs_changed = true;
+                                }
+                                if ui.selectable_label(self.default_font == "Ubuntu", "Ubuntu").clicked() {
+                                    self.default_font = "Ubuntu".to_string();
+                                    prefs_changed = true;
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
+                        let mut size_changed = false;
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Default Font Size").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(
+                                    egui::DragValue::new(&mut self.default_font_size)
+                                        .range(8.0..=72.0)
+                                        .speed(0.5)
+                                        .suffix(" pt"),
+                                ).changed() {
+                                    size_changed = true;
+                                }
+                            });
+                        });
+
+                        if font_changed || size_changed {
+                            prefs_changed = true;
+                        }
                     }
                 }
             });
@@ -1070,19 +1142,12 @@ impl UniversalEditor {
     fn render_patch_notes_modal(&mut self, ctx: &egui::Context) {
         if !self.show_patch_notes { return; }
 
-        let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, 160);
-        egui::Area::new(egui::Id::new("patchnotes_overlay"))
-            .fixed_pos(egui::pos2(0.0, 0.0))
-            .order(egui::Order::Foreground)
-            .interactable(false)
-            .show(ctx, |ui| {
-                ui.painter().rect_filled(ctx.content_rect(), 0.0, overlay);
-            });
+        style::draw_modal_overlay(ctx, "patchnotes_overlay", 160);
 
-        let (bg, border, heading, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
-            (egui::Color32::from_rgb(22, 22, 27), ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_500, ColorPalette::SLATE_200, egui::Color32::from_rgb(30, 40, 60))
+        let (bg, border, muted, text, tag_bg) = if matches!(self.theme_mode, ThemeMode::Dark) {
+            (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200, ColorPalette::MODAL_TAG_BG_DARK)
         } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_400, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
+            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
         };
 
         let mut open = self.show_patch_notes;
@@ -1099,8 +1164,6 @@ impl UniversalEditor {
             .open(&mut open)
             .order(egui::Order::Tooltip)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Patch Notes").size(20.0).strong().color(heading));
-                ui.add_space(20.0);
 
                 egui::ScrollArea::vertical()
                     .max_height(420.0)
@@ -1137,7 +1200,7 @@ impl UniversalEditor {
                                         ui.add_space(10.0);
                                         if !note.module_tag.is_empty() {
                                             let (chip_bg, chip_text) = if matches!(self.theme_mode, ThemeMode::Dark) {
-                                                (egui::Color32::from_rgb(35, 40, 55), ColorPalette::BLUE_400)
+                                                (ColorPalette::CHIP_BG_DARK, ColorPalette::BLUE_400)
                                             } else {
                                                 (ColorPalette::BLUE_50, ColorPalette::BLUE_600)
                                             };
@@ -1225,6 +1288,8 @@ impl eframe::App for UniversalEditor {
             }
         });
 
-        self.render_unsaved_dialog(ctx);
+        if self.show_unsaved_dialog {
+            ctx.set_cursor_icon(egui::CursorIcon::Default);
+        }
     }
 }
