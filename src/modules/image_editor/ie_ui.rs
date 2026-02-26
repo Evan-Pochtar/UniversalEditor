@@ -228,61 +228,49 @@ impl ImageEditor {
                                         let strength_label: &str = self.retouch_mode.strength_label();
                                         match self.retouch_mode {
                                             RetouchMode::Brightness => {
-                                                ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(
-                                                        ui,
-                                                        &mut self.retouch_strength,
-                                                        0.0, 1.0,
-                                                        egui::Color32::from_rgb(18, 18, 18),
-                                                        egui::Color32::from_rgb(255, 255, 240),
-                                                        "Dark",
-                                                        "Light",
-                                                        |v| format!("{:.0}%", v * 100.0),
-                                                        true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.spacing_mut().slider_width = 200.0;
+                                                ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
+                                                gradient_slider_ui(
+                                                    ui,
+                                                    &mut self.retouch_strength,
+                                                    0.0, 1.0,
+                                                    egui::Color32::from_rgb(18, 18, 18),
+                                                    egui::Color32::from_rgb(255, 255, 240),
+                                                    "Dark",
+                                                    "Light",
+                                                    |v| format!("{:.0}%", v * 100.0),
+                                                    true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Temperature => {
-                                                ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Shift:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(
-                                                        ui,
-                                                        &mut self.retouch_strength,
-                                                        0.0, 1.0,
-                                                        egui::Color32::from_rgb(70, 130, 220),
-                                                        egui::Color32::from_rgb(250, 150, 40),
-                                                        "Cool",
-                                                        "Warm",
-                                                        |v| format!("{:.0}%", v * 100.0),
-                                                        true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.spacing_mut().slider_width = 200.0;
+                                                ui.label(egui::RichText::new("Shift:").size(12.0).color(label_col));
+                                                gradient_slider_ui(
+                                                    ui,
+                                                    &mut self.retouch_strength,
+                                                    0.0, 1.0,
+                                                    egui::Color32::from_rgb(70, 130, 220),
+                                                    egui::Color32::from_rgb(250, 150, 40),
+                                                    "Cool",
+                                                    "Warm",
+                                                    |v| format!("{:.0}%", v * 100.0),
+                                                    true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Vibrance => {
-                                                ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Boost:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(
-                                                        ui,
-                                                        &mut self.retouch_strength,
-                                                        0.0, 1.0,
-                                                        egui::Color32::from_rgb(130, 130, 130),
-                                                        egui::Color32::from_rgb(60, 190, 230),
-                                                        "Muted",
-                                                        "Vivid",
-                                                        |v| format!("{:.0}%", v * 100.0),
-                                                        true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.spacing_mut().slider_width = 200.0;
+                                                ui.label(egui::RichText::new("Boost:").size(12.0).color(label_col));
+                                                gradient_slider_ui(
+                                                    ui,
+                                                    &mut self.retouch_strength,
+                                                    0.0, 1.0,
+                                                    egui::Color32::from_rgb(130, 130, 130),
+                                                    egui::Color32::from_rgb(60, 190, 230),
+                                                    "Muted",
+                                                    "Vivid",
+                                                    |v| format!("{:.0}%", v * 100.0),
+                                                    true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Pixelate => {
                                                 ui.label(egui::RichText::new("Block Size:").size(12.0).color(label_col));
@@ -2016,31 +2004,32 @@ fn gradient_slider_ui(
     drag_display_scale: f32,
     drag_suffix: &str,
 ) -> bool {
-    let mut changed = false;
-    let range = (max - min).max(1e-6_f32);
-    let t_norm = ((*value - min) / range).clamp(0.0, 1.0);
-    let val_str = fmt(*value);
+    let mut changed: bool = false;
+    let range: f32 = (max - min).max(1e-6_f32);
+    let t_norm: f32 = ((*value - min) / range).clamp(0.0, 1.0);
+    let val_str: String = fmt(*value);
 
-    let slider_width = ui.spacing().slider_width;
-    let track_h    = 12.0_f32;
-    let label_h    = 14.0_f32;
-    let handle_r   = 9.0_f32;
-    let total_h    = handle_r * 2.0 + label_h + 2.0;
+    let slider_width: f32 = ui.spacing().slider_width;
+    let track_h: f32 = 12.0;
+    let label_h: f32 = 14.0;
+    let handle_r: f32 = 9.0;
+    let total_h: f32 = handle_r * 2.0 + label_h + 2.0;
+    let dv_w: f32 = if drag_input { 52.0 } else { 36.0 };
+    let total_w: f32 = slider_width + 6.0 + dv_w;
 
-    let center_pad: f32 = ((ui.available_width() - slider_width) * 0.5).max(0.0);
-
-    let inner = ui.horizontal(|ui: &mut egui::Ui| {
-        ui.add_space(center_pad);
+    let inner: egui::InnerResponse<egui::Response> = ui.allocate_ui_with_layout(
+        egui::vec2(total_w, total_h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui: &mut egui::Ui| {
         let (rect, resp) = ui.allocate_exact_size(
             egui::vec2(slider_width, total_h),
             egui::Sense::click_and_drag(),
         );
 
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-
-            let track_top = rect.min.y + handle_r - track_h / 2.0;
-            let track_rect = egui::Rect::from_min_size(
+            let painter: &egui::Painter = ui.painter();
+            let track_top: f32 = rect.min.y + handle_r - track_h / 2.0;
+            let track_rect: egui::Rect = egui::Rect::from_min_size(
                 egui::pos2(rect.min.x, track_top),
                 egui::vec2(rect.width(), track_h),
             );
@@ -2081,26 +2070,25 @@ fn gradient_slider_ui(
             painter.circle_stroke(handle_center, handle_r, egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 90, 90)));
         }
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
-            if drag_input {
-                let mut display_val = (*value * drag_display_scale).round() as i32;
-                let display_min = (min * drag_display_scale).round() as i32;
-                let display_max = (max * drag_display_scale).round() as i32;
-                let dv = egui::DragValue::new(&mut display_val)
-                    .range(display_min..=display_max)
-                    .speed(1)
-                    .suffix(drag_suffix)
-                    .min_decimals(0)
-                    .max_decimals(0);
-                if ui.add(dv).changed() {
-                    *value = display_val as f32 / drag_display_scale;
-                    changed = true;
-                }
-            } else {
-                ui.label(egui::RichText::new(&val_str).size(11.0).strong()
-                    .color(egui::Color32::from_rgba_unmultiplied(210, 210, 210, 240)));
+        ui.add_space(6.0);
+        if drag_input {
+            let mut display_val = (*value * drag_display_scale).round() as i32;
+            let display_min = (min * drag_display_scale).round() as i32;
+            let display_max = (max * drag_display_scale).round() as i32;
+            let dv = egui::DragValue::new(&mut display_val)
+                .range(display_min..=display_max)
+                .speed(1)
+                .suffix(drag_suffix)
+                .min_decimals(0)
+                .max_decimals(0);
+            if ui.add(dv).changed() {
+                *value = display_val as f32 / drag_display_scale;
+                changed = true;
             }
-        });
+        } else {
+            ui.label(egui::RichText::new(&val_str).size(11.0).strong()
+                .color(egui::Color32::from_rgba_unmultiplied(210, 210, 210, 240)));
+        }
 
         resp
     });
