@@ -101,3 +101,10 @@
 - **GENERAL**: Console no longer opens on build executable
 - **GENERAL**: Menu version now displays cargo package version
 - **GENERAL**: Can no longer click on buttons in the background with the patch notes or settings modal up
+
+## V0.0.5
+
+#### Features
+- **JSON EDITOR**: First prototype of the Json Editor
+
+#### Debugging

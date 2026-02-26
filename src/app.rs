@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -129,7 +129,7 @@ impl AppSettings {
 enum PendingAction { OpenFile(PathBuf), NewFile, SwitchModule(Box<dyn EditorModule>), GoHome, Exit }
 
 #[derive(PartialEq)]
-enum HomeAction { NewTextFile, OpenFile, ImageEditor, ImageConverter, ShowSettings, ShowPatchNotes }
+enum HomeAction { NewTextFile, OpenFile, ImageEditor, JsonEditor, ImageConverter, ShowSettings, ShowPatchNotes }
 
 struct PatchNote { module_tag: String,text: String }
 
@@ -302,6 +302,9 @@ impl UniversalEditor {
                 let tx = self.recent_file_tx.clone();
                 editor.set_file_callback(Box::new(move |p: PathBuf| { let _ = tx.send(p); }));
                 Box::new(editor)
+            }
+            Some("json") => {
+                Box::new(JsonEditor::load(path))
             }
             _ => {
                 let mut editor = TextEditor::load(path);
@@ -493,7 +496,7 @@ impl UniversalEditor {
                     }
                     if ui.button("Open...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("All Files", &["txt", "md", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
+                            .add_filter("All Files", &["txt", "md", "json", "jpg", "jpeg", "png", "webp", "bmp", "tiff", "tif", "gif", "ico"])
                             .pick_file() 
                         {
                             self.open_file(path);
@@ -923,6 +926,7 @@ impl UniversalEditor {
 
                     let mut open_text_ed  = false;
                     let mut open_image_ed = false;
+                    let mut open_json_ed = false;
                     ui.columns(3, |cols| {
                         if style::tool_card(
                             &mut cols[0],
@@ -940,10 +944,17 @@ impl UniversalEditor {
                             theme,
                         ).clicked() { open_image_ed = true; }
 
-                        style::tool_card_placeholder(&mut cols[2], "More Coming Soon", theme);
+                        if style::tool_card(
+                            &mut cols[2],
+                            "Json Editor",
+                            "Edit JSON with Tree and Text views",
+                            ColorPalette::AMBER_500,
+                            theme,
+                        ).clicked() { open_json_ed = true; }
                     });
                     if open_text_ed  { action = Some(HomeAction::NewTextFile); }
                     if open_image_ed { action = Some(HomeAction::ImageEditor); }
+                    if open_json_ed { action = Some(HomeAction::JsonEditor); }
 
                     ui.add_space(32.0);
 
@@ -973,7 +984,7 @@ impl UniversalEditor {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("All Files", &[
                         "txt", "md", "jpg", "jpeg", "png",
-                        "webp", "bmp", "tiff", "tif", "gif", "ico",
+                        "webp", "bmp", "tiff", "tif", "gif", "ico", "json"
                     ])
                     .pick_file()
                 {
@@ -983,6 +994,9 @@ impl UniversalEditor {
             Some(HomeAction::ImageEditor) => {
                 let m = self.create_image_editor_with_callback();
                 self.switch_to_module(m);
+            }
+            Some(HomeAction::JsonEditor) => {
+                self.switch_to_module(Box::new(JsonEditor::new_empty()));
             }
             Some(HomeAction::ImageConverter) => {
                 self.switch_to_module(Box::new(ImageConverter::new()));

@@ -89,6 +89,13 @@
   - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
+### Json Editor Bugs
+- [ ] Going into Tree view causes "modified" tag to show up
+- [ ] Error popup in text view should hug right side, also text leaves the size of the box
+- [ ] File information and search bar backgrounds do not go all the way to the right of the screen
+- [ ] Compact formatting does not show up in the text view
+- [ ] Format and sort combobox not centered in the toolbar
+
 ### Other Bugs
 
 - [x] Sidebar down arrow shows as empty square
@@ -197,6 +204,20 @@
 - [x] Make image converter and image editor use the same export function
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
+
+### Json Editor
+- [ ] Make the sorting make a little more sense
+- [ ] Add key popup needs a little more information
+- [ ] Need to add more space for text in very long key values
+- [ ] Search should only show up when clicking ctrl+f
+- [ ] Undo and Redo can be moved to top bar
+- [ ] Change cursor when hovering over buttons/navigation
+  - [ ] Make navigation bigger and more noticeable
+- [ ] Give the ability to show/hide file information
+- [ ] Add true "Table" view, should look like an excel table for example
+- [ ] Option to increase size of each row in the tree view
+- [ ] Add line numbers to text view
+- [ ] Create JSON styling file, move out of ui file
 
 ### CONVERTER: Img 2 Img
 

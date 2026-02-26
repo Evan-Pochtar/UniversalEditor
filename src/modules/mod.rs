@@ -1,31 +1,23 @@
 use eframe::egui;
 use std::any::Any;
 
+pub mod json_editor;
 pub mod text_editor;
 pub mod image_editor;
 pub mod converters;
 pub mod helpers;
 
+pub mod json_edit {pub use super::json_editor::JsonEditor; }
 pub mod image_edit { pub use super::image_editor::ImageEditor; }
 pub mod image_converter { pub use super::converters::image_converter::ImageConverter; }
 pub mod image_export { pub use super::helpers::image_export::{ExportFormat, export_image}; }
 pub mod text_edit { pub use super::text_editor::TextEditor; }
 
 #[derive(Clone, Debug)]
-pub enum MenuAction {
-    Undo,
-    Redo,
-    Export,
-    None,
-    Custom(String),
-}
+pub enum MenuAction { Undo, Redo, Export, None, Custom(String) }
 
 #[derive(Clone)]
-pub struct MenuItem {
-    pub label: String,
-    pub shortcut: Option<String>,
-    pub enabled: bool,
-}
+pub struct MenuItem { pub label: String, pub shortcut: Option<String>, pub enabled: bool }
 
 #[derive(Default)]
 pub struct MenuContribution {
