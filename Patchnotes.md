@@ -111,3 +111,5 @@
 
 #### Debugging
 - **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's
+- **JSON EDITOR**: Search now properly navigates to searched keys/values
+- **JSON EDITOR**: Error popup text no longer leaves the popup

@@ -46,7 +46,7 @@ impl JsonEditor {
 
                 ui.label(egui::RichText::new("Sort:").size(12.0).color(c_muted(dark)));
                 ui.vertical(|ui: &mut egui::Ui| {
-                    egui::ComboBox::from_id_salt("jp_sort")
+                    egui::ComboBox::from_id_salt("je_sort")
                         .selected_text(egui::RichText::new(sort_label(self.sort_mode)).size(12.0))
                         .width(120.0)
                         .show_ui(ui, |ui| { for m in [SortMode::None, SortMode::KeyAsc, SortMode::KeyDesc, SortMode::ValueAsc, SortMode::ValueDesc] {
@@ -59,7 +59,7 @@ impl JsonEditor {
                 ui.label(egui::RichText::new("Export Format:").size(12.0).color(c_muted(dark)));
                 ui.vertical(|ui: &mut egui::Ui| {
                     let fmt_label = if self.export_pretty { "Pretty" } else { "Compact" };
-                    egui::ComboBox::from_id_salt("jp_fmt")
+                    egui::ComboBox::from_id_salt("je_fmt")
                         .selected_text(egui::RichText::new(fmt_label).size(12.0))
                         .width(80.0)
                         .show_ui(ui, |ui| {
@@ -133,7 +133,7 @@ impl JsonEditor {
                 }
 
                 ui.vertical(|ui: &mut egui::Ui| {
-                    egui::ComboBox::from_id_salt("jp_search_target")
+                    egui::ComboBox::from_id_salt("je_search_target")
                         .selected_text(egui::RichText::new(search_target_label(self.search_target)).size(12.0))
                         .width(70.0)
                         .show_ui(ui, |ui| {
@@ -216,7 +216,9 @@ impl JsonEditor {
                     egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(52.0, 24.0))
                 );
                 if resp.clicked() && !selected {
-                    if self.view_mode == JsonViewMode::Text { let _ = self.commit_text_to_root(); }
+                    if self.view_mode == JsonViewMode::Text && self.text_modified {
+                        let _ = self.commit_text_to_root();
+                    }
                     self.view_mode = mode;
                     if mode == JsonViewMode::Text { self.sync_text_from_root(); }
                 }
@@ -272,10 +274,18 @@ impl JsonEditor {
 
         let total_h: f32 = flat_len as f32 * ROW_H;
         let current_edit: Option<EditCell> = self.edit_cell.clone();
-        egui::ScrollArea::vertical()
-            .id_salt("jp_table_scroll")
-            .auto_shrink([false, false])
-            .show_viewport(ui, |ui, viewport| {
+        let scroll_to_offset: Option<f32> = self.pending_scroll_row.take().map(|row| {
+            let y = row as f32 * ROW_H;
+            y
+        });
+
+        let mut scroll_area = egui::ScrollArea::vertical()
+            .id_salt("je_table_scroll")
+            .auto_shrink([false, false]);
+        if let Some(offset) = scroll_to_offset {
+            scroll_area = scroll_area.vertical_scroll_offset(offset);
+        }
+        scroll_area.show_viewport(ui, |ui, viewport| {
                 let (total_rect, _) = ui.allocate_exact_size(egui::vec2(available_w, total_h), egui::Sense::hover());
                 let first: usize = ((viewport.min.y / ROW_H) as usize).saturating_sub(2);
                 let last: usize  = (((viewport.max.y / ROW_H) as usize) + 3).min(flat_len);
@@ -299,7 +309,13 @@ impl JsonEditor {
                         else if i % 2 == 1 { c_row_alt(dark) }
                         else { egui::Color32::TRANSPARENT };
 
-                    if bg != egui::Color32::TRANSPARENT { ui.painter().rect_filled(row_rect, 0.0, bg); }
+                    if bg != egui::Color32::TRANSPARENT {
+                        let bg_rect = egui::Rect::from_min_max(
+                            egui::pos2(row_rect.min.x, row_rect.min.y + 1.0),
+                            row_rect.max,
+                        );
+                        ui.painter().rect_filled(bg_rect, 0.0, bg);
+                    }
 
                     let cx: f32 = row_rect.min.x;
                     let cy: f32 = row_rect.center().y;
@@ -452,7 +468,7 @@ impl JsonEditor {
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .id_salt("jp_text_scroll")
+            .id_salt("je_text_scroll")
             .show(ui, |ui| {
                 let resp = ui.add_sized(
                     ui.available_size(),
@@ -464,6 +480,7 @@ impl JsonEditor {
                 if resp.changed() {
                     let errs = validate_json(&self.text_content);
                     self.text_errors = errs;
+                    self.text_modified = true;
                 }
             });
 
@@ -477,20 +494,37 @@ impl JsonEditor {
                 .map(|(line, msg)| format!("Line {}: {}", line, msg))
                 .unwrap_or_default();
 
-            let pad: f32 = 14.0;
-            let max_w: f32 = 380.0;
+            let pad: f32 = 12.0;
+            let max_text_w: f32 = 340.0;
             let font: egui::FontId = egui::FontId::proportional(12.0);
-            let approx_w: f32 = (err_msg.len() as f32 * 6.5).min(max_w).max(120.0);
-            let box_w: f32 = approx_w + pad * 2.0;
-            let box_h: f32 = 34.0;
             let margin: f32 = 12.0;
 
+            let alpha_u8 = (alpha * 255.0) as u8;
+            let text_color = egui::Color32::from_rgba_unmultiplied(255, 200, 200, alpha_u8);
+
+            let galley = {
+                let mut job = egui::text::LayoutJob::default();
+                job.wrap = egui::text::TextWrapping {
+                    max_width: max_text_w,
+                    ..Default::default()
+                };
+                job.append(&err_msg, 0.0, egui::text::TextFormat {
+                    font_id: font.clone(),
+                    color: text_color,
+                    ..Default::default()
+                });
+                ctx.fonts_mut(|f| f.layout_job(job))
+            };
+
+            let text_size = galley.size();
+            let box_w = text_size.x + pad * 2.0;
+            let box_h = text_size.y + pad * 2.0;
+
             let box_rect = egui::Rect::from_min_size(
-                egui::pos2(screen_rect.min.x + margin, screen_rect.max.y - box_h - margin),
+                egui::pos2(screen_rect.max.x - box_w - margin, screen_rect.max.y - box_h - margin),
                 egui::vec2(box_w, box_h),
             );
 
-            let alpha_u8 = (alpha * 255.0) as u8;
             let bg_color = egui::Color32::from_rgba_unmultiplied(
                 if dark { 120 } else { 200 },
                 if dark { 20 } else { 30 },
@@ -503,17 +537,10 @@ impl JsonEditor {
                 if dark { 60 } else { 50 },
                 alpha_u8,
             );
-            let text_color = egui::Color32::from_rgba_unmultiplied(255, 200, 200, alpha_u8);
 
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, anim_id));
             painter.rect(box_rect, egui::CornerRadius::same(8), bg_color, egui::Stroke::new(1.0, border_color), egui::StrokeKind::Outside);
-            painter.text(
-                egui::pos2(box_rect.min.x + pad, box_rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                &err_msg,
-                font,
-                text_color,
-            );
+            painter.galley(egui::pos2(box_rect.min.x + pad, box_rect.min.y + pad), galley, text_color);
 
             if alpha > 0.001 && alpha < 0.999 {
                 ctx.request_repaint();
@@ -562,7 +589,7 @@ impl JsonEditor {
             (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900)
         };
 
-        style::draw_modal_overlay(ctx, "jp_add_overlay", 160);
+        style::draw_modal_overlay(ctx, "je_add_overlay", 160);
 
         let mut close: bool = false;
         let mut do_add: bool = false;
@@ -641,7 +668,7 @@ impl JsonEditor {
             (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900)
         };
 
-        style::draw_modal_overlay(ctx, "jp_del_overlay", 160);
+        style::draw_modal_overlay(ctx, "je_del_overlay", 160);
 
         let mut confirmed: bool = false;
         let mut cancelled: bool = false;
@@ -687,7 +714,7 @@ impl JsonEditor {
             (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900)
         };
 
-        style::draw_modal_overlay(ctx, "jp_new_overlay", 160);
+        style::draw_modal_overlay(ctx, "je_new_overlay", 160);
 
         let mut confirmed: bool = false;
         let mut cancelled: bool = false;

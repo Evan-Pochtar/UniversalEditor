@@ -90,11 +90,12 @@
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
 ### Json Editor Bugs
-- [ ] Going into Tree view causes "modified" tag to show up
-- [ ] Error popup in text view should hug right side, also text leaves the size of the box
+- [x] Going into Tree view causes "modified" tag to show up
+- [x] Error popup in text view should hug right side, also text leaves the size of the box
 - [x] File information and search bar backgrounds do not go all the way to the right of the screen
 - [x] Format and sort combobox not centered in the toolbar
-- [ ] Search not navigating to results properly
+- [x] Search not navigating to results properly
+- [ ] Does not allow undo for any text changes
 
 ### Other Bugs
 

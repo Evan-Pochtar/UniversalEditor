@@ -38,7 +38,10 @@ pub struct JsonEditor {
 
     pub(super) text_content: String,
     pub(super) text_stale: bool,
+    pub(super) text_modified: bool,
     pub(super) text_errors: Vec<(usize, String)>,
+
+    pub(super) pending_scroll_row: Option<usize>,
 
     pub(super) undo_stack: VecDeque<Box<Value>>,
     pub(super) redo_stack: VecDeque<Box<Value>>,
@@ -91,7 +94,9 @@ impl JsonEditor {
             search_stale: false,
             text_content,
             text_stale: false,
+            text_modified: false,
             text_errors: Vec::new(),
+            pending_scroll_row: None,
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
             undo_limit: 20,
@@ -132,6 +137,7 @@ impl JsonEditor {
         );
         self.text_errors.clear();
         self.text_stale = false;
+        self.text_modified = false;
     }
 
     pub(super) fn commit_text_to_root(&mut self) -> bool {
@@ -194,6 +200,7 @@ impl JsonEditor {
             if self.search_cursor >= self.search_results.len() {
                 self.search_cursor = 0;
             }
+            self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
             self.search_stale = false;
         }
     }
@@ -201,6 +208,7 @@ impl JsonEditor {
     pub(super) fn search_next(&mut self) {
         if self.search_results.is_empty() { return; }
         self.search_cursor = (self.search_cursor + 1) % self.search_results.len();
+        self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
     }
 
     pub(super) fn search_prev(&mut self) {
@@ -210,6 +218,7 @@ impl JsonEditor {
         } else {
             self.search_cursor -= 1;
         }
+        self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
     }
 
     pub(super) fn toggle_expand(&mut self, path: &[String]) {
