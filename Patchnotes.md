@@ -106,6 +106,8 @@
 
 #### Features
 - **JSON EDITOR**: First prototype of the Json Editor
+- **JSON EDITOR**: Undo and Redo moved to top bar
+- **JSON EDITOR**: Improved styling and cleaned up backgrounds
 
 #### Debugging
 - **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's

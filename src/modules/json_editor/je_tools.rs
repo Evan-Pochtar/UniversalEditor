@@ -344,3 +344,21 @@ pub fn collapse_recursive(path: &[String], expanded: &mut HashSet<String>) {
     let prefix = format!("{}\x00", key);
     expanded.retain(|k| !k.starts_with(&prefix) && k != &key);
 }
+
+pub fn sort_label(m: SortMode) -> &'static str {
+    match m {
+        SortMode::None => "None",
+        SortMode::KeyAsc => "Key A-Z",
+        SortMode::KeyDesc => "Key Z-A",
+        SortMode::ValueAsc => "Value A-Z",
+        SortMode::ValueDesc => "Value Z-A",
+    }
+}
+
+pub fn search_target_label(t: SearchTarget) -> &'static str {
+    match t {
+        SearchTarget::Both => "Both",
+        SearchTarget::Keys => "Keys",
+        SearchTarget::Values => "Values",
+    }
+}

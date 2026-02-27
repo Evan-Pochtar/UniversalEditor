@@ -444,8 +444,6 @@ impl UniversalEditor {
                     );
                     ui.add_space(24.0);
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 12.0;
-                        
                         let save_clicked = style::primary_button(ui, "Save").clicked();
                         let dont_save_clicked = style::secondary_button(ui, "Don't Save", self.theme_mode).clicked();
                         let cancel_clicked = style::secondary_button(ui, "Cancel", self.theme_mode).clicked();

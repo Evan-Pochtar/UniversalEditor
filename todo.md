@@ -92,9 +92,8 @@
 ### Json Editor Bugs
 - [ ] Going into Tree view causes "modified" tag to show up
 - [ ] Error popup in text view should hug right side, also text leaves the size of the box
-- [ ] File information and search bar backgrounds do not go all the way to the right of the screen
-- [ ] Compact formatting does not show up in the text view
-- [ ] Format and sort combobox not centered in the toolbar
+- [x] File information and search bar backgrounds do not go all the way to the right of the screen
+- [x] Format and sort combobox not centered in the toolbar
 - [ ] Search not navigating to results properly
 
 ### Other Bugs
@@ -211,14 +210,15 @@
 - [ ] Add key popup needs a little more information
 - [ ] Need to add more space for text in very long key values
 - [ ] Search should only show up when clicking ctrl+f
-- [ ] Undo and Redo can be moved to top bar
+- [x] Undo and Redo can be moved to top bar
 - [ ] Change cursor when hovering over buttons/navigation
   - [ ] Make navigation bigger and more noticeable
 - [ ] Give the ability to show/hide file information
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Option to increase size of each row in the tree view
 - [ ] Add line numbers to text view
-- [ ] Create JSON styling file, move out of ui file
+- [x] Create JSON styling file, move out of ui file
+- [ ] Center Buttons in Popup Modals (E.g New file, Add key)
 
 ### CONVERTER: Img 2 Img
 

@@ -3,205 +3,176 @@ use serde_json::Value;
 use crate::style::{self, ColorPalette};
 use super::je_main::{JsonEditor, JsonViewMode, EditCell, AddKeyDialog};
 use super::je_tools::{
-    SortMode, SearchTarget, ValType, FlatNode,
-    parse_cell_value, serialize_value, validate_json,
-    value_at_path,
+    SortMode, SearchTarget, FlatNode,
+    sort_label, search_target_label, parse_cell_value, serialize_value, validate_json, value_at_path,
+};
+use super::je_style::{ 
+    c_panel, c_border, c_row_alt, c_row_sel, c_row_match, c_row_match_active, c_key, c_text, c_muted, c_error,
+    val_color, compact_button, danger_button, accent_button, ghost_btn_small, expand_triangle   
 };
 
 const ROW_H: f32 = 22.0;
-
-fn c_bg(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(16, 16, 20) } else { egui::Color32::WHITE }
-}
-fn c_panel(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(22, 22, 28) } else { ColorPalette::GRAY_50 }
-}
-fn c_border(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_200 }
-}
-fn c_row_alt(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(24, 24, 30) } else { egui::Color32::from_rgb(248, 249, 251) }
-}
-fn c_row_sel(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(32, 52, 88) } else { ColorPalette::BLUE_100 }
-}
-fn c_row_match(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(60, 48, 16) } else { ColorPalette::AMBER_100 }
-}
-fn c_row_match_active(dark: bool) -> egui::Color32 {
-    if dark { egui::Color32::from_rgb(90, 72, 16) } else { ColorPalette::AMBER_200 }
-}
-fn c_key(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::BLUE_300 } else { ColorPalette::BLUE_700 }
-}
-fn c_text(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::SLATE_200 } else { ColorPalette::GRAY_800 }
-}
-fn c_muted(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_400 }
-}
-fn c_error(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::RED_400 } else { ColorPalette::RED_600 }
-}
-fn c_string(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_700 }
-}
-fn c_number(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::AMBER_300 } else { ColorPalette::AMBER_700 }
-}
-fn c_bool_null(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::PURPLE_400 } else { ColorPalette::PURPLE_600 }
-}
-fn c_container(dark: bool) -> egui::Color32 {
-    if dark { ColorPalette::TEAL_400 } else { ColorPalette::TEAL_600 }
-}
-
-fn val_color(v: &ValType, dark: bool) -> egui::Color32 {
-    match v {
-        ValType::Null => c_bool_null(dark),
-        ValType::Bool(_) => c_bool_null(dark),
-        ValType::Number(_) => c_number(dark),
-        ValType::Str(_) => c_string(dark),
-        ValType::Array(_) => c_container(dark),
-        ValType::Object(_) => c_container(dark),
-    }
-}
-
-fn compact_button(ui: &mut egui::Ui, label: &str, dark: bool) -> egui::Response {
-    let (bg, hov, txt) = if dark {
-        (egui::Color32::from_rgb(36, 36, 44), egui::Color32::from_rgb(46, 46, 56), ColorPalette::SLATE_200)
-    } else {
-        (egui::Color32::WHITE, ColorPalette::GRAY_100, ColorPalette::GRAY_800)
-    };
-    ui.scope(|ui| {
-        let s = ui.style_mut();
-        s.visuals.widgets.inactive.bg_fill = bg;
-        s.visuals.widgets.inactive.weak_bg_fill = bg;
-        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, c_border(dark));
-        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, txt);
-        s.visuals.widgets.hovered.bg_fill = hov;
-        s.visuals.widgets.hovered.weak_bg_fill = hov;
-        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, c_border(dark));
-        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, txt);
-        s.visuals.widgets.active.bg_fill = hov;
-        ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt))
-            .min_size(egui::vec2(0.0, 24.0)))
-    }).inner
-}
-
-fn danger_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.scope(|ui| {
-        let s = ui.style_mut();
-        let r = ColorPalette::RED_600;
-        let rh = ColorPalette::RED_500;
-        s.visuals.widgets.inactive.bg_fill = r;
-        s.visuals.widgets.inactive.weak_bg_fill = r;
-        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        s.visuals.widgets.hovered.bg_fill = rh;
-        s.visuals.widgets.hovered.weak_bg_fill = rh;
-        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        s.visuals.widgets.active.bg_fill = r;
-        ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(egui::Color32::WHITE))
-            .min_size(egui::vec2(0.0, 24.0)))
-    }).inner
-}
-
-fn accent_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.scope(|ui| {
-        let s = ui.style_mut();
-        s.visuals.widgets.inactive.bg_fill = ColorPalette::BLUE_600;
-        s.visuals.widgets.inactive.weak_bg_fill = ColorPalette::BLUE_600;
-        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        s.visuals.widgets.hovered.bg_fill = ColorPalette::BLUE_500;
-        s.visuals.widgets.hovered.weak_bg_fill = ColorPalette::BLUE_500;
-        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        s.visuals.widgets.active.bg_fill = ColorPalette::BLUE_700;
-        ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(egui::Color32::WHITE))
-            .min_size(egui::vec2(0.0, 24.0)))
-    }).inner
-}
-
-fn ghost_btn_small(ui: &mut egui::Ui, label: &str, dark: bool, enabled: bool) -> egui::Response {
-    let txt = if enabled { c_text(dark) } else { c_muted(dark) };
-    ui.scope(|ui| {
-        if !enabled { ui.disable(); }
-        let s = ui.style_mut();
-        s.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        s.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, if enabled { c_border(dark) } else { c_muted(dark) });
-        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, txt);
-        s.visuals.widgets.hovered.bg_fill = if dark { egui::Color32::from_rgb(34, 34, 42) } else { ColorPalette::GRAY_100 };
-        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, c_border(dark));
-        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, txt);
-        s.visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-        ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt))
-            .min_size(egui::vec2(0.0, 24.0)))
-    }).inner
-}
-
-fn expand_triangle(ui: &mut egui::Ui, rect: egui::Rect, expanded: bool, dark: bool) -> bool {
-    let c: egui::Pos2 = rect.center();
-    let s: f32 = 4.5_f32;
-    let color: egui::Color32 = c_muted(dark);
-
-    let resp = ui.allocate_rect(rect, egui::Sense::click());
-    
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-
-    let pts: Vec<egui::Pos2> = if expanded {vec![c + egui::vec2(-s, -s * 0.5), c + egui::vec2(s, -s * 0.5), c + egui::vec2(0.0, s * 0.8)] }
-    else { vec![c + egui::vec2(-s * 0.5, -s), c + egui::vec2(-s * 0.5, s), c + egui::vec2(s * 0.8, 0.0)] };
-
-    let tri_color = if resp.hovered() { c_text(dark) } else { color };
-    ui.painter().add(egui::Shape::convex_polygon(pts, tri_color, egui::Stroke::NONE));
-    
-    resp.clicked()
-}
-
-fn hline(ui: &mut egui::Ui, dark: bool) {
-    let x0 = ui.min_rect().left();
-    let x1 = ui.min_rect().right();
-    let y  = ui.cursor().top();
-    ui.painter().line_segment(
-        [egui::pos2(x0, y), egui::pos2(x1, y)],
-        egui::Stroke::new(1.0, c_border(dark)),
-    );
-    ui.add_space(1.0);
-}
 
 impl JsonEditor {
     pub(super) fn render_editor_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let dark = ui.visuals().dark_mode;
         self.handle_keyboard(ctx);
         self.rebuild_flat_if_needed();
-
         if self.text_stale && matches!(self.view_mode, JsonViewMode::Text) { self.sync_text_from_root();}
         self.run_search();
-        egui::Frame::new()
-            .fill(c_bg(dark))
-            .inner_margin(0.0)
-            .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    self.render_toolbar(ui, ctx, dark);
-                    hline(ui, dark);
-                    self.render_file_strip(ui, dark);
-                    hline(ui, dark);
 
-                    if !self.scope_path.is_empty() { self.render_breadcrumbs(ui, dark); hline(ui, dark);}
-                    self.render_search_bar(ui, dark);
-                    hline(ui, dark);
+        ui.vertical(|ui| {
+            // Main Toolbar UI
+            ui.horizontal(|ui| {
+                ui.horizontal(|ui: &mut egui::Ui| {
+                    self.render_view_tabs(ui, dark);
+                    ui.separator();
+                    if compact_button(ui, "Expand All", dark).clicked() { self.expand_all(); }
+                    if compact_button(ui, "Collapse All", dark).clicked() { self.collapse_all(); }
 
-                    match self.view_mode {
-                        JsonViewMode::Tree => self.render_table_view(ui, dark),
-                        JsonViewMode::Text => self.render_text_view(ui, ctx, dark),
+                    ui.separator();
+                    if accent_button(ui, "+ Add Key").clicked() {
+                        self.add_dialog = Some(AddKeyDialog {
+                            parent_path: self.scope_path.clone(),
+                            key_buf: String::new(),
+                            val_buf: String::new(),
+                            error: None,
+                        });
+                    }
+
+                    if compact_button(ui, "New", dark).clicked() { self.show_new_confirm = true; }
+                    ui.separator();
+                });
+
+                ui.label(egui::RichText::new("Sort:").size(12.0).color(c_muted(dark)));
+                ui.vertical(|ui: &mut egui::Ui| {
+                    egui::ComboBox::from_id_salt("jp_sort")
+                        .selected_text(egui::RichText::new(sort_label(self.sort_mode)).size(12.0))
+                        .width(120.0)
+                        .show_ui(ui, |ui| { for m in [SortMode::None, SortMode::KeyAsc, SortMode::KeyDesc, SortMode::ValueAsc, SortMode::ValueDesc] {
+                            if ui.selectable_value(&mut self.sort_mode, m, sort_label(m)).changed() { self.invalidate_flat();}
+                        }
+                    });
+                });
+                ui.separator();
+    
+                ui.label(egui::RichText::new("Export Format:").size(12.0).color(c_muted(dark)));
+                ui.vertical(|ui: &mut egui::Ui| {
+                    let fmt_label = if self.export_pretty { "Pretty" } else { "Compact" };
+                    egui::ComboBox::from_id_salt("jp_fmt")
+                        .selected_text(egui::RichText::new(fmt_label).size(12.0))
+                        .width(80.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.export_pretty, true, "Pretty");
+                            ui.selectable_value(&mut self.export_pretty, false, "Compact");
+                        });
+                });
+                if compact_button(ui, "Export", dark).clicked() { self.do_export(); }
+            });
+            ui.separator();
+
+            // File Information UI
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
+                ui.separator();
+                let (status, color) = if self.dirty { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
+                    else { ("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
+
+                ui.label(egui::RichText::new(status).size(12.0).color(color));
+                ui.separator();
+                let node_count = self.flat.len();
+                ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
+            });
+            ui.separator();
+
+            // Breadcrumb navigation UI
+            if !self.scope_path.is_empty() { 
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Label::new(egui::RichText::new("root").size(12.0).color(ColorPalette::BLUE_500)).sense(egui::Sense::click())).clicked() {
+                        self.scope_path.clear();
+                        self.invalidate_flat();
+                        self.text_stale = true;
+                    }
+
+                    for i in 0..self.scope_path.len() {
+                        ui.label(egui::RichText::new("/").size(12.0).color(c_border(dark)));
+                        let seg = self.scope_path[i].clone();
+                        let is_last = i + 1 == self.scope_path.len();
+                        let color = if is_last { c_text(dark) } else { ColorPalette::BLUE_500 };
+                        if ui.add(egui::Label::new(egui::RichText::new(&seg).size(12.0).color(color)).sense(egui::Sense::click())).clicked() && !is_last {
+                            self.scope_path.truncate(i + 1);
+                            self.invalidate_flat();
+                            self.text_stale = true;
+                        }
+                    }
+
+                    ui.add_space(8.0);
+                    if ui.add(egui::Label::new(egui::RichText::new("Back").size(12.0).color(c_muted(dark))).sense(egui::Sense::click())).clicked() {
+                        self.scope_up();
                     }
                 });
+                ui.separator();
+            }
+
+            // Searchbar UI
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Search:").size(12.0).color(c_muted(dark)));
+                let prev_query = self.search_query.clone();
+                let resp = ui.add(egui::TextEdit::singleline(&mut self.search_query)
+                    .desired_width(220.0)
+                    .min_size(egui::vec2(0.0, 24.0))
+                    .hint_text("Type to search..."),
+                );
+                if resp.changed() || self.search_query != prev_query {
+                    self.search_stale = true;
+                    self.search_cursor = 0;
+                    self.run_search();
+                }
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.search_next();
+                }
+
+                ui.vertical(|ui: &mut egui::Ui| {
+                    egui::ComboBox::from_id_salt("jp_search_target")
+                        .selected_text(egui::RichText::new(search_target_label(self.search_target)).size(12.0))
+                        .width(70.0)
+                        .show_ui(ui, |ui| {
+                            for t in [SearchTarget::Both, SearchTarget::Keys, SearchTarget::Values] {
+                                if ui.selectable_value(&mut self.search_target, t, search_target_label(t)).changed() {
+                                    self.search_stale = true;
+                                    self.run_search();
+                                }
+                            }
+                    });
+                });
+
+                let has = !self.search_results.is_empty();
+                if ghost_btn_small(ui, "Prev", dark, has).clicked() { self.search_prev(); }
+                if ghost_btn_small(ui, "Next", dark, has).clicked() { self.search_next(); }
+
+                if !self.search_query.is_empty() {
+                    let count = self.search_results.len();
+                    let cur   = if count > 0 { self.search_cursor + 1 } else { 0 };
+                    ui.label(egui::RichText::new(format!("{}/{}", cur, count))
+                        .size(12.0)
+                        .color(if count == 0 { c_error(dark) } else { c_muted(dark) }));
+                }
+
+                if !self.search_query.is_empty() {
+                    if compact_button(ui, "Clear", dark).clicked() {
+                        self.search_query.clear();
+                        self.search_results.clear();
+                        self.search_stale = false;
+                    }
+                }
             });
+            ui.separator();
+
+            match self.view_mode {
+                JsonViewMode::Tree => self.render_table_view(ui, dark),
+                JsonViewMode::Text => self.render_text_view(ui, ctx, dark),
+            }
+        });
 
         self.render_add_key_dialog(ctx, dark);
         self.render_confirm_delete_dialog(ctx, dark);
@@ -224,93 +195,11 @@ impl JsonEditor {
         });
     }
 
-    fn render_toolbar(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context, dark: bool) {
-        let panel_bg = c_panel(dark);
-        let available_w = ui.available_width();
-        egui::Frame::new()
-            .fill(panel_bg)
-            .inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 6 })
-            .show(ui, |ui| {
-                ui.set_min_width(available_w - 16.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    self.render_view_tabs(ui, dark);
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    if ghost_btn_small(ui, "Undo", dark, self.can_undo()).clicked() { self.undo(); }
-                    if ghost_btn_small(ui, "Redo", dark, self.can_redo()).clicked() { self.redo(); }
-
-                    ui.add_space(4.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    ui.label(egui::RichText::new("Sort:").size(12.0).color(c_muted(dark)));
-                    egui::ComboBox::from_id_salt("jp_sort")
-                        .selected_text(egui::RichText::new(sort_label(self.sort_mode)).size(12.0))
-                        .width(120.0)
-                        .show_ui(ui, |ui| {
-                            for m in [SortMode::None, SortMode::KeyAsc, SortMode::KeyDesc,
-                                      SortMode::ValueAsc, SortMode::ValueDesc]
-                            {
-                                if ui.selectable_value(&mut self.sort_mode, m, sort_label(m))
-                                    .changed()
-                                {
-                                    self.invalidate_flat();
-                                }
-                            }
-                        });
-
-                    ui.add_space(4.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    if compact_button(ui, "Expand All", dark).clicked() { self.expand_all(); }
-                    if compact_button(ui, "Collapse All", dark).clicked() { self.collapse_all(); }
-
-                    ui.add_space(4.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    if accent_button(ui, "+ Add Key").clicked() {
-                        self.add_dialog = Some(AddKeyDialog {
-                            parent_path: self.scope_path.clone(),
-                            key_buf: String::new(),
-                            val_buf: String::new(),
-                            error: None,
-                        });
-                    }
-
-                    if compact_button(ui, "New", dark).clicked() { self.show_new_confirm = true; }
-
-                    ui.add_space(4.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    ui.label(egui::RichText::new("Format:").size(12.0).color(c_muted(dark)));
-                    let fmt_label = if self.export_pretty { "Pretty" } else { "Compact" };
-                    egui::ComboBox::from_id_salt("jp_fmt")
-                        .selected_text(egui::RichText::new(fmt_label).size(12.0))
-                        .width(80.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.export_pretty, true, "Pretty");
-                            ui.selectable_value(&mut self.export_pretty, false, "Compact");
-                        });
-
-                    if compact_button(ui, "Export", dark).clicked() { self.do_export(); }
-                });
-            });
-    }
-
     fn render_view_tabs(&mut self, ui: &mut egui::Ui, dark: bool) {
-        for (mode, label) in [
-            (JsonViewMode::Tree, "Tree"),
-            (JsonViewMode::Text, "Text"),
-        ] {
+        for (mode, label) in [(JsonViewMode::Tree, "Tree"), (JsonViewMode::Text, "Text")] {
             let selected = self.view_mode == mode;
             let (bg, txt) = if selected { (ColorPalette::BLUE_600, egui::Color32::WHITE) } 
-            else { (egui::Color32::TRANSPARENT, c_muted(dark)) };
+                else { (egui::Color32::TRANSPARENT, c_muted(dark)) };
 
             ui.scope(|ui| {
                 let s = ui.style_mut();
@@ -333,140 +222,6 @@ impl JsonEditor {
                 }
             });
         }
-    }
-
-    fn render_file_strip(&self, ui: &mut egui::Ui, dark: bool) {
-        egui::Frame::new()
-            .fill(c_panel(dark))
-            .inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 4 })
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
-                    ui.separator();
-
-                    let (status, color) = if self.dirty { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
-                    else {("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
-
-                    ui.label(egui::RichText::new(status).size(12.0).color(color));
-                    ui.separator();
-                    let node_count = self.flat.len();
-                    ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
-                    if !self.undo_stack.is_empty() {
-                        ui.separator();
-                        ui.label(egui::RichText::new(format!("{} undo steps", self.undo_stack.len())).size(12.0).color(c_muted(dark)));
-                    }
-                });
-            });
-    }
-
-    fn render_breadcrumbs(&mut self, ui: &mut egui::Ui, dark: bool) {
-        let accent = ColorPalette::BLUE_500;
-        let muted = c_muted(dark);
-        let sep_clr = c_border(dark);
-
-        egui::Frame::new()
-            .fill(c_panel(dark))
-            .inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 4 })
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-
-                    if ui.add(egui::Label::new(
-                        egui::RichText::new("root").size(12.0).color(accent)
-                    ).sense(egui::Sense::click())).clicked()
-                    {
-                        self.scope_path.clear();
-                        self.invalidate_flat();
-                        self.text_stale = true;
-                    }
-
-                    for i in 0..self.scope_path.len() {
-                        ui.label(egui::RichText::new("/").size(12.0).color(sep_clr));
-                        let seg = self.scope_path[i].clone();
-                        let is_last = i + 1 == self.scope_path.len();
-                        let color = if is_last { c_text(dark) } else { accent };
-                        if ui.add(egui::Label::new(
-                            egui::RichText::new(&seg).size(12.0).color(color)
-                        ).sense(egui::Sense::click())).clicked() && !is_last
-                        {
-                            self.scope_path.truncate(i + 1);
-                            self.invalidate_flat();
-                            self.text_stale = true;
-                        }
-                    }
-
-                    ui.add_space(8.0);
-                    if ui.add(egui::Label::new(
-                        egui::RichText::new("Back").size(12.0).color(muted)
-                    ).sense(egui::Sense::click())).clicked()
-                    {
-                        self.scope_up();
-                    }
-                });
-            });
-    }
-
-    fn render_search_bar(&mut self, ui: &mut egui::Ui, dark: bool) {
-        let panel_bg = c_panel(dark);
-        egui::Frame::new()
-            .fill(panel_bg)
-            .inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 4 })
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.label(egui::RichText::new("Search:").size(12.0).color(c_muted(dark)));
-                    let prev_query = self.search_query.clone();
-                    let resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.search_query)
-                            .desired_width(220.0)
-                            .min_size(egui::vec2(0.0, 24.0))
-                            .hint_text("Type to search..."),
-                    );
-                    if resp.changed() || self.search_query != prev_query {
-                        self.search_stale = true;
-                        self.search_cursor = 0;
-                        self.run_search();
-                    }
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        self.search_next();
-                    }
-
-                    egui::ComboBox::from_id_salt("jp_search_target")
-                        .selected_text(egui::RichText::new(search_target_label(self.search_target)).size(12.0))
-                        .width(70.0)
-                        .show_ui(ui, |ui| {
-                            for t in [SearchTarget::Both, SearchTarget::Keys, SearchTarget::Values] {
-                                if ui.selectable_value(&mut self.search_target, t, search_target_label(t))
-                                    .changed()
-                                {
-                                    self.search_stale = true;
-                                    self.run_search();
-                                }
-                            }
-                        });
-
-                    let has = !self.search_results.is_empty();
-                    if ghost_btn_small(ui, "Prev", dark, has).clicked() { self.search_prev(); }
-                    if ghost_btn_small(ui, "Next", dark, has).clicked() { self.search_next(); }
-
-                    if !self.search_query.is_empty() {
-                        let count = self.search_results.len();
-                        let cur   = if count > 0 { self.search_cursor + 1 } else { 0 };
-                        ui.label(egui::RichText::new(format!("{}/{}", cur, count))
-                            .size(12.0)
-                            .color(if count == 0 { c_error(dark) } else { c_muted(dark) }));
-                    }
-
-                    if !self.search_query.is_empty() {
-                        if compact_button(ui, "Clear", dark).clicked() {
-                            self.search_query.clear();
-                            self.search_results.clear();
-                            self.search_stale = false;
-                        }
-                    }
-                });
-            });
     }
 
     fn render_table_view(&mut self, ui: &mut egui::Ui, dark: bool) {
@@ -495,13 +250,9 @@ impl JsonEditor {
             .inner_margin(0.0)
             .show(ui, |ui| {
                 let header_h = 28.0;
-                let (header_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(available_w, header_h), egui::Sense::hover());
+                let (header_rect, _) = ui.allocate_exact_size(egui::vec2(available_w, header_h), egui::Sense::hover());
                 ui.painter().rect_filled(header_rect, 0.0, c_panel(dark));
-                ui.painter().line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
-                    egui::Stroke::new(1.0, c_border(dark)),
-                );
+                ui.painter().line_segment([header_rect.left_bottom(), header_rect.right_bottom()], egui::Stroke::new(1.0, c_border(dark)));
                 let cy = header_rect.center().y;
                 let cols = [
                     (6.0, "Key", col_key_w),
@@ -529,8 +280,7 @@ impl JsonEditor {
                 let first: usize = ((viewport.min.y / ROW_H) as usize).saturating_sub(2);
                 let last: usize  = (((viewport.max.y / ROW_H) as usize) + 3).min(flat_len);
                 let rows: Vec<(usize, FlatNode)> = (first..last)
-                    .filter_map(|i| self.flat.get(i).map(|n| (i, n.clone())))
-                    .collect();
+                    .filter_map(|i| self.flat.get(i).map(|n| (i, n.clone()))).collect();
 
                 for (i, node) in rows {
                     let y_top = total_rect.min.y + i as f32 * ROW_H;
@@ -829,36 +579,24 @@ impl JsonEditor {
             .show(ctx, |ui| {
                 if let Some(dialog) = &mut self.add_dialog {
                     ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 10.0;
-                        let path_str = if dialog.parent_path.is_empty() { "root".to_string() } 
-                            else { dialog.parent_path.join(" / ") };
-
+                        let path_str = if dialog.parent_path.is_empty() { "root".to_string() } else { dialog.parent_path.join(" / ") };
                         ui.label(egui::RichText::new(format!("Parent: {}", path_str))
                             .size(12.0).color(c_muted(dark)));
 
-                        let is_array = value_at_path(&self.root, &dialog.parent_path)
-                            .map(|v| v.is_array())
-                            .unwrap_or(false);
+                        let is_array = value_at_path(&self.root, &dialog.parent_path).map(|v| v.is_array()).unwrap_or(false);
                         if !is_array {
                             ui.label(egui::RichText::new("Key name:").size(13.0).color(text));
-                            ui.add(egui::TextEdit::singleline(&mut dialog.key_buf)
-                                .desired_width(280.0)
-                                .hint_text("Enter key name..."));
+                            ui.add(egui::TextEdit::singleline(&mut dialog.key_buf).desired_width(280.0).hint_text("Enter key name..."));
                         }
 
                         ui.label(egui::RichText::new("Value (JSON):").size(13.0).color(text));
                         ui.add(egui::TextEdit::multiline(&mut dialog.val_buf)
-                            .desired_width(280.0)
-                            .desired_rows(3)
-                            .hint_text("null  /  true  /  42  /  \"hello\"  /  {}  /  []"));
+                            .desired_width(280.0).desired_rows(3).hint_text("null  /  true  /  42  /  \"hello\"  /  {}  /  []"));
 
-                        if let Some(err) = &dialog.error {
-                            ui.label(egui::RichText::new(err).size(12.0).color(c_error(dark)));
-                        }
+                        if let Some(err) = &dialog.error { ui.label(egui::RichText::new(err).size(12.0).color(c_error(dark))); }
 
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
                             if accent_button(ui, "Add").clicked() { do_add = true; }
                             if compact_button(ui, "Cancel", dark).clicked() { close = true; }
                         });
@@ -919,7 +657,6 @@ impl JsonEditor {
                 .inner_margin(24.0))
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 10.0;
                     let key = path.last().cloned().unwrap_or_default();
                     ui.label(egui::RichText::new(format!("Delete \"{}\"?", key))
                         .size(16.0).color(text));
@@ -927,7 +664,6 @@ impl JsonEditor {
                         .size(12.0).color(c_muted(dark)));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
                         if danger_button(ui, "Delete").clicked() { confirmed = true; }
                         if compact_button(ui, "Cancel", dark).clicked() { cancelled = true; }
                     });
@@ -960,6 +696,7 @@ impl JsonEditor {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .order(egui::Order::Tooltip)
+            .title_bar(false)
             .frame(egui::Frame::new()
                 .fill(bg)
                 .stroke(egui::Stroke::new(1.0, border))
@@ -967,17 +704,14 @@ impl JsonEditor {
                 .inner_margin(24.0))
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 10.0;
                     ui.label(egui::RichText::new("Create new empty JSON?")
                         .size(16.0).color(text));
                     if self.dirty {
-                        ui.label(egui::RichText::new(
-                            "You have unsaved changes that will be pushed to undo history.")
+                        ui.label(egui::RichText::new("You have unsaved changes that will be pushed to undo history.")
                             .size(12.0).color(if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }));
                     }
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
                         if accent_button(ui, "Create New").clicked() { confirmed = true; }
                         if compact_button(ui, "Cancel", dark).clicked() { cancelled = true; }
                     });
@@ -990,30 +724,8 @@ impl JsonEditor {
 
     fn do_export(&self) {
         let content = serialize_value(&self.root, self.export_pretty);
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("JSON", &["json"])
-            .add_filter("All Files", &["*"])
-            .save_file()
-        {
+        if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).add_filter("All Files", &["*"]).save_file() {
             let _ = std::fs::write(path, content);
         }
-    }
-}
-
-fn sort_label(m: SortMode) -> &'static str {
-    match m {
-        SortMode::None => "None",
-        SortMode::KeyAsc => "Key A-Z",
-        SortMode::KeyDesc => "Key Z-A",
-        SortMode::ValueAsc => "Value A-Z",
-        SortMode::ValueDesc => "Value Z-A",
-    }
-}
-
-fn search_target_label(t: SearchTarget) -> &'static str {
-    match t {
-        SearchTarget::Both => "Both",
-        SearchTarget::Keys => "Keys",
-        SearchTarget::Values => "Values",
     }
 }
