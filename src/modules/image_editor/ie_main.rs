@@ -564,6 +564,8 @@ pub struct ImageEditor {
 
     pub(super) export_format: ExportFormat,
     pub(super) export_jpeg_quality: u8,
+    pub(super) export_avif_quality: u8,
+    pub(super) export_avif_speed: u8,
     pub(super) export_preserve_metadata: bool,
     pub(super) export_auto_scale_ico: bool,
     pub(super) export_callback: Option<Box<dyn Fn(PathBuf) + Send + Sync>>,
@@ -616,7 +618,7 @@ impl ImageEditor {
             blur_radius: 3.0, sharpen_amount: 1.0,
             resize_w: 0, resize_h: 0, resize_locked: true, resize_stretch: false,
             export_format: ExportFormat::Png,
-            export_jpeg_quality: 90, export_preserve_metadata: true,
+            export_jpeg_quality: 90, export_avif_quality: 80, export_avif_speed: 4, export_preserve_metadata: true,
             export_auto_scale_ico: true, export_callback: None,
             show_color_picker: false, color_history: ColorHistory::load(),
             color_favorites: ColorFavorites::load(), color_fav_drag_src: None,

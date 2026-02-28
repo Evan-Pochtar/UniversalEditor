@@ -684,6 +684,23 @@ impl ImageEditor {
                                     ui.add(egui::Slider::new(&mut self.export_jpeg_quality, 1..=100).suffix("%"));
                                 });
                             }
+                            ExportFormat::Avif => {
+                                ui.horizontal(|ui: &mut egui::Ui| {
+                                    ui.label(egui::RichText::new("Quality:").size(12.0).color(label_col));
+                                    ui.add(egui::Slider::new(&mut self.export_avif_quality, 1..=100).suffix("%"));
+                                });
+                                ui.horizontal(|ui: &mut egui::Ui| {
+                                    ui.label(egui::RichText::new("Encode Speed:").size(12.0).color(label_col));
+                                    ui.add(egui::Slider::new(&mut self.export_avif_speed, 0..=10));
+                                });
+                                let speed_desc = match self.export_avif_speed {
+                                    0..=2 => "Slowest encode, smallest file size",
+                                    3..=5 => "Balanced encode time and file size",
+                                    6..=8 => "Faster encode, larger file size",
+                                    _ =>     "Fastest encode, largest file size",
+                                };
+                                ui.label(egui::RichText::new(speed_desc).size(11.0).color(label_col).italics());
+                            }
                             ExportFormat::Ico => {
                                 ui.checkbox(&mut self.export_auto_scale_ico,
                                     egui::RichText::new("Auto-scale to 256px").size(12.0).color(label_col));

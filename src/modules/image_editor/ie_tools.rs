@@ -1105,7 +1105,7 @@ impl ImageEditor {
         {
             Some(p) => p, None => return Err("Export cancelled".to_string()),
         };
-        export_image(&composite, &path, self.export_format, self.export_jpeg_quality, 6, 100.0, self.export_auto_scale_ico)?;
+        export_image(&composite, &path, self.export_format, self.export_jpeg_quality, 6, 100.0, self.export_auto_scale_ico, self.export_avif_quality, self.export_avif_speed)?;
         self.filter_panel = FilterPanel::None;
         Ok(path)
     }

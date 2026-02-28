@@ -24,7 +24,7 @@
 - [ ] Word Docs, ect.
 - [x] Img Processing
 - [ ] Video Processing
-- [ ] JSON Processing
+- [x] JSON Processing
 - [ ] CSV, Excel, ect.
 - [ ] PDF
 - [ ] Zip/Unzip
@@ -96,6 +96,7 @@
 - [x] Format and sort combobox not centered in the toolbar
 - [x] Search not navigating to results properly
 - [ ] Does not allow undo for any text changes
+- [ ] Sort and Search do not work on text view
 
 ### Other Bugs
 

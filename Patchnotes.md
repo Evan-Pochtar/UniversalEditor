@@ -108,6 +108,7 @@
 - **JSON EDITOR**: First prototype of the Json Editor
 - **JSON EDITOR**: Undo and Redo moved to top bar
 - **JSON EDITOR**: Improved styling and cleaned up backgrounds
+- **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
 
 #### Debugging
 - **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's

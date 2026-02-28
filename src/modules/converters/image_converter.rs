@@ -73,6 +73,8 @@ pub struct ImageConverter {
     jpeg_quality: u8,
     png_compression: u8,
     webp_quality: f32,
+    avif_quality: u8,
+    avif_speed: u8,
     preserve_metadata: bool,
     overwrite_existing: bool,
     add_suffix: bool,
@@ -93,6 +95,8 @@ impl ImageConverter {
             jpeg_quality: 90,
             png_compression: 6,
             webp_quality: 80.0,
+            avif_quality: 80,
+            avif_speed: 4,
             preserve_metadata: true,
             overwrite_existing: false,
             add_suffix: false,
@@ -145,6 +149,8 @@ impl ImageConverter {
         let jpeg_quality = self.jpeg_quality;
         let png_compression = self.png_compression;
         let webp_quality = self.webp_quality;
+        let avif_quality = self.avif_quality;
+        let avif_speed = self.avif_speed;
         let overwrite = self.overwrite_existing;
         let add_suffix = self.add_suffix;
         let suffix = self.custom_suffix.clone();
@@ -182,6 +188,8 @@ impl ImageConverter {
                     add_suffix,
                     &suffix,
                     auto_scale_ico,
+                    avif_quality,
+                    avif_speed,
                 ) {
                     Ok(_) => success_count += 1,
                     Err(e) => {
@@ -212,6 +220,8 @@ impl ImageConverter {
         add_suffix: bool,
         suffix: &str,
         auto_scale_ico: bool,
+        avif_quality: u8,
+        avif_speed: u8,
     ) -> Result<(), String> {
         let img = image::open(input_path)
             .map_err(|e| format!("Failed to open image: {}", e))?;
@@ -233,7 +243,7 @@ impl ImageConverter {
             return Err("File exists and overwrite is disabled".to_string());
         }
 
-        export_image(&img, &output_path, target_format, jpeg_quality, png_compression, webp_quality, auto_scale_ico)
+        export_image(&img, &output_path, target_format, jpeg_quality, png_compression, webp_quality, auto_scale_ico, avif_quality, avif_speed)
     }
 
     fn render_header(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
@@ -326,6 +336,12 @@ impl ImageConverter {
                         }
                     }
                 });
+
+                if self.target_format == ExportFormat::Avif {
+                    ui.add_space(6.0);
+                    let note_color = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+                    ui.label(egui::RichText::new("AVIF is output-only. AVIF files cannot be used as input sources.").size(11.0).color(note_color).italics());
+                }
             });
     }
 
@@ -382,6 +398,24 @@ impl ImageConverter {
                         ExportFormat::Ico => {
                             ui.checkbox(&mut self.auto_scale_ico, 
                                 egui::RichText::new("Auto-scale to 256px (maintains aspect ratio, only if width > 256px)").color(label_color));
+                        }
+                        ExportFormat::Avif => {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("AVIF Quality:").color(label_color));
+                                ui.add(egui::Slider::new(&mut self.avif_quality, 1..=100).suffix("%"));
+                            });
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Encode Speed:").color(label_color));
+                                ui.add(egui::Slider::new(&mut self.avif_speed, 0..=10));
+                            });
+                            let speed_desc = match self.avif_speed {
+                                0..=2 => "Slowest encode, smallest file size",
+                                3..=5 => "Balanced encode time and file size",
+                                6..=8 => "Faster encode, larger file size",
+                                _ =>     "Fastest encode, largest file size",
+                            };
+                            ui.label(egui::RichText::new(speed_desc).size(11.0).color(label_color).italics());
                         }
                         _ => {}
                     }
