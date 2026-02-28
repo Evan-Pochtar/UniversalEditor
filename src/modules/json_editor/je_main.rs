@@ -381,7 +381,7 @@ impl EditorModule for JsonEditor {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
-        self.render_editor_ui(ui, ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, show_toolbar: bool, show_file_info: bool) {
+        self.render_editor_ui(ui, ctx, show_toolbar, show_file_info);
     }
 }

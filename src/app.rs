@@ -77,22 +77,26 @@ fn default_font_size() -> f32 { 14.0 }
 #[derive(Serialize, Deserialize)]
 struct AppSettings {
     theme_preference: ThemePreference,
-    show_toolbar: bool,
-    show_file_info: bool,
+
+    show_toolbar_te: bool,
+    show_file_info_te: bool,
     #[serde(default = "default_font_name")]
     default_font: String,
     #[serde(default = "default_font_size")]
     default_font_size: f32,
+
+    show_file_info_je: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme_preference: ThemePreference::System,
-            show_toolbar: true,
-            show_file_info: true,
+            show_toolbar_te: true,
+            show_file_info_te: true,
             default_font: default_font_name(),
             default_font_size: default_font_size(),
+            show_file_info_je: true,
         }
     }
 }
@@ -138,7 +142,7 @@ struct PatchCategory { name: String, notes: Vec<PatchNote> }
 struct PatchVersion { version: String, tag: String, categories: Vec<PatchCategory> }
 
 #[derive(PartialEq, Clone, Copy)]
-enum SettingsTab { General, TextEditor }
+enum SettingsTab { General, TextEditor, JsonEditor }
 
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
@@ -149,8 +153,9 @@ pub struct UniversalEditor {
     screens_expanded: bool,
     converters_expanded: bool,
     recent_files_expanded: bool,
-    show_toolbar: bool,
-    show_file_info: bool,
+    show_toolbar_te: bool,
+    show_file_info_te: bool,
+    show_file_info_je: bool,
     default_font: String,
     default_font_size: f32,
     show_unsaved_dialog: bool,
@@ -247,8 +252,9 @@ impl UniversalEditor {
             screens_expanded: false,
             converters_expanded: false,
             recent_files_expanded: false,
-            show_toolbar: settings.show_toolbar,
-            show_file_info: settings.show_file_info,
+            show_toolbar_te: settings.show_toolbar_te,
+            show_file_info_te: settings.show_file_info_te,
+            show_file_info_je: settings.show_file_info_je,
             default_font: settings.default_font,
             default_font_size: settings.default_font_size,
             show_unsaved_dialog: false,
@@ -266,6 +272,14 @@ impl UniversalEditor {
     fn is_in_text_editor(&self) -> bool {
         if let Some(module) = &self.active_module {
             module.as_any().downcast_ref::<TextEditor>().is_some()
+        } else {
+            false
+        }
+    }
+
+    fn is_in_json_editor(&self) -> bool {
+        if let Some(module) = &self.active_module {
+            module.as_any().downcast_ref::<JsonEditor>().is_some()
         } else {
             false
         }
@@ -382,10 +396,11 @@ impl UniversalEditor {
     fn save_settings(&self) {
         let settings = AppSettings {
             theme_preference: self.theme_preference,
-            show_toolbar: self.show_toolbar,
-            show_file_info: self.show_file_info,
+            show_toolbar_te: self.show_toolbar_te,
+            show_file_info_te: self.show_file_info_te,
             default_font: self.default_font.clone(),
             default_font_size: self.default_font_size,
+            show_file_info_je: self.show_file_info_je,
         };
         settings.save();
     }
@@ -572,10 +587,17 @@ impl UniversalEditor {
                     ui.checkbox(&mut self.sidebar_open, "Show Sidebar");
                    
                     if self.is_in_text_editor() {
-                        let toolbar_changed = ui.checkbox(&mut self.show_toolbar, "Show Toolbar").changed();
-                        let file_info_changed = ui.checkbox(&mut self.show_file_info, "Show File Info").changed();
+                        let toolbar_changed = ui.checkbox(&mut self.show_toolbar_te, "Show Toolbar").changed();
+                        let file_info_changed = ui.checkbox(&mut self.show_file_info_te, "Show File Info").changed();
                        
                         if toolbar_changed || file_info_changed {
+                            self.save_settings();
+                        }
+                    }
+
+                    if self.is_in_json_editor() {
+                        let file_info_changed = ui.checkbox(&mut self.show_file_info_je, "Show File Info").changed();                       
+                        if file_info_changed {
                             self.save_settings();
                         }
                     }
@@ -1037,7 +1059,7 @@ impl UniversalEditor {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let tabs = [(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor")];
+                    let tabs = [(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::JsonEditor, "Json Editor")];
                     for (tab, label) in &tabs {
                         let selected = self.settings_tab == *tab;
                         let (fill, text_col) = if selected {
@@ -1074,14 +1096,14 @@ impl UniversalEditor {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.checkbox(&mut self.show_toolbar, "").changed() { prefs_changed = true; }
+                                if ui.checkbox(&mut self.show_toolbar_te, "").changed() { prefs_changed = true; }
                             });
                         });
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.checkbox(&mut self.show_file_info, "").changed() { prefs_changed = true; }
+                                if ui.checkbox(&mut self.show_file_info_te, "").changed() { prefs_changed = true; }
                             });
                         });
 
@@ -1121,6 +1143,16 @@ impl UniversalEditor {
                         if font_changed || size_changed {
                             prefs_changed = true;
                         }
+                    }
+                    SettingsTab::JsonEditor => {
+                        ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.checkbox(&mut self.show_file_info_je, "").changed() { prefs_changed = true; }
+                            });
+                        });
                     }
                 }
             });
@@ -1296,9 +1328,11 @@ impl eframe::App for UniversalEditor {
         self.top_bar(ctx);
         self.sidebar(ctx);
 
+        let show_fi = if self.is_in_json_editor() { self.show_file_info_je } else { self.show_file_info_te };
+        let show_toolbar = self.show_toolbar_te;
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(module) = &mut self.active_module {
-                module.ui(ui, ctx, self.show_toolbar, self.show_file_info);
+                module.ui(ui, ctx, show_toolbar, show_fi);
             } else {
                 self.landing_page(ui);
             }

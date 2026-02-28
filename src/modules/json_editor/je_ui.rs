@@ -14,7 +14,7 @@ use super::je_style::{
 const ROW_H: f32 = 22.0;
 
 impl JsonEditor {
-    pub(super) fn render_editor_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    pub(super) fn render_editor_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, show_file_info: bool) {
         let dark = ui.visuals().dark_mode;
         self.handle_keyboard(ctx);
         self.rebuild_flat_if_needed();
@@ -72,18 +72,20 @@ impl JsonEditor {
             ui.separator();
 
             // File Information UI
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
-                ui.separator();
-                let (status, color) = if self.dirty { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
-                    else { ("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
+            if show_file_info {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
+                    ui.separator();
+                    let (status, color) = if self.dirty { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
+                        else { ("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
 
-                ui.label(egui::RichText::new(status).size(12.0).color(color));
+                    ui.label(egui::RichText::new(status).size(12.0).color(color));
+                    ui.separator();
+                    let node_count = self.flat.len();
+                    ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
+                });
                 ui.separator();
-                let node_count = self.flat.len();
-                ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
-            });
-            ui.separator();
+            }
 
             // Breadcrumb navigation UI
             if !self.scope_path.is_empty() { 
