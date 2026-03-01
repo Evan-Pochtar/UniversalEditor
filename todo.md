@@ -73,6 +73,9 @@
 - [x] Can't see cursor on unsaved changes popup
 - [ ] Star brush type doesn't really look star like
 - [ ] Retouch tool bar is placed randomly, some things very high, some very low
+- [ ] Some text on buttons is white in light mode
+- [ ] Hover effects of buttons only work in light mode
+- [ ] Sliders are only visible in dark mode
 - [x] Weird sharpen artifacting on high amount in retouch 
 - [x] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
 - [ ] Text Issues
