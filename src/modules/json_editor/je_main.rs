@@ -6,7 +6,7 @@ use crate::modules::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use super::je_tools::{
     SortMode, SearchTarget, FlatNode,
     build_flat, serialize_value, parse_text, expand_recursive, collapse_recursive,
-    search_flat, path_key,
+    search_flat, search_all_nodes, path_key,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,6 +33,8 @@ pub struct JsonEditor {
     pub(super) search_query: String,
     pub(super) search_target: SearchTarget,
     pub(super) search_results: Vec<usize>,
+    pub(super) search_all_paths: Vec<Vec<String>>,
+    pub(super) search_only_expanded: bool,
     pub(super) search_cursor: usize,
     pub(super) search_stale: bool,
 
@@ -49,6 +51,7 @@ pub struct JsonEditor {
 
     pub(super) add_dialog: Option<AddKeyDialog>,
     pub(super) edit_cell: Option<EditCell>,
+    pub(super) edit_cell_is_string: bool,
     pub(super) selected_row: Option<usize>,
     pub(super) confirm_delete_path: Option<Vec<String>>,
 
@@ -90,6 +93,8 @@ impl JsonEditor {
             search_query: String::new(),
             search_target: SearchTarget::Both,
             search_results: Vec::new(),
+            search_all_paths: Vec::new(),
+            search_only_expanded: true,
             search_cursor: 0,
             search_stale: false,
             text_content,
@@ -102,6 +107,7 @@ impl JsonEditor {
             undo_limit: 20,
             add_dialog: None,
             edit_cell: None,
+            edit_cell_is_string: false,
             selected_row: None,
             confirm_delete_path: None,
             export_pretty: true,
@@ -121,7 +127,7 @@ impl JsonEditor {
         if self.flat_stale {
             self.flat = build_flat(&self.root, &self.scope_path, &self.expanded, self.sort_mode);
             self.flat_stale = false;
-            self.search_stale = true;
+            if self.search_only_expanded { self.search_stale = true; }
         }
     }
     pub(super) fn invalidate_flat(&mut self) {
@@ -194,31 +200,55 @@ impl JsonEditor {
     pub(super) fn can_undo(&self) -> bool { !self.undo_stack.is_empty() }
     pub(super) fn can_redo(&self) -> bool { !self.redo_stack.is_empty() }
 
+    pub(super) fn search_result_count(&self) -> usize {
+        if self.search_only_expanded { self.search_results.len() } else { self.search_all_paths.len() }
+    }
+
     pub(super) fn run_search(&mut self) {
-        if self.search_stale || self.search_results.is_empty() && !self.search_query.is_empty() {
+        if !self.search_stale { return; }
+        if self.search_only_expanded {
             self.search_results = search_flat(&self.flat, &self.search_query, self.search_target);
-            if self.search_cursor >= self.search_results.len() {
-                self.search_cursor = 0;
-            }
+            self.search_all_paths.clear();
+            if self.search_cursor >= self.search_results.len() { self.search_cursor = 0; }
             self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
-            self.search_stale = false;
+        } else {
+            self.search_all_paths = search_all_nodes(&self.root, &self.scope_path, &self.search_query, self.search_target);
+            self.search_results.clear();
+            if self.search_cursor >= self.search_all_paths.len() { self.search_cursor = 0; }
+            self.apply_all_nodes_cursor();
+        }
+        self.search_stale = false;
+    }
+
+    fn expand_to_path(&mut self, path: &[String]) {
+        for i in 0..path.len() { self.expanded.insert(path_key(&path[..i])); }
+        self.flat = build_flat(&self.root, &self.scope_path, &self.expanded, self.sort_mode);
+        self.flat_stale = false;
+    }
+
+    fn apply_all_nodes_cursor(&mut self) {
+        if let Some(path) = self.search_all_paths.get(self.search_cursor).cloned() {
+            self.expand_to_path(&path);
+            self.pending_scroll_row = self.flat.iter().position(|n| n.path == path);
         }
     }
 
     pub(super) fn search_next(&mut self) {
-        if self.search_results.is_empty() { return; }
-        self.search_cursor = (self.search_cursor + 1) % self.search_results.len();
-        self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
+        let count = self.search_result_count();
+        if count == 0 { return; }
+        self.search_cursor = (self.search_cursor + 1) % count;
+        if self.search_only_expanded {
+            self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
+        } else { self.apply_all_nodes_cursor(); }
     }
 
     pub(super) fn search_prev(&mut self) {
-        if self.search_results.is_empty() { return; }
-        if self.search_cursor == 0 {
-            self.search_cursor = self.search_results.len() - 1;
-        } else {
-            self.search_cursor -= 1;
-        }
-        self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
+        let count = self.search_result_count();
+        if count == 0 { return; }
+        self.search_cursor = if self.search_cursor == 0 { count - 1 } else { self.search_cursor - 1 };
+        if self.search_only_expanded {
+            self.pending_scroll_row = self.search_results.get(self.search_cursor).cloned();
+        } else { self.apply_all_nodes_cursor(); }
     }
 
     pub(super) fn toggle_expand(&mut self, path: &[String]) {
@@ -315,7 +345,9 @@ impl JsonEditor {
         self.search_stale = true;
         self.search_query.clear();
         self.search_results.clear();
+        self.search_all_paths.clear();
         self.edit_cell = None;
+        self.edit_cell_is_string = false;
         self.add_dialog = None;
     }
 }

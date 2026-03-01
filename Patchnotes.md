@@ -109,6 +109,7 @@
 - **JSON EDITOR**: Undo and Redo moved to top bar
 - **JSON EDITOR**: Improved styling and cleaned up backgrounds
 - **JSON EDITOR**: Added option to hide file info in both settings and "View" toolbar
+- **JSON EDITOR**: Search bar can now search non expanded nodes
 - **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
 
 #### Debugging

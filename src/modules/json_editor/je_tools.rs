@@ -281,6 +281,45 @@ pub fn search_flat(nodes: &[FlatNode], query: &str, target: SearchTarget,) -> Ve
     results
 }
 
+fn search_recursive(value: &Value, path: &[String], q: &str, target: SearchTarget, out: &mut Vec<Vec<String>>) {
+    let key = path.last().map(|s| s.as_str()).unwrap_or("");
+    let key_match = key.to_lowercase().contains(q);
+    let val_match = match value {
+        Value::Null => "null".contains(q),
+        Value::Bool(true) => "true".contains(q),
+        Value::Bool(false) => "false".contains(q),
+        Value::Number(n) => n.to_string().to_lowercase().contains(q),
+        Value::String(s) => s.to_lowercase().contains(q),
+        _ => false,
+    };
+    let hit = match target {
+        SearchTarget::Keys => key_match,
+        SearchTarget::Values => val_match,
+        SearchTarget::Both => key_match || val_match,
+    };
+    if hit && !path.is_empty() { out.push(path.to_vec()); }
+    match value {
+        Value::Object(m) => m.iter().for_each(|(k, v)| {
+            let mut cp = path.to_vec(); cp.push(k.clone());
+            search_recursive(v, &cp, q, target, out);
+        }),
+        Value::Array(a) => a.iter().enumerate().for_each(|(i, v)| {
+            let mut cp = path.to_vec(); cp.push(i.to_string());
+            search_recursive(v, &cp, q, target, out);
+        }),
+        _ => {}
+    }
+}
+
+pub fn search_all_nodes(root: &Value, scope: &[String], query: &str, target: SearchTarget) -> Vec<Vec<String>> {
+    if query.is_empty() { return Vec::new(); }
+    let q = query.to_lowercase();
+    let scoped = value_at_path(root, scope).unwrap_or(root);
+    let mut out = Vec::new();
+    search_recursive(scoped, scope, &q, target, &mut out);
+    out
+}
+
 pub fn serialize_value(value: &Value, pretty: bool) -> String {
     if pretty { serde_json::to_string_pretty(value).unwrap_or_default() } 
     else { serde_json::to_string(value).unwrap_or_default() }

@@ -148,22 +148,34 @@ impl JsonEditor {
                     });
                 });
 
-                let has = !self.search_results.is_empty();
+                let has = !self.search_results.is_empty() || (!self.search_only_expanded && !self.search_all_paths.is_empty());
                 if ghost_btn_small(ui, "Prev", dark, has).clicked() { self.search_prev(); }
                 if ghost_btn_small(ui, "Next", dark, has).clicked() { self.search_next(); }
 
                 if !self.search_query.is_empty() {
-                    let count = self.search_results.len();
-                    let cur   = if count > 0 { self.search_cursor + 1 } else { 0 };
+                    let count = self.search_result_count();
+                    let cur = if count > 0 { self.search_cursor + 1 } else { 0 };
                     ui.label(egui::RichText::new(format!("{}/{}", cur, count))
                         .size(12.0)
                         .color(if count == 0 { c_error(dark) } else { c_muted(dark) }));
+                }
+
+                if matches!(self.view_mode, JsonViewMode::Tree) {
+                    let prev = self.search_only_expanded;
+                    ui.add(egui::Checkbox::new(&mut self.search_only_expanded,
+                        egui::RichText::new("Search Only Expanded Nodes").size(11.0).color(c_muted(dark))));
+                    if self.search_only_expanded != prev {
+                        self.search_stale = true;
+                        self.search_cursor = 0;
+                        self.run_search();
+                    }
                 }
 
                 if !self.search_query.is_empty() {
                     if compact_button(ui, "Clear", dark).clicked() {
                         self.search_query.clear();
                         self.search_results.clear();
+                        self.search_all_paths.clear();
                         self.search_stale = false;
                     }
                 }
@@ -232,11 +244,19 @@ impl JsonEditor {
         let flat_len: usize = self.flat.len();
         if flat_len == 0 { self.render_empty_state(ui, dark); return; }
 
-        let result_set: std::collections::HashSet<usize> =
-            self.search_results.iter().cloned().collect();
-        let active_match = self.search_results
-            .get(self.search_cursor)
-            .cloned();
+        let result_set: std::collections::HashSet<usize> = if self.search_only_expanded {
+            self.search_results.iter().cloned().collect()
+        } else {
+            self.search_all_paths.iter()
+                .filter_map(|p| self.flat.iter().position(|n| &n.path == p))
+                .collect()
+        };
+        let active_match: Option<usize> = if self.search_only_expanded {
+            self.search_results.get(self.search_cursor).cloned()
+        } else {
+            self.search_all_paths.get(self.search_cursor)
+                .and_then(|p| self.flat.iter().position(|n| &n.path == p))
+        };
 
         let mut toggle_path: Option<Vec<String>> = None;
         let mut drill_path: Option<Vec<String>> = None;
@@ -274,11 +294,27 @@ impl JsonEditor {
                 }
             });
 
-        let total_h: f32 = flat_len as f32 * ROW_H;
+        const MAX_EDIT_H: f32 = 120.0;
+        let edit_row_idx: Option<usize> = if self.edit_cell_is_string {
+            self.edit_cell.as_ref().and_then(|ec| self.flat.iter().position(|n| n.path == ec.path))
+        } else { None };
+        let extra_h: f32 = if edit_row_idx.is_some() {
+            if let Some(ec) = &self.edit_cell {
+                let font_id = egui::FontId::proportional(12.0);
+                let wrap_w = (col_val_w - 12.0).max(40.0);
+                let measured_h = ui.ctx().fonts_mut(|f| {
+                    f.layout(ec.buffer.clone(), font_id, egui::Color32::WHITE, wrap_w).size().y
+                });
+                let padded = (measured_h + 8.0).min(MAX_EDIT_H);
+                (padded - ROW_H).max(0.0)
+            } else { 0.0 }
+        } else { 0.0 };
+
+        let total_h: f32 = flat_len as f32 * ROW_H + extra_h;
         let current_edit: Option<EditCell> = self.edit_cell.clone();
         let scroll_to_offset: Option<f32> = self.pending_scroll_row.take().map(|row| {
-            let y = row as f32 * ROW_H;
-            y
+            let base = row as f32 * ROW_H;
+            if edit_row_idx.map_or(false, |ei| row > ei) { base + extra_h } else { base }
         });
 
         let mut scroll_area = egui::ScrollArea::vertical()
@@ -289,16 +325,44 @@ impl JsonEditor {
         }
         scroll_area.show_viewport(ui, |ui, viewport| {
                 let (total_rect, _) = ui.allocate_exact_size(egui::vec2(available_w, total_h), egui::Sense::hover());
-                let first: usize = ((viewport.min.y / ROW_H) as usize).saturating_sub(2);
-                let last: usize  = (((viewport.max.y / ROW_H) as usize) + 3).min(flat_len);
-                let rows: Vec<(usize, FlatNode)> = (first..last)
-                    .filter_map(|i| self.flat.get(i).map(|n| (i, n.clone()))).collect();
+                let ei_opt = edit_row_idx;
+                let (first, last) = {
+                    let vmin = viewport.min.y;
+                    let vmax = viewport.max.y;
+                    let f = if ei_opt.map_or(true, |ei| vmin <= (ei as f32 + 1.0) * ROW_H) {
+                        (vmin / ROW_H) as usize
+                    } else {
+                        ((vmin - extra_h) / ROW_H) as usize
+                    };
+                    let l = if ei_opt.map_or(true, |ei| vmax <= (ei as f32 + 1.0) * ROW_H + extra_h) {
+                        (vmax / ROW_H) as usize + 3
+                    } else {
+                        ((vmax - extra_h) / ROW_H) as usize + 3
+                    };
+                    (f.saturating_sub(2), l.min(flat_len))
+                };
+                let always_include = ei_opt.filter(|&ei| ei >= first && ei < last).is_none();
+                let rows: Vec<(usize, FlatNode)> = {
+                    let mut v: Vec<(usize, FlatNode)> = (first..last)
+                        .filter_map(|i| self.flat.get(i).map(|n| (i, n.clone()))).collect();
+                    if always_include {
+                        if let Some(ei) = ei_opt {
+                            if let Some(n) = self.flat.get(ei) {
+                                v.push((ei, n.clone()));
+                                v.sort_by_key(|(i, _)| *i);
+                            }
+                        }
+                    }
+                    v
+                };
 
                 for (i, node) in rows {
-                    let y_top = total_rect.min.y + i as f32 * ROW_H;
+                    let y_base = total_rect.min.y + i as f32 * ROW_H;
+                    let y_top = if ei_opt.map_or(false, |ei| i > ei) { y_base + extra_h } else { y_base };
+                    let row_h = if ei_opt == Some(i) { ROW_H + extra_h } else { ROW_H };
                     let row_rect = egui::Rect::from_min_size(
                         egui::pos2(total_rect.min.x, y_top),
-                        egui::vec2(available_w, ROW_H),
+                        egui::vec2(available_w, row_h),
                     );
                     if !ui.is_rect_visible(row_rect) { continue; }
 
@@ -320,7 +384,7 @@ impl JsonEditor {
                     }
 
                     let cx: f32 = row_rect.min.x;
-                    let cy: f32 = row_rect.center().y;
+                    let cy: f32 = row_rect.min.y + ROW_H / 2.0;
                     let indent: f32 = node.depth as f32 * 12.0 + 6.0;
                     let editing_k = current_edit.as_ref()
                         .filter(|e| e.path == node.path && e.editing_key)
@@ -380,11 +444,37 @@ impl JsonEditor {
 
                     if editing_v {
                         if let Some(ec) = &mut self.edit_cell {
-                            let er = egui::Rect::from_min_size(
-                                egui::pos2(val_x, cy - 9.0), egui::vec2(col_val_w - 4.0, 18.0));
-                            let r = ui.put(er, egui::TextEdit::singleline(&mut ec.buffer)
-                                .font(egui::FontId::proportional(12.0)));
-                            if r.lost_focus() { commit_edit = true; }
+                            if self.edit_cell_is_string {
+                                let edit_h = row_h - 4.0;
+                                let er = egui::Rect::from_min_size(
+                                    egui::pos2(val_x, row_rect.min.y + 2.0),
+                                    egui::vec2(col_val_w - 4.0, edit_h));
+                                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(er).layout(*ui.layout()));
+                                child_ui.set_clip_rect(er.intersect(ui.clip_rect()));
+                                let scroll_resp = egui::ScrollArea::vertical()
+                                    .id_salt("je_str_edit_scroll")
+                                    .max_height(edit_h)
+                                    .auto_shrink([false, false])
+                                    .show(&mut child_ui, |ui| {
+                                        ui.add(egui::TextEdit::multiline(&mut ec.buffer)
+                                            .desired_width(col_val_w - 8.0)
+                                            .desired_rows(1)
+                                            .font(egui::FontId::proportional(12.0)))
+                                    });
+                                let r = scroll_resp.inner;
+                                if r.lost_focus() && !ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                                    commit_edit = true;
+                                }
+                                if r.has_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                                    commit_edit = true;
+                                }
+                            } else {
+                                let er = egui::Rect::from_min_size(
+                                    egui::pos2(val_x, cy - 9.0), egui::vec2(col_val_w - 4.0, 18.0));
+                                let r = ui.put(er, egui::TextEdit::singleline(&mut ec.buffer)
+                                    .font(egui::FontId::proportional(12.0)));
+                                if r.lost_focus() { commit_edit = true; }
+                            }
                         }
                     } else {
                         let col = val_color(&node.val_type, dark);
@@ -445,12 +535,16 @@ impl JsonEditor {
         if commit_edit { self.commit_inline_edit(); }
         if let Some((row, ek)) = begin_edit {
             if let Some(node) = self.flat.get(row) {
-                let init = if ek { node.key.clone() } else { node.val_type.preview_str() };
-                self.edit_cell = Some(EditCell {
-                    path: node.path.clone(),
-                    buffer: init,
-                    editing_key: ek,
-                });
+                let (init, is_str) = if ek {
+                    (node.key.clone(), false)
+                } else {
+                    match &node.val_type {
+                        super::je_tools::ValType::Str(s) => (s.clone(), true),
+                        _ => (node.val_type.preview_str(), false),
+                    }
+                };
+                self.edit_cell_is_string = is_str;
+                self.edit_cell = Some(EditCell { path: node.path.clone(), buffer: init, editing_key: ek });
             }
         }
     }
@@ -566,6 +660,8 @@ impl JsonEditor {
 
     fn commit_inline_edit(&mut self) {
         if let Some(ec) = self.edit_cell.take() {
+            let is_str = self.edit_cell_is_string;
+            self.edit_cell_is_string = false;
             if ec.editing_key {
                 if !ec.path.is_empty() {
                     let (parent, key_seg) = ec.path.split_at(ec.path.len() - 1);
@@ -575,7 +671,7 @@ impl JsonEditor {
                     }
                 }
             } else {
-                let new_val = parse_cell_value(&ec.buffer);
+                let new_val = if is_str { serde_json::Value::String(ec.buffer.clone()) } else { parse_cell_value(&ec.buffer) };
                 self.set_node_value(&ec.path, new_val);
             }
         }

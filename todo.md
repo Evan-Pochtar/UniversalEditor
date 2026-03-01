@@ -215,7 +215,7 @@
 - [x] Undo and Redo can be moved to top bar
 - [ ] Change cursor when hovering over buttons/navigation
   - [ ] Make navigation bigger and more noticeable
-- [ ] Give the ability to show/hide file information
+- [x] Give the ability to show/hide file information
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Option to increase size of each row in the tree view
 - [ ] Add line numbers to text view
