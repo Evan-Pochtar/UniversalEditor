@@ -76,7 +76,8 @@ impl ImageEditor {
             .corner_radius(6.0)
             .inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 })
             .show(ui, |ui: &mut egui::Ui| {
-                ui.horizontal(|ui: &mut egui::Ui| {
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui: &mut egui::Ui| {
+                    ui.style_mut().spacing.interact_size.y = 28.0;
                     match self.tool {
                         Tool::Brush => {
                             ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
@@ -185,7 +186,8 @@ impl ImageEditor {
                                 .auto_shrink([false, true])
                                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                                 .show(ui, |ui: &mut egui::Ui| {
-                                    ui.horizontal(|ui: &mut egui::Ui| {
+                                    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui: &mut egui::Ui| {
+                                        ui.style_mut().spacing.interact_size.y = 28.0;
                                         for mode in RetouchMode::all() {
                                             let active = self.retouch_mode == *mode;
                                             let (bg, hover, txt) = if active { (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE) } else { theme_btn(theme) };
@@ -193,48 +195,40 @@ impl ImageEditor {
                                                 self.retouch_mode = *mode;
                                             }
                                         }
-                                        ui.horizontal(|ui: &mut egui::Ui| {
-                                            ui.separator();
-                                            ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
-                                            ui.add(egui::Slider::new(&mut self.retouch_size, 1.0..=200.0));
-                                        });
+                                        ui.separator();
+                                        ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
+                                        ui.add(egui::Slider::new(&mut self.retouch_size, 1.0..=200.0));
                                         ui.separator();
                                         match self.retouch_mode {
                                             RetouchMode::Brightness => {
                                                 ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
-                                                        egui::Color32::from_rgb(18, 18, 18), egui::Color32::from_rgb(255, 255, 240),
-                                                        "Dark", "Light", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.add_space(4.0);
+                                                ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
+                                                ui.add_space(8.0);
+                                                gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
+                                                    egui::Color32::from_rgb(18, 18, 18), egui::Color32::from_rgb(255, 255, 240),
+                                                    "Dark", "Light", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Temperature => {
                                                 ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Shift:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
-                                                        egui::Color32::from_rgb(70, 130, 220), egui::Color32::from_rgb(250, 150, 40),
-                                                        "Cool", "Warm", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.add_space(4.0);
+                                                ui.label(egui::RichText::new("Shift:").size(12.0).color(label_col));
+                                                ui.add_space(8.0);
+                                                gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
+                                                    egui::Color32::from_rgb(70, 130, 220), egui::Color32::from_rgb(250, 150, 40),
+                                                    "Cool", "Warm", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Vibrance => {
                                                 ui.spacing_mut().slider_width = 230.0;
-                                                ui.horizontal(|ui: &mut egui::Ui| {
-                                                    ui.add_space(4.0);
-                                                    ui.label(egui::RichText::new("Boost:").size(12.0).color(label_col));
-                                                    ui.add_space(8.0);
-                                                    gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0, 
-                                                        egui::Color32::from_rgb(130, 130, 130), egui::Color32::from_rgb(60, 190, 230),
-                                                        "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
-                                                    );
-                                                });
+                                                ui.add_space(4.0);
+                                                ui.label(egui::RichText::new("Boost:").size(12.0).color(label_col));
+                                                ui.add_space(8.0);
+                                                gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
+                                                    egui::Color32::from_rgb(130, 130, 130), egui::Color32::from_rgb(60, 190, 230),
+                                                    "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
+                                                );
                                             }
                                             RetouchMode::Pixelate => {
                                                 ui.label(egui::RichText::new("Block Size:").size(12.0).color(label_col));
