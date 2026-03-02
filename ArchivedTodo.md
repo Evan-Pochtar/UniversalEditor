@@ -79,6 +79,8 @@
 - [x] File information and search bar backgrounds do not go all the way to the right of the screen
 - [x] Format and sort combobox not centered in the toolbar
 - [x] Search not navigating to results properly
+- [x] Does not allow undo for any text changes
+- [x] Json Editor crashes when trying to navigate back at least 2 parents
 
 ### Other Bugs
 

@@ -8,18 +8,37 @@
 
 ## Screens
 
-- [ ] Word Docs, ect.
-- [ ] Video Processing
-- [ ] CSV, Excel, ect.
-- [ ] PDF
-- [ ] Zip/Unzip
-- [ ] Code Editor?
+- [ ] Code Editor (.rs, .py, .js, .ts, .c, .cpp, .go, .java, .sh, .css, .sql)
+- [ ] Spreadsheet Editor (.csv, .tsv, .xlsx, .xls, .ods)
+- [ ] Document Editor (.docx, .doc, .odt, .pdf)
+- [ ] Archive Manager (.zip, .tar, .gz, .tar.gz, .7z, .bz2)
+- [ ] Audio Editor (.mp3, .wav, .flac, .ogg, .aac, .m4a)
+- [ ] Video Editor (.mp4, .mkv, .avi, .mov, .webm)
+- [ ] Hex Editor (any binary file)
+- [ ] Font Viewer (.ttf, .otf, .woff, .woff2)
 
 ## Converters
 
-- [ ] Video to Gif, Gif to Video
-- [ ] Video Compressor
-- [ ] Video to Audio File
+- [ ] Video to Video (.mp4, .mkv, .avi, .mov, .webm, .flv, .wmv)
+- [ ] Video Compressor (.mp4, .mkv, .mov, .webm)
+- [ ] Video to GIF / GIF to Video (.mp4/.webm -> .gif, .gif -> .mp4/.webm)
+- [ ] Video to Audio (.mp4, .mkv, .avi, .mov -> .mp3, .wav, .flac, .ogg, .aac)
+- [ ] Subtitle Converter (.srt, .vtt, .ass, .ssa)
+- [ ] Audio Converter (.mp3, .wav, .flac, .ogg, .aac, .m4a)
+- [ ] Audio Compressor (.wav, .flac, .aac, .mp3)
+- [ ] Document Converter (.docx, .odt -> .pdf, .txt, .md, .html, .rtf)
+- [ ] PDF Converter (.pdf -> .txt, .docx, .html, per-page image exports)
+- [ ] Spreadsheet Converter (.csv, .tsv, .xlsx, .ods -> any of those, includes .json export)
+- [ ] Data Format Converter (.json, .yaml, .toml, .xml, .csv)
+- [ ] Markdown Converter (.md -> .html, .pdf, .docx, .txt)
+- [ ] SVG Rasterizer (.svg -> .png, .jpg, .webp)
+- [ ] Image to PDF / PDF to Images (.jpg/.png/.webp -> .pdf, .pdf -> per-page .png/.jpg)
+- [ ] Image Resizer / Batch Resizer (.png, .jpg, .webp, .bmp)
+- [ ] Archive Converter (.zip, .tar.gz, .7z, .bz2)
+- [ ] Font Converter (.ttf, .otf -> .woff, .woff2, and vice versa)
+- [ ] QR Code Generator (text, URL, vCard -> .png, .svg)
+- [ ] Hash Generator (any file -> MD5, SHA-1, SHA-256, SHA-512 output)
+- [ ] File Splitter / Joiner (any large file -> split into N parts, rejoin from parts)
 
 ## Debugging
 
@@ -40,9 +59,7 @@
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
 ### Json Editor Bugs
-- [ ] Does not allow undo for any text changes
 - [ ] Sort and Search do not work on text view
-- [ ] Json Editor crashes when trying to navigate back at least 2 parents
 
 ### Other Bugs
 
@@ -52,6 +69,9 @@
 
 ### Text Editor
 
+- [ ] Add way to go to file location
+- [ ] Add way to rename file
+- [ ] Add way to convert file from txt to md and vice versa
 - [ ] Latex?
 
 ### Image Editor

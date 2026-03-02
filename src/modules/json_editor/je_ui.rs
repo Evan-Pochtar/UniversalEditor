@@ -94,18 +94,26 @@ impl JsonEditor {
                         self.scope_path.clear();
                         self.invalidate_flat();
                         self.text_stale = true;
+                        self.search_stale = true;
+                        self.selected_row = None;
                     }
 
-                    for i in 0..self.scope_path.len() {
+                    let path_snapshot = self.scope_path.clone();
+                    let mut truncate_to: Option<usize> = None;
+                    for (i, seg) in path_snapshot.iter().enumerate() {
                         ui.label(egui::RichText::new("/").size(12.0).color(c_border(dark)));
-                        let seg = self.scope_path[i].clone();
-                        let is_last = i + 1 == self.scope_path.len();
+                        let is_last = i + 1 == path_snapshot.len();
                         let color = if is_last { c_text(dark) } else { ColorPalette::BLUE_500 };
-                        if ui.add(egui::Label::new(egui::RichText::new(&seg).size(12.0).color(color)).sense(egui::Sense::click())).clicked() && !is_last {
-                            self.scope_path.truncate(i + 1);
-                            self.invalidate_flat();
-                            self.text_stale = true;
+                        if ui.add(egui::Label::new(egui::RichText::new(seg).size(12.0).color(color)).sense(egui::Sense::click())).clicked() && !is_last {
+                            truncate_to = Some(i + 1);
                         }
+                    }
+                    if let Some(len) = truncate_to {
+                        self.scope_path.truncate(len);
+                        self.invalidate_flat();
+                        self.text_stale = true;
+                        self.search_stale = true;
+                        self.selected_row = None;
                     }
 
                     ui.add_space(8.0);
@@ -194,6 +202,7 @@ impl JsonEditor {
     }
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
+        if matches!(self.view_mode, JsonViewMode::Text) { return; }
         ctx.input_mut(|i| {
             if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) {
                 self.undo();
