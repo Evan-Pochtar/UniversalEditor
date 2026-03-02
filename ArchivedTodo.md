@@ -14,6 +14,7 @@
   - [x] Converter/Screen List
 - [x] Unified Top Bar Handling
 - [x] Better File System
+- [x] Easier way to add new screens/converters (Code only change)
 
 ## Screens
 

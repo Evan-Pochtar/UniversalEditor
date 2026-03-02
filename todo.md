@@ -71,6 +71,7 @@
   - [ ] Radial
 - [ ] Cutout tool
 - [ ] Retouch tool
+  - [ ] Saturation tool should have a custom slider
   - [ ] Improve performance on bigger sizes
 - [ ] Shape tool
 - [ ] Brush Settings Panel

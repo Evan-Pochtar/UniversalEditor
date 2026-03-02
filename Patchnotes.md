@@ -111,8 +111,10 @@
 - **JSON EDITOR**: Added option to hide file info in both settings and "View" toolbar
 - **JSON EDITOR**: Search bar can now search non expanded nodes
 - **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
+- **GENERAL**: Added easier way to add new screens/converters to the app (Code Only Change)
 
 #### Debugging
 - **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's
 - **JSON EDITOR**: Search now properly navigates to searched keys/values
 - **JSON EDITOR**: Error popup text no longer leaves the popup
+- **IMG EDITOR**: Options bar buttons, sliders, and drag values are now centered

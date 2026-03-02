@@ -2,6 +2,7 @@
 
 mod app;
 mod modules;
+mod registry;
 mod style;
 
 use app::UniversalEditor;
