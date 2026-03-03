@@ -122,5 +122,6 @@
 - **JSON EDITOR**: Error popup text no longer leaves the popup
 - **JSON EDITOR**: JSON Editor no longer crashes when trying to navigate 2 or more parents back
 - **JSON EDITOR**: Can now undo/redo on the text view properly
+- **JSON EDITOR**: No longer converts new boolean values to strings
 - **IMG EDITOR**: Options bar buttons, sliders, and drag values are now centered
 - **TEXT EDITOR**: Code blocks and Blockquotes no longer desync on font change

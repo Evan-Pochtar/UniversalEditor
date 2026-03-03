@@ -354,6 +354,14 @@ pub fn parse_cell_value(raw: &str) -> Value {
     }
 }
 
+pub fn parse_edit_value(raw: &str) -> Value {
+    let t = raw.trim();
+    if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        return Value::String(t[1..t.len() - 1].to_string());
+    }
+    parse_cell_value(t)
+}
+
 pub fn expand_recursive(root: &Value, scope: &[String], path: &[String], max_depth: u32, expanded: &mut HashSet<String>,) {
     let val = match value_at_path(root, path) {
         Some(v) => v,

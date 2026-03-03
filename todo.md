@@ -5,6 +5,7 @@
 - [ ] Create Main Menu
   - [ ] Add About Page
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [ ] Add right click context menu to change file name and open file location in "recent files" list
 
 ## Screens
 

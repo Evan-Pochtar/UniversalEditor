@@ -4,7 +4,7 @@ use crate::style::{self, ColorPalette};
 use super::je_main::{JsonEditor, JsonViewMode, EditCell, AddKeyDialog};
 use super::je_tools::{
     SortMode, SearchTarget, FlatNode,
-    sort_label, search_target_label, parse_cell_value, serialize_value, validate_json, value_at_path,
+    sort_label, search_target_label, parse_cell_value, parse_edit_value, serialize_value, validate_json, value_at_path,
 };
 use super::je_style::{ 
     c_panel, c_border, c_row_alt, c_row_sel, c_row_match, c_row_match_active, c_key, c_text, c_muted, c_error,
@@ -669,7 +669,6 @@ impl JsonEditor {
 
     fn commit_inline_edit(&mut self) {
         if let Some(ec) = self.edit_cell.take() {
-            let is_str = self.edit_cell_is_string;
             self.edit_cell_is_string = false;
             if ec.editing_key {
                 if !ec.path.is_empty() {
@@ -680,7 +679,7 @@ impl JsonEditor {
                     }
                 }
             } else {
-                let new_val = if is_str { serde_json::Value::String(ec.buffer.clone()) } else { parse_cell_value(&ec.buffer) };
+                let new_val = parse_edit_value(&ec.buffer);
                 self.set_node_value(&ec.path, new_val);
             }
         }
