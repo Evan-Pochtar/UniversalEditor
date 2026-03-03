@@ -166,6 +166,8 @@ pub struct UniversalEditor {
     pending_action: Option<PendingAction>,
     recent_file_tx: SyncSender<PathBuf>,
     recent_file_rx: Receiver<PathBuf>,
+    path_replace_tx: SyncSender<(PathBuf, PathBuf)>,
+    path_replace_rx: Receiver<(PathBuf, PathBuf)>,
     patch_notes: Vec<PatchVersion>,
     patch_notes_page: usize,
 }
@@ -189,6 +191,7 @@ impl UniversalEditor {
         style::register_fonts(&cc.egui_ctx);
 
         let (tx, rx) = sync_channel(20);
+        let (replace_tx, replace_rx) = sync_channel::<(PathBuf, PathBuf)>(20);
 
         let patch_content = include_str!("../Patchnotes.md");
         let mut patch_notes: Vec<PatchVersion> = Vec::new();
@@ -265,6 +268,8 @@ impl UniversalEditor {
             pending_action: None,
             recent_file_tx: tx,
             recent_file_rx: rx,
+            path_replace_tx: replace_tx,
+            path_replace_rx: replace_rx,
             patch_notes,
             patch_notes_page: 0,
         }
@@ -313,6 +318,7 @@ impl UniversalEditor {
             CreateModule::TextEditor => {
                 let mut e = if let Some(p) = path { TextEditor::load(p) } else { TextEditor::new_empty() };
                 self.apply_default_font(&mut e);
+                e.set_path_replace_tx(self.path_replace_tx.clone());
                 Box::new(e)
             }
             CreateModule::ImageEditor => {
@@ -1241,6 +1247,11 @@ impl eframe::App for UniversalEditor {
 
         while let Ok(path) = self.recent_file_rx.try_recv() {
             self.recent_files.add_file(path);
+        }
+
+        while let Ok((old_path, new_path)) = self.path_replace_rx.try_recv() {
+            self.recent_files.remove_file(&old_path);
+            self.recent_files.add_file(new_path);
         }
 
         if let Some(PendingAction::Exit) = &self.pending_action {

@@ -365,4 +365,56 @@ impl TextEditor {
     pub(super) fn find_closing_paren(chars: &[char], start: usize) -> Option<usize> {
         chars[start..].iter().position(|&c| c == ')').map(|i: usize| start + i)
     }
+
+    pub(super) fn open_file_location(&self) {
+        if let Some(path) = &self.file_path {
+            let dir = path.parent().unwrap_or(path.as_path());
+            #[cfg(target_os = "windows")]
+            { let _ = std::process::Command::new("explorer").arg(dir).spawn(); }
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg(dir).spawn(); }
+            #[cfg(target_os = "linux")]
+            { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); }
+        }
+    }
+
+    pub(super) fn apply_rename(&mut self) {
+        if let Some(old_path) = self.file_path.take() {
+            let stem = self.rename_buffer.trim().to_string();
+            if stem.is_empty() { self.file_path = Some(old_path); return; }
+            let ext = self.rename_ext.as_deref().unwrap_or("txt");
+            let new_name = format!("{}.{}", stem, ext);
+            let new_path = old_path.with_file_name(&new_name);
+            if std::fs::rename(&old_path, &new_path).is_ok() {
+                if let Some(tx) = &self.path_replace_tx {
+                    let _ = tx.send((old_path, new_path.clone()));
+                }
+                self.file_path = Some(new_path.clone());
+                self.view_mode = Self::detect_view_mode(&new_path);
+            } else {
+                self.file_path = Some(old_path);
+            }
+        }
+    }
+
+    pub(super) fn convert_file_extension(&mut self) {
+        if let Some(path) = self.file_path.take() {
+            let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase());
+            let new_ext = match ext.as_deref() {
+                Some("md") | Some("markdown") => "txt",
+                Some("txt") => "md",
+                _ => { self.file_path = Some(path); return; }
+            };
+            let new_path = path.with_extension(new_ext);
+            if std::fs::rename(&path, &new_path).is_ok() {
+                if let Some(tx) = &self.path_replace_tx {
+                    let _ = tx.send((path, new_path.clone()));
+                }
+                self.file_path = Some(new_path.clone());
+                self.view_mode = Self::detect_view_mode(&new_path);
+            } else {
+                self.file_path = Some(path);
+            }
+        }
+    }
 }

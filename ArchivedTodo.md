@@ -44,6 +44,7 @@
 - [x] Features in top tool bar are not aligned.
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
+- [x] Changing fonts sometimes causes code blocks to desync
 
 ### Image Editor Bugs
 
@@ -113,6 +114,9 @@
 - [x] Markdown checkbox lists (for example this one)
 - [x] Use given fonts instead of egui font families (E.g ubuntu and roboto)
 - [x] Default font and font size support
+- [x] Add way to go to file location
+- [x] Add way to rename file
+- [x] Add way to convert file from txt to md and vice versa
 
 ### Image Editor
 
@@ -133,7 +137,6 @@
   - [x] Recent colors option in color picker
   - [x] Bigger/Clearer Color picker
   - [x] Color code to color option
-  - [ ] Add opacity to color picker
   - [x] Add Favorites to color picker (with keyboard shortcuts)
 - [x] Better text selection/writing tool
   - [x] Easy selection of text

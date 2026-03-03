@@ -11,6 +11,7 @@ pub enum ViewMode { Plain, Markdown, }
 pub(super) struct LineHeightCache {
     pub version: u64,
     pub font_size: f32,
+    pub font_family: egui::FontFamily,
     pub wrap_width: f32,
     pub is_dark: bool,
     pub heights: Vec<Vec<f32>>,
@@ -30,6 +31,10 @@ pub struct TextEditor {
     pub(super) cached_char_count: usize,
     pub(super) cached_counts_version: u64,
     pub(super) line_height_cache: Option<LineHeightCache>,
+    pub(super) rename_modal_open: bool,
+    pub(super) rename_buffer: String,
+    pub(super) rename_ext: Option<String>,
+    pub(super) path_replace_tx: Option<std::sync::mpsc::SyncSender<(PathBuf, PathBuf)>>,
 }
 
 impl TextEditor {
@@ -48,6 +53,10 @@ impl TextEditor {
             cached_char_count: 0,
             cached_counts_version: u64::MAX,
             line_height_cache: None,
+            rename_modal_open: false,
+            rename_buffer: String::new(),
+            rename_ext: None,
+            path_replace_tx: None,
         }
     }
 
@@ -73,6 +82,10 @@ impl TextEditor {
             cached_char_count: 0,
             cached_counts_version: u64::MAX,
             line_height_cache: None,
+            rename_modal_open: false,
+            rename_buffer: String::new(),
+            rename_ext: None,
+            path_replace_tx: None,
         }
     }
 
@@ -88,6 +101,7 @@ impl TextEditor {
 
     pub fn is_dirty(&self) -> bool { self.dirty }
     pub fn set_default_font(&mut self, family: egui::FontFamily, size: f32) { self.font_family = family; self.font_size = size; }
+    pub fn set_path_replace_tx(&mut self, tx: std::sync::mpsc::SyncSender<(std::path::PathBuf, std::path::PathBuf)>) { self.path_replace_tx = Some(tx); }
 
     pub(super) fn get_file_name(&self) -> String {
         self.file_path.as_ref()

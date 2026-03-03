@@ -45,7 +45,6 @@
 ### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
-- [ ] Changing fonts sometimes causes code blocks to desync
 
 ### Image Editor Bugs
 
@@ -69,9 +68,6 @@
 
 ### Text Editor
 
-- [ ] Add way to go to file location
-- [ ] Add way to rename file
-- [ ] Add way to convert file from txt to md and vice versa
 - [ ] Latex?
 
 ### Image Editor

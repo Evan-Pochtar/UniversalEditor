@@ -62,7 +62,48 @@ impl TextEditor {
             }
             ui.horizontal(|ui: &mut egui::Ui| {
                 let is_dark: bool = ui.visuals().dark_mode;
-                ui.label(format!("File: {}", self.get_file_name()));
+                let file_label_resp = ui.add(
+                    egui::Label::new(format!("File: {}", self.get_file_name()))
+                        .sense(egui::Sense::click()),
+                );
+                file_label_resp.clone().on_hover_text("Right-click for file options");
+                file_label_resp.context_menu(|ui: &mut egui::Ui| {
+                    if ui.button("Open File Location").clicked() {
+                        self.open_file_location();
+                        ui.close();
+                    }
+                    if ui.button("Rename File").clicked() {
+                        let current_ext = self.file_path.as_ref()
+                            .and_then(|p| p.extension())
+                            .and_then(|e| e.to_str())
+                            .map(|e| e.to_lowercase())
+                            .unwrap_or_else(|| "txt".to_string());
+                        self.rename_buffer = self.file_path.as_ref()
+                            .and_then(|p| p.file_stem())
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("untitled")
+                            .to_string();
+                        self.rename_ext = Some(if current_ext == "md" { "md".to_string() } else { "txt".to_string() });
+                        self.rename_modal_open = true;
+                        ui.close();
+                    }
+                    let convert_label = match self.file_path.as_ref()
+                        .and_then(|p| p.extension())
+                        .and_then(|e| e.to_str())
+                        .map(|e| e.to_lowercase())
+                        .as_deref()
+                    {
+                        Some("md") | Some("markdown") => Some("Convert to .txt"),
+                        Some("txt") => Some("Convert to .md"),
+                        _ => None,
+                    };
+                    if let Some(label) = convert_label {
+                        if ui.button(label).clicked() {
+                            self.convert_file_extension();
+                            ui.close();
+                        }
+                    }
+                });
                 ui.separator();
                 let (status, color) = if self.dirty {
                     ("Unsaved", if is_dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 })
@@ -75,6 +116,38 @@ impl TextEditor {
                 ui.separator();
                 ui.label(format!("Words: {}", self.cached_word_count));
             });
+
+            if self.rename_modal_open {
+                let mut open = self.rename_modal_open;
+                egui::Window::new("Rename File")
+                    .collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .open(&mut open)
+                    .show(ui.ctx(), |ui: &mut egui::Ui| {
+                        ui.label("New filename:");
+                        ui.horizontal(|ui: &mut egui::Ui| {
+                            ui.text_edit_singleline(&mut self.rename_buffer);
+                            let ext = self.rename_ext.get_or_insert_with(|| "txt".to_string());
+                            egui::ComboBox::from_id_salt("rename_ext_cb")
+                                .selected_text(format!(".{}", ext))
+                                .width(60.0)
+                                .show_ui(ui, |ui: &mut egui::Ui| {
+                                    ui.selectable_value(ext, "txt".to_string(), ".txt");
+                                    ui.selectable_value(ext, "md".to_string(), ".md");
+                                });
+                        });
+                        ui.horizontal(|ui: &mut egui::Ui| {
+                            if ui.button("Rename").clicked() {
+                                self.apply_rename();
+                                self.rename_modal_open = false;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.rename_modal_open = false;
+                            }
+                        });
+                    });
+                if !open { self.rename_modal_open = false; }
+            }
+
             ui.separator();
         }
 
@@ -155,6 +228,7 @@ impl TextEditor {
             let cache_valid = self.line_height_cache.as_ref().map_or(false, |c| {
                 c.version == self.content_version
                     && c.font_size == font_size
+                    && c.font_family == font_family
                     && c.wrap_width == wrap_width
                     && c.is_dark == is_dark_mode
                     && c.heights.len() == lines.len()
@@ -186,6 +260,7 @@ impl TextEditor {
                 self.line_height_cache = Some(super::te_main::LineHeightCache {
                     version: self.content_version,
                     font_size,
+                    font_family: font_family.clone(),
                     wrap_width,
                     is_dark: is_dark_mode,
                     heights: per_line_row_heights,
