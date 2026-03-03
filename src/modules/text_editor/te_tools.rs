@@ -1,6 +1,22 @@
 use super::te_main::TextEditor;
 
 impl TextEditor {
+    pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
+        let header: String = (0..cols).map(|i| format!("Header {}", i + 1)).collect::<Vec<_>>().join(" | ");
+        let sep: String = (0..cols).map(|_| "---").collect::<Vec<_>>().join(" | ");
+        let data_row: String = (0..cols).map(|_| "Cell").collect::<Vec<_>>().join(" | ");
+        let data_rows: String = (0..rows).map(|_| format!("| {} |", data_row)).collect::<Vec<_>>().join("\n");
+        let table: String = format!("| {} |\n| {} |\n{}\n", header, sep, data_rows);
+        let byte_idx: usize = self.last_cursor_range
+            .map(|r| self.char_index_to_byte_index(r.primary.index))
+            .unwrap_or(self.content.len());
+        let needs_newline: bool = byte_idx > 0 && !self.content[..byte_idx].ends_with('\n');
+        let insert: String = if needs_newline { format!("\n{}", table) } else { table };
+        self.content.insert_str(byte_idx, &insert);
+        self.dirty = true;
+        self.content_version = self.content_version.wrapping_add(1);
+    }
+
     pub(super) fn char_index_to_byte_index(&self, char_index: usize) -> usize {
         self.content.char_indices()
             .nth(char_index)

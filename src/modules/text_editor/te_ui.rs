@@ -20,6 +20,40 @@ impl TextEditor {
                     ui.separator();
                     if ui.button(">").on_hover_text("Blockquote (Ctrl+Shift+Q)").clicked() { self.format_blockquote(); }
                     if ui.button("[ ]").on_hover_text("Checklist Item (Ctrl+Shift+L)").clicked() { self.insert_checklist_item(); }
+                    ui.separator();
+                    let tbl_btn = ui.button("Table").on_hover_text("Insert Table");
+                    let tbl_popup_id = tbl_btn.id;
+                    egui::Popup::from_toggle_button_response(&tbl_btn)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                        let is_dark = ui.visuals().dark_mode;
+                        let (cell_def, cell_hi, border) = if is_dark {
+                            (ColorPalette::ZINC_700, ColorPalette::BLUE_600, ColorPalette::ZINC_500)
+                        } else {
+                            (ColorPalette::GRAY_200, ColorPalette::BLUE_500, ColorPalette::GRAY_400)
+                        };
+                        let gap = 3.0f32;
+                        let cell_sz = 20.0f32;
+                        ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+                        for row in 0..8usize {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+                                for col in 0..8usize {
+                                    let highlighted = row <= self.table_picker_hover.0 && col <= self.table_picker_hover.1;
+                                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(cell_sz, cell_sz), egui::Sense::click());
+                                    ui.painter().rect_filled(rect, 2.0, if highlighted { cell_hi } else { cell_def });
+                                    ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Middle);
+                                    if resp.hovered() { self.table_picker_hover = (row, col); }
+                                    if resp.clicked() {
+                                        self.insert_table(row + 1, col + 1);
+                                        egui::Popup::close_id(ui.ctx(), tbl_popup_id);
+                                    }
+                                }
+                            });
+                        }
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(format!("{}x{} Table", self.table_picker_hover.1 + 1, self.table_picker_hover.0 + 1)).size(12.0));
+                    });
                 });
 
                 ui.separator();
@@ -225,6 +259,65 @@ impl TextEditor {
                 hrule_flags.push(is_hrule);
             }
 
+            let mut table_line_flags: Vec<bool> = vec![false; lines.len()];
+            let mut table_sep_flags:  Vec<bool> = vec![false; lines.len()];
+            for (i, line) in lines.iter().enumerate() {
+                if !code_line_flags[i] && !fence_line_flags[i] && Self::is_table_row(line) {
+                    table_line_flags[i] = true;
+                    if Self::is_separator_row(line) { table_sep_flags[i] = true; }
+                }
+            }
+
+            let cursor_line_idx: Option<usize> = cursor_pos.map(|cp| {
+                let mut acc = 0usize;
+                for (i, line) in lines.iter().enumerate() {
+                    let end = acc + line.chars().count();
+                    if cp <= end { return i; }
+                    acc = end + 1;
+                }
+                lines.len().saturating_sub(1)
+            });
+
+            let mut table_groups: Vec<(usize, usize, usize, usize, bool)> = Vec::new();
+            {
+                let mut ti = 0usize;
+                while ti < lines.len() {
+                    if table_line_flags[ti] {
+                        let start = ti;
+                        while ti < lines.len() && table_line_flags[ti] { ti += 1; }
+                        let end = ti - 1;
+                        if let Some(sep) = (start..=end).find(|&j| table_sep_flags[j]) {
+                            if sep > start {
+                                let col_count = lines[start..=end].iter()
+                                    .filter(|l| !Self::is_separator_row(l))
+                                    .map(|l| Self::parse_table_cells(l).len())
+                                    .max().unwrap_or(1);
+                                let cursor_in = cursor_line_idx.map_or(false, |cl| cl >= start && cl <= end);
+                                table_groups.push((start, sep, end, col_count, cursor_in));
+                            } else {
+                                for j in start..=end { table_line_flags[j] = false; }
+                            }
+                        } else {
+                            for j in start..=end { table_line_flags[j] = false; }
+                        }
+                    } else { ti += 1; }
+                }
+            }
+            let table_nc_flags: Vec<bool> = {
+                let mut f = vec![false; lines.len()];
+                for &(start, _sep, end, _cols, cursor_in) in &table_groups {
+                    if !cursor_in { for j in start..=end { f[j] = true; } }
+                }
+                f
+            };
+            let line_to_col_count: Vec<usize> = {
+                let mut v = vec![1usize; lines.len()];
+                for &(start, _sep, end, col_count, _) in &table_groups {
+                    for j in start..=end { v[j] = col_count; }
+                }
+                v
+            };
+
             let cache_valid = self.line_height_cache.as_ref().map_or(false, |c| {
                 c.version == self.content_version
                     && c.font_size == font_size
@@ -236,27 +329,46 @@ impl TextEditor {
 
             if !cache_valid {
                 let mut per_line_row_heights: Vec<Vec<f32>> = Vec::with_capacity(lines.len());
-                ui.fonts_mut(|fonts: &mut egui::epaint::FontsView<'_>| {
-                    for (idx, line) in lines.iter().enumerate() {
-                        let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
-                        job.wrap.max_width = wrap_width;
-
-                        if fence_line_flags[idx] {
-                            Self::append_fence_line_job(line, &mut job, font_size, is_dark_mode, false, cursor_pos, 0);
-                        } else if code_line_flags[idx] {
-                            job.append(line, 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
-                        } else if line.trim().is_empty() {
-                            job.append(line, 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+            ui.fonts_mut(|fonts: &mut egui::epaint::FontsView<'_>| {
+                for (idx, line) in lines.iter().enumerate() {
+                    if table_line_flags[idx] {
+                        let row_h = if Self::is_separator_row(line) {
+                            2.0f32
                         } else {
-                            Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, 0, is_dark_mode);
-                        }
-
-                        let galley: std::sync::Arc<egui::Galley> = fonts.layout_job(job);
-                        let mut row_heights: Vec<f32> = galley.rows.iter().map(|r: &egui::epaint::text::PlacedRow| r.height()).collect();
-                        if row_heights.is_empty() { row_heights.push((font_size * 1.25).max(16.0)); }
-                        per_line_row_heights.push(row_heights);
+                            let cells = Self::parse_table_cells(line);
+                            let ncols = line_to_col_count[idx].max(1);
+                            let cw = (available_width / ncols as f32 - 12.0).max(1.0);
+                            let mut max_h = (font_size * 1.25).max(16.0);
+                            for cell in &cells {
+                                let mut cj = egui::text::LayoutJob::default();
+                                cj.wrap.max_width = cw;
+                                Self::parse_inline_formatting_static(cell, &mut cj, font_size, &font_family, None, 0, is_dark_mode);
+                                if cj.sections.is_empty() { cj.append(cell, 0.0, egui::TextFormat { font_id: egui::FontId::new(font_size, font_family.clone()), ..Default::default() }); }
+                                let g = fonts.layout_job(cj);
+                                max_h = max_h.max(g.rect.height());
+                            }
+                            max_h + 12.0
+                        };
+                        per_line_row_heights.push(vec![row_h]);
+                        continue;
                     }
-                });
+                    let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
+                    job.wrap.max_width = wrap_width;
+                    if fence_line_flags[idx] {
+                        Self::append_fence_line_job(line, &mut job, font_size, is_dark_mode, false, cursor_pos, 0);
+                    } else if code_line_flags[idx] {
+                        job.append(line, 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
+                    } else if line.trim().is_empty() {
+                        job.append(line, 0.0, Self::default_format_static(font_size, &font_family, is_dark_mode));
+                    } else {
+                        Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, 0, is_dark_mode);
+                    }
+                    let galley: std::sync::Arc<egui::Galley> = fonts.layout_job(job);
+                    let mut row_heights: Vec<f32> = galley.rows.iter().map(|r: &egui::epaint::text::PlacedRow| r.height()).collect();
+                    if row_heights.is_empty() { row_heights.push((font_size * 1.25).max(16.0)); }
+                    per_line_row_heights.push(row_heights);
+                }
+            });
                 self.line_height_cache = Some(super::te_main::LineHeightCache {
                     version: self.content_version,
                     font_size,
@@ -269,11 +381,26 @@ impl TextEditor {
 
             let per_line_row_heights: Vec<Vec<f32>> = self.line_height_cache.as_ref().unwrap().heights.clone();
 
-            let desired_size: egui::Vec2 = ui.available_size();
+            let total_content_height: f32 = top_padding + per_line_row_heights.iter()
+                .flat_map(|v| v.iter().copied())
+                .sum::<f32>();
+            let desired_size = egui::vec2(
+                ui.available_width(),
+                total_content_height.max(ui.available_height()),
+            );
             let (outer_rect, _) = ui.allocate_exact_size(desired_size, Sense::click());
             let painter: &egui::Painter = ui.painter();
             let mut y: f32 = outer_rect.min.y + top_padding;
             let full_width: f32 = outer_rect.width().max(0.0);
+            let line_start_y: Vec<f32> = {
+                let mut out = Vec::with_capacity(lines.len());
+                let mut ry = outer_rect.min.y + top_padding;
+                for heights in &per_line_row_heights {
+                    out.push(ry);
+                    for &h in heights { ry += h; }
+                }
+                out
+            };
             let code_bg: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_800 } else { ColorPalette::ZINC_200 };
             let blockquote_bg: egui::Color32 = if is_dark_mode {
                 egui::Color32::from_rgba_unmultiplied(59, 130, 246, 15)
@@ -306,6 +433,95 @@ impl TextEditor {
                 }
             }
 
+            {
+                let tbl_header_bg: egui::Color32 = if is_dark_mode { egui::Color32::from_rgb(28, 33, 52) } else { egui::Color32::from_rgb(239, 246, 255) };
+                let tbl_alt_bg: egui::Color32 = if is_dark_mode { egui::Color32::from_rgb(22, 22, 29) } else { egui::Color32::from_rgb(249, 250, 251) };
+                let tbl_border: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_300 };
+                let tbl_row_sep: egui::Color32 = if is_dark_mode { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_300 };
+                let tbl_text: egui::Color32 = if is_dark_mode { ColorPalette::SLATE_200 } else { ColorPalette::GRAY_800 };
+                let tbl_hdr_text: egui::Color32 = if is_dark_mode { ColorPalette::SLATE_100 } else { ColorPalette::GRAY_900 };
+                let tbl_font: egui::FontId = egui::FontId::new(font_size, font_family.clone());
+                let tbl_font_bold: egui::FontId = egui::FontId::new(font_size, Self::bold_family(&font_family));
+
+                for &(start, sep, end, col_count, cursor_in) in &table_groups {
+                    if cursor_in { continue; }
+
+                    let x = outer_rect.min.x;
+                    let cw = (full_width / col_count as f32).max(1.0);
+                    let hdr_h: f32 = per_line_row_heights[start].iter().sum();
+                    let sep_h: f32 = per_line_row_heights[sep].iter().sum();
+                    let tsy = line_start_y[start];
+                    let tey = line_start_y[end] + per_line_row_heights[end].iter().sum::<f32>();
+                    let data_y = tsy + hdr_h + sep_h;
+                    let cr = egui::CornerRadius::same(4);
+
+                    painter.rect_filled(
+                        Rect::from_min_max(pos2(x, tsy), pos2(x + full_width, data_y)),
+                        egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 },
+                        tbl_header_bg,
+                    );
+
+                    let data_lines: Vec<usize> = (start..=end).filter(|&j| j != start && j != sep).collect();
+                    for (ri, &lj) in data_lines.iter().enumerate() {
+                        if ri % 2 == 1 {
+                            let ry2 = line_start_y[lj];
+                            let rh: f32 = per_line_row_heights[lj].iter().sum();
+                            painter.rect_filled(
+                                Rect::from_min_max(pos2(x, ry2), pos2(x + full_width, ry2 + rh)),
+                                if lj == end { egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 } } else { egui::CornerRadius::same(0) },
+                                tbl_alt_bg,
+                            );
+                        }
+                    }
+
+                    painter.hline(x..=x + full_width, data_y, egui::Stroke::new(1.0, tbl_border));
+                    for col in 1..col_count {
+                        painter.vline(x + cw * col as f32, tsy..=tey, egui::Stroke::new(1.0, tbl_border));
+                    }
+                    painter.rect_stroke(
+                        Rect::from_min_max(pos2(x, tsy), pos2(x + full_width, tey)),
+                        cr,
+                        egui::Stroke::new(1.0, tbl_border),
+                        egui::StrokeKind::Middle,
+                    );
+
+                    for (ci, cell) in Self::parse_table_cells(lines[start]).into_iter().enumerate().take(col_count) {
+                        let cell_x = x + cw * ci as f32 + 6.0;
+                        let cell_w = (cw - 12.0).max(1.0);
+                        let clip = Rect::from_min_max(pos2(cell_x, tsy + 2.0), pos2(cell_x + cell_w, tsy + hdr_h - 2.0));
+                        let bold_fam = Self::bold_family(&font_family);
+                        let mut job = egui::text::LayoutJob::default();
+                        job.wrap.max_width = cell_w;
+                        Self::parse_inline_formatting_static(&cell, &mut job, font_size, &bold_fam, None, 0, is_dark_mode);
+                        if job.sections.is_empty() { job.append(&cell, 0.0, egui::TextFormat { font_id: tbl_font_bold.clone(), color: tbl_hdr_text, ..Default::default() }); }
+                        let galley = painter.ctx().fonts_mut(|f| f.layout_job(job));
+                        let text_x = cell_x + ((cell_w - galley.rect.width()).max(0.0) / 2.0);
+                        let text_y = tsy + ((hdr_h - galley.rect.height()).max(0.0) / 2.0);
+                        painter.with_clip_rect(clip).galley(pos2(text_x, text_y), galley, tbl_hdr_text);
+                    }
+
+                    for (ri, &lj) in data_lines.iter().enumerate() {
+                        let ry2 = line_start_y[lj];
+                        let rh: f32 = per_line_row_heights[lj].iter().sum();
+                        if ri > 0 {
+                            painter.hline(x..=x + full_width, ry2, egui::Stroke::new(1.0, tbl_row_sep));
+                        }
+                        for (ci, cell) in Self::parse_table_cells(lines[lj]).into_iter().enumerate().take(col_count) {
+                            let cell_x = x + cw * ci as f32 + 6.0;
+                            let cell_w = (cw - 12.0).max(1.0);
+                            let mut job = egui::text::LayoutJob::default();
+                            job.wrap.max_width = cell_w;
+                            Self::parse_inline_formatting_static(&cell, &mut job, font_size, &font_family, None, 0, is_dark_mode);
+                            if job.sections.is_empty() { job.append(&cell, 0.0, egui::TextFormat { font_id: tbl_font.clone(), color: tbl_text, ..Default::default() }); }
+                            let galley = painter.ctx().fonts_mut(|f| f.layout_job(job));
+                            let text_y = ry2 + ((rh - galley.rect.height()).max(0.0) / 2.0);
+                            let clip = Rect::from_min_max(pos2(cell_x, ry2 + 2.0), pos2(cell_x + cell_w, ry2 + rh - 2.0));
+                            painter.with_clip_rect(clip).galley(pos2(cell_x, text_y), galley, tbl_text);
+                        }
+                    }
+                }
+            }
+
             let mut layouter = |ui: &egui::Ui, text_buffer: &dyn egui::TextBuffer, wrap_width_closure: f32| {
                 let text: &str = text_buffer.as_str();
                 let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
@@ -328,6 +544,18 @@ impl TextEditor {
                         }
                     } else if in_code_block {
                         job.append(line, 0.0, Self::code_block_background_format_static(font_size, is_dark_mode, available_width));
+                    } else if table_nc_flags.get(line_idx).copied().unwrap_or(false) {
+                        let target_h = per_line_row_heights
+                            .get(line_idx)
+                            .and_then(|v| v.first())
+                            .copied()
+                            .unwrap_or(font_size * 1.25);
+                        job.append(line, 0.0, egui::TextFormat {
+                            font_id: egui::FontId::new(font_size, font_family.clone()),
+                            color: egui::Color32::TRANSPARENT,
+                            line_height: Some(target_h),
+                            ..Default::default()
+                        });
                     } else {
                         Self::parse_markdown_line_static(line, &mut job, font_size, &font_family, cursor_pos, char_offset, is_dark_mode);
                     }
@@ -340,8 +568,7 @@ impl TextEditor {
                 ui.fonts_mut(|f: &mut egui::epaint::FontsView<'_>| f.layout_job(job))
             };
 
-            let text_edit: egui::TextEdit<'_> = egui::TextEdit::multiline(&mut self.content)
-                .layouter(&mut layouter).lock_focus(true).frame(false);
+            let text_edit: egui::TextEdit<'_> = egui::TextEdit::multiline(&mut self.content).layouter(&mut layouter).lock_focus(true).frame(false);
             let response: egui::Response = ui.put(outer_rect, text_edit);
 
             if response.clicked() && ctx.input(|i: &egui::InputState| i.modifiers.ctrl || i.modifiers.command) {
@@ -371,6 +598,20 @@ impl TextEditor {
             if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
         });
     }
+
+    fn is_table_row(line: &str) -> bool {
+        let t = line.trim();
+        t.starts_with('|') && t.len() > 1
+    }
+
+    fn is_separator_row(line: &str) -> bool {
+        let t = line.trim();
+        Self::is_table_row(t) && t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
+    }
+
+    fn parse_table_cells(line: &str) -> Vec<String> {
+    line.trim().trim_matches('|').split('|').map(|c| c.trim().to_string()).collect()
+}
 
     fn append_fence_line_job(
         line: &str,

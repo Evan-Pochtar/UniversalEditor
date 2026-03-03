@@ -60,7 +60,7 @@
 - [x] Eraser doesn't erase to white background, completely removes background
 - [x] Crop suddenly jumps when resizing vertically or horizontally
 - [x] Can't see cursor on unsaved changes popup
-- [x] Weird sharpen artifacting on high amount in retouch 
+- [x] Weird sharpen artifacting on high amount in retouch
 - [x] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
@@ -75,6 +75,7 @@
   - [x] Cursor getting disconnected from where text is actually being written.
 
 ### Json Editor Bugs
+
 - [x] Going into Tree view causes "modified" tag to show up
 - [x] Error popup in text view should hug right side, also text leaves the size of the box
 - [x] File information and search bar backgrounds do not go all the way to the right of the screen
@@ -117,6 +118,7 @@
 - [x] Add way to go to file location
 - [x] Add way to rename file
 - [x] Add way to convert file from txt to md and vice versa
+- [x] Ability to load tables in markdown mode
 
 ### Image Editor
 
@@ -164,6 +166,7 @@
 - [x] Crop should show preview of the size of the image
 
 ### Json Editor
+
 - [x] Undo and Redo can be moved to top bar
 - [x] Give the ability to show/hide file information
 - [x] Create JSON styling file, move out of ui file

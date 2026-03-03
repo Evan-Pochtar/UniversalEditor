@@ -70,7 +70,6 @@
 
 ### Text Editor
 
-- [ ] Ability to load tables in markdown mode
 - [ ] Latex?
 
 ### Image Editor
@@ -109,6 +108,7 @@
 - [ ] Snap to grid for text/crop
 
 ### Json Editor
+
 - [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
 - [ ] Need to add more space for text in very long key values

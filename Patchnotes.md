@@ -3,12 +3,14 @@
 ## V0.0.1
 
 #### Features
+
 - **IMG2IMG CONVERTER**: Img2Img Converter added (jpeg, png, webp, bmp, tiff, ico file options)
 - **TEXT EDITOR**: Header Level 4 on Markdown Mode (E.g ####)
 - **TEXT EDITOR**: Adding warning dialogue for leaving an unsaved file.
 - **GENERAL**: Adding Logo
 
 #### Debugging
+
 - **TEXT EDITOR**: Codeblock Background now sync's properly (mostly)
 - **TEXT EDITOR**: Cursor now no longer desyncs when multi-line codeblocks are present
 - **TEXT EDITOR**: Cursor now no longer desyncs on load with old files
@@ -17,6 +19,7 @@
 ## V0.0.2
 
 #### Features
+
 - **IMG EDITOR**: First prototype of image editor
 - **IMG EDITOR**: Exporting to other image types now allowed (jpeg, png, webp, bmp, tiff, ico)
 - **IMG EDITOR**: Option for preservation of metadata
@@ -29,16 +32,18 @@
 - **TEXT EDITOR**: Automatic view mode detection based off of file extension
 - **GENERAL**: Added "System" Theme
 - **GENERAL**: Theme setting saves between sessions
-- **GENERAL**: Now able to remove files from "recent files" list on sidebar 
+- **GENERAL**: Now able to remove files from "recent files" list on sidebar
 - **GENERAL**: Adding trashcan icon instead of "x" for recent files removal
 
 #### Debugging
+
 - **GENERAL**: Removed Visibility of Toolbar/File info settings when not in text editor
 - **GENERAL**: Images now show up in recent files when opened from main menu
 
 ## V0.0.3
 
 #### Features
+
 - **IMG EDITOR**: Added Keyboard Shortcuts for various tools in image editor
 - **IMG EDITOR**: Now allows for image stretching/expanding with resizing.
 - **IMG EDITOR**: Corner resizing and selection of text now available
@@ -52,8 +57,9 @@
 - **GENERAL**: Can now navigate to home page from any screen or converter
 - **GENERAL**: Improved Settings Menu and Patch notes Parsing
 - **GENERAL**: Modals now close when clicked off from instead of just using the "x"
-  
+
 #### Debugging
+
 - **IMG EDITOR**: Fixed issue only allowing for drawing while dragging
 - **IMG EDITOR**: Images now show up in "Recent Files" properly
 - **IMG EDITOR**: Text tool now properly shows up in final images
@@ -69,6 +75,7 @@
 ## V0.0.4
 
 #### Features
+
 - **IMG EDITOR**: Filters and Transformations moved to top menu bar under "Image" and "Filter"
 - **IMG EDITOR**: Eraser now has option to remove background
 - **IMG EDITOR**: Crop is now readjustable and displays width and height of crop
@@ -91,6 +98,7 @@
 - **TEXT EDITOR**: Adding functionality for bold and italic text together
 
 #### Debugging
+
 - **IMG EDITOR**: Eraser now properly erases to white background
 - **IMG EDITOR**: Cursor now no longer disappears on color picker
 - **IMG EDITOR**: Cursor now no longer disappears on unsaved changes screen
@@ -105,6 +113,7 @@
 ## V0.0.5
 
 #### Features
+
 - **JSON EDITOR**: First prototype of the Json Editor
 - **JSON EDITOR**: Undo and Redo moved to top bar
 - **JSON EDITOR**: Improved styling and cleaned up backgrounds
@@ -113,10 +122,12 @@
 - **TEXT EDITOR**: Can now change between txt and md using file information context window (right click)
 - **TEXT EDITOR**: Can now rename file in the file information context window (right click)
 - **TEXT EDITOR**: Can now open file location using file information context widow (right click)
+- **TEXT EDITOR**: Added the ability to load tables in the markdown mode
 - **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
 - **GENERAL**: Added easier way to add new screens/converters to the app (Code Only Change)
 
 #### Debugging
+
 - **JSON EDITOR**: Fixed crashing when scrolling down on large JSON's
 - **JSON EDITOR**: Search now properly navigates to searched keys/values
 - **JSON EDITOR**: Error popup text no longer leaves the popup
