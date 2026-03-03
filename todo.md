@@ -59,6 +59,7 @@
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 
 ### Json Editor Bugs
+
 - [ ] Sort and Search do not work on text view
 
 ### Other Bugs
@@ -69,6 +70,7 @@
 
 ### Text Editor
 
+- [ ] Ability to load tables in markdown mode
 - [ ] Latex?
 
 ### Image Editor
