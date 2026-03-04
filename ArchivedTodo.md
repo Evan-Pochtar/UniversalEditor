@@ -25,6 +25,7 @@
 ## Converters
 
 - [x] Img to Img of diff type
+- [x] Data Format Converter (.json, .yaml, .toml, .xml, .csv)
 
 ## Debugging
 

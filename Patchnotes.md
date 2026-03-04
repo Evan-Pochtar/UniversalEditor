@@ -123,6 +123,7 @@
 - **TEXT EDITOR**: Can now rename file in the file information context window (right click)
 - **TEXT EDITOR**: Can now open file location using file information context widow (right click)
 - **TEXT EDITOR**: Added the ability to load tables in the markdown mode
+- **DATA CONVERTER**: First prototype of the data converter
 - **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
 - **GENERAL**: Added easier way to add new screens/converters to the app (Code Only Change)
 

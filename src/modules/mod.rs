@@ -10,6 +10,7 @@ pub mod helpers;
 pub mod json_edit {pub use super::json_editor::JsonEditor; }
 pub mod image_edit { pub use super::image_editor::ImageEditor; }
 pub mod image_converter { pub use super::converters::image_converter::ImageConverter; }
+pub mod data_converter { pub use super::converters::data_converter::DataConverter; }
 pub mod image_export { pub use super::helpers::image_export::{ExportFormat, export_image}; }
 pub mod text_edit { pub use super::text_editor::TextEditor; }
 

@@ -30,7 +30,6 @@
 - [ ] Document Converter (.docx, .odt -> .pdf, .txt, .md, .html, .rtf)
 - [ ] PDF Converter (.pdf -> .txt, .docx, .html, per-page image exports)
 - [ ] Spreadsheet Converter (.csv, .tsv, .xlsx, .ods -> any of those, includes .json export)
-- [ ] Data Format Converter (.json, .yaml, .toml, .xml, .csv)
 - [ ] Markdown Converter (.md -> .html, .pdf, .docx, .txt)
 - [ ] SVG Rasterizer (.svg -> .png, .jpg, .webp)
 - [ ] Image to PDF / PDF to Images (.jpg/.png/.webp -> .pdf, .pdf -> per-page .png/.jpg)

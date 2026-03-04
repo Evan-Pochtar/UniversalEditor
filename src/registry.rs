@@ -2,7 +2,7 @@ use eframe::egui::Color32;
 use crate::style::ColorPalette;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter }
+pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter }
 
 pub struct ScreenDef {
     pub id: &'static str,
@@ -61,6 +61,14 @@ pub static CONVERTERS: &[ConverterDef] = &[
         color: ColorPalette::TEAL_500,
         sidebar_letter: "C",
         create: CreateModule::ImageConverter,
+    },
+    ConverterDef {
+        id: "data_converter",
+        name: "Data Format Converter",
+        description: "Convert between Data formats",
+        color: ColorPalette::GREEN_500,
+        sidebar_letter: "D",
+        create: CreateModule::DataConverter,
     },
 ];
 

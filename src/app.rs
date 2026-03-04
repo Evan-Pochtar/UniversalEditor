@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -329,6 +329,7 @@ impl UniversalEditor {
             }
             CreateModule::JsonEditor => Box::new(if let Some(p) = path { JsonEditor::load(p) } else { JsonEditor::new_empty() }),
             CreateModule::ImageConverter => Box::new(ImageConverter::new()),
+            CreateModule::DataConverter => Box::new(DataConverter::new()),
         }
     }
 
