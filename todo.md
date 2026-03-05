@@ -48,11 +48,7 @@
 
 ### Image Editor Bugs
 
-- [ ] Star brush type doesn't really look star like
-- [ ] Preview button should be able to be turned off and on, rather than having to click cancel
-- [ ] Some text on buttons is white in light mode
-- [ ] Hover effects of buttons only work in light mode
-- [ ] Sliders are only visible in dark mode
+- [ ] Some buttons within the brush settings in light mode are colored white with white background
 - [ ] Text Issues
   - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly

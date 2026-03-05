@@ -63,6 +63,10 @@
 - [x] Can't see cursor on unsaved changes popup
 - [x] Weird sharpen artifacting on high amount in retouch
 - [x] Zoom, aspect ratio, and color cover potions of retouch tool on small monitors
+- [x] Preview button should be able to be turned off and on, rather than having to click cancel
+- [x] Some text on buttons is white in light mode
+- [x] Hover effects of buttons only work in light mode
+- [x] Sliders are only visible in dark mode
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image

@@ -1,5 +1,5 @@
 use eframe::egui;
-use crate::style::{ColorPalette, ThemeMode};
+use crate::style::{ColorPalette, ThemeMode, toolbar_action_btn, toolbar_toggle_btn};
 use crate::modules::helpers::image_export::ExportFormat;
 use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT, BrushShape, BrushTextureMode, BrushPreset, SavedBrush, RetouchMode};
 use super::ie_helpers::{rgb_to_hsv_f32, hsv_to_rgb_f32, crop_hit_handle, draw_crop_handles};
@@ -38,24 +38,8 @@ impl ImageEditor {
 
     fn tool_btn(&mut self, ui: &mut egui::Ui, label: &str, tool: Tool, shortcut: Option<&str>, theme: ThemeMode) {
         let active: bool = self.tool == tool;
-        let (bg, hover, txt) = if active {
-            (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE)
-        } else if matches!(theme, ThemeMode::Dark) {
-            (ColorPalette::ZINC_700, ColorPalette::ZINC_600, ColorPalette::ZINC_200)
-        } else {
-            (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
-        };
-
-        let response: egui::Response = ui.scope(|ui: &mut egui::Ui| {
-            let s: &mut egui::Style = ui.style_mut();
-            s.visuals.widgets.inactive.bg_fill = bg;
-            s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-            s.visuals.widgets.hovered.bg_fill = hover;
-            s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-            s.visuals.widgets.active.bg_fill = hover;
-            let btn: egui::Response = ui.add(egui::Button::new(egui::RichText::new(label).size(12.0).color(txt)).min_size(egui::vec2(0.0, 24.0)));
-            if let Some(sc) = shortcut { btn.on_hover_text(sc) } else { btn }
-        }).inner;
+        let btn = toolbar_toggle_btn(ui, egui::RichText::new(label).size(12.0), active, theme);
+        let response: egui::Response = if let Some(sc) = shortcut { btn.on_hover_text(sc) } else { btn };
 
         if response.clicked() {
             if tool != Tool::Text { self.commit_or_discard_active_text(); }
@@ -87,8 +71,7 @@ impl ImageEditor {
                             ui.separator();
 
                             let settings_active = self.filter_panel == FilterPanel::Brush;
-                            let (sbg, shover, stxt) = if settings_active { (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE) } else { theme_btn(theme) };
-                            if styled_btn(ui, "Brush Settings", 12.0, egui::vec2(0.0, 24.0), sbg, shover, stxt) {
+                            if toolbar_toggle_btn(ui, egui::RichText::new("Brush Settings").size(12.0), settings_active, theme).clicked() {
                                 self.filter_panel = if settings_active { FilterPanel::None } else { FilterPanel::Brush };
                             }
                         }
@@ -126,30 +109,19 @@ impl ImageEditor {
                             }
                             ui.separator();
 
-                            let style_btn = |ui: &mut egui::Ui, label: egui::RichText, active: bool| -> bool {
-                                let (bg, txt) = if active { (ColorPalette::BLUE_600, egui::Color32::WHITE) } else { let (b,_,t) = theme_btn(theme); (b, t) };
-                                ui.scope(|ui: &mut egui::Ui| {
-                                    let s = ui.style_mut();
-                                    s.visuals.widgets.inactive.bg_fill = bg;
-                                    s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                                    s.visuals.widgets.hovered.bg_fill = bg;
-                                    ui.add(egui::Button::new(label.color(txt)).min_size(egui::vec2(24.0, 24.0)))
-                                }).inner.clicked()
-                            };
-
-                            if style_btn(ui, egui::RichText::new("B").strong().size(13.0), self.text_bold) {
+                            if toolbar_toggle_btn(ui, egui::RichText::new("B").strong().size(13.0), self.text_bold, theme).clicked() {
                                 self.text_bold = !self.text_bold;
                                 if let Some(id) = self.selected_text {
                                     if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.bold = self.text_bold; }
                                 }
                             }
-                            if style_btn(ui, egui::RichText::new("I").italics().size(13.0), self.text_italic) {
+                            if toolbar_toggle_btn(ui, egui::RichText::new("I").italics().size(13.0), self.text_italic, theme).clicked() {
                                 self.text_italic = !self.text_italic;
                                 if let Some(id) = self.selected_text {
                                     if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.italic = self.text_italic; }
                                 }
                             }
-                            if style_btn(ui, egui::RichText::new("U").underline().size(13.0), self.text_underline) {
+                            if toolbar_toggle_btn(ui, egui::RichText::new("U").underline().size(13.0), self.text_underline, theme).clicked() {
                                 self.text_underline = !self.text_underline;
                                 if let Some(id) = self.selected_text {
                                     if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.underline = self.text_underline; }
@@ -190,8 +162,7 @@ impl ImageEditor {
                                         ui.style_mut().spacing.interact_size.y = 28.0;
                                         for mode in RetouchMode::all() {
                                             let active = self.retouch_mode == *mode;
-                                            let (bg, hover, txt) = if active { (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE) } else { theme_btn(theme) };
-                                            if styled_btn(ui, mode.label(), 11.5, egui::vec2(0.0, 24.0), bg, hover, txt) {
+                                            if toolbar_toggle_btn(ui, egui::RichText::new(mode.label()).size(11.5), active, theme).clicked() {
                                                 self.retouch_mode = *mode;
                                             }
                                         }
@@ -340,10 +311,12 @@ impl ImageEditor {
                         match filter_action_row(ui, theme, self.filter_preview_active) {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
-                                self.filter_preview_image = self.image.clone();
-                                self.filter_preview_active = true;
-                                self.processing_is_preview = true;
-                                self.apply_brightness_contrast();
+                                else {
+                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_active = true;
+                                    self.processing_is_preview = true;
+                                    self.apply_brightness_contrast();
+                                }
                             }
                             FilterAction::Apply => {
                                 if self.filter_preview_active { self.accept_filter_preview(); } else { self.push_undo(); self.apply_brightness_contrast(); }
@@ -378,10 +351,12 @@ impl ImageEditor {
                         match filter_action_row(ui, theme, self.filter_preview_active) {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
-                                self.filter_preview_image = self.image.clone();
-                                self.filter_preview_active = true;
-                                self.processing_is_preview = true;
-                                self.apply_hue_saturation();
+                                else {
+                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_active = true;
+                                    self.processing_is_preview = true;
+                                    self.apply_hue_saturation();
+                                }
                             }
                             FilterAction::Apply => {
                                 if self.filter_preview_active { self.accept_filter_preview(); } else { self.push_undo(); self.apply_hue_saturation(); }
@@ -403,10 +378,12 @@ impl ImageEditor {
                         match filter_action_row(ui, theme, self.filter_preview_active) {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
-                                self.filter_preview_image = self.image.clone();
-                                self.filter_preview_active = true;
-                                self.processing_is_preview = true;
-                                self.apply_blur();
+                                else {
+                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_active = true;
+                                    self.processing_is_preview = true;
+                                    self.apply_blur();
+                                }
                             }
                             FilterAction::Apply => {
                                 if self.filter_preview_active { self.accept_filter_preview(); } else { self.push_undo(); self.apply_blur(); }
@@ -425,10 +402,12 @@ impl ImageEditor {
                         match filter_action_row(ui, theme, self.filter_preview_active) {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
-                                self.filter_preview_image = self.image.clone();
-                                self.filter_preview_active = true;
-                                self.processing_is_preview = true;
-                                self.apply_sharpen();
+                                else {
+                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_active = true;
+                                    self.processing_is_preview = true;
+                                    self.apply_sharpen();
+                                }
                             }
                             FilterAction::Apply => {
                                 if self.filter_preview_active { self.accept_filter_preview(); } else { self.push_undo(); self.apply_sharpen(); }
@@ -1437,18 +1416,6 @@ impl ImageEditor {
                                                     }).collect();
                                                     painter.add(egui::Shape::convex_polygon(pts, ic_col, egui::Stroke::NONE));
                                                 }
-                                                BrushShape::Star => {
-                                                    let outer = ir;
-                                                    let inner = ir * 0.40;
-                                                    let n = 5_usize;
-                                                    let mut pts = Vec::with_capacity(n * 2);
-                                                    for k in 0..n * 2 {
-                                                        let a_star = k as f32 * std::f32::consts::PI / n as f32 - std::f32::consts::PI / 2.0;
-                                                        let r_star = if k % 2 == 0 { outer } else { inner };
-                                                        pts.push(egui::pos2(ic.x + a_star.cos() * r_star, ic.y + a_star.sin() * r_star));
-                                                    }
-                                                    painter.add(egui::Shape::convex_polygon(pts, ic_col, egui::Stroke::NONE));
-                                                }
                                             }
                                             painter.text(
                                                 egui::pos2(rect.center().x, rect.max.y - 9.0),
@@ -1752,8 +1719,8 @@ impl ImageEditor {
                         egui::Frame::new()
                             .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 6, bottom: 10 })
                             .show(ui, |ui: &mut egui::Ui| {
-                                let (cbg, chover, ctxt) = theme_btn(theme);
                                 let avail_w = ui.available_width();
+                                let (cbg, chover, ctxt) = theme_btn(theme);
                                 if styled_btn(ui, "Close Panel", 12.0, egui::vec2(avail_w, 28.0), cbg, chover, ctxt) {
                                     self.filter_panel = FilterPanel::None;
                                 }
@@ -1788,16 +1755,12 @@ enum FilterAction { None, Preview, Apply, Cancel }
 
 fn filter_action_row(ui: &mut egui::Ui, theme: ThemeMode, preview_active: bool) -> FilterAction {
     let mut action = FilterAction::None;
-    let (bg, hover, txt) = theme_btn(theme);
-    let (pbg, phover, ptxt) = if preview_active {
-        (ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE)
-    } else { (bg, hover, txt) };
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        if styled_btn(ui, "Preview", 12.0, egui::vec2(72.0, 26.0), pbg, phover, ptxt) { action = FilterAction::Preview; }
+        if toolbar_toggle_btn(ui, egui::RichText::new("Preview").size(12.0), preview_active, theme).clicked() { action = FilterAction::Preview; }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if styled_btn(ui, "Apply", 12.0, egui::vec2(62.0, 26.0), ColorPalette::BLUE_600, ColorPalette::BLUE_500, egui::Color32::WHITE) { action = FilterAction::Apply; }
-            if styled_btn(ui, "Cancel", 12.0, egui::vec2(62.0, 26.0), bg, hover, txt) { action = FilterAction::Cancel; }
+            if toolbar_action_btn(ui, egui::RichText::new("Apply").size(12.0), theme).clicked() { action = FilterAction::Apply; }
+            if toolbar_action_btn(ui, egui::RichText::new("Cancel").size(12.0), theme).clicked() { action = FilterAction::Cancel; }
         });
     });
     action

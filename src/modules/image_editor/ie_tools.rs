@@ -1151,14 +1151,6 @@ pub(super) fn brush_shape_falloff(
             let r_minor: f32 = radius * aspect;
             ((lx / radius).powi(2) + (ly / r_minor).powi(2)).sqrt()
         }
-        BrushShape::Star => {
-            let r: f32 = (dx * dx + dy * dy).sqrt();
-            if r < 0.0001 { return 1.0; }
-            let theta: f32 = dy.atan2(dx) + angle;
-            let a: f32 = (theta * 2.5).cos();
-            let star_r: f32 = radius * (0.38 + 0.62 * ((a + 1.0) * 0.5));
-            r / star_r
-        }
     };
 
     if t >= 1.0 { return 0.0; }

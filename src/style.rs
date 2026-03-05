@@ -182,7 +182,7 @@ fn apply_dark_theme(style: &mut egui::Style) {
     style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(22, 22, 26);
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_700);
     
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 30, 35);
+    style.visuals.widgets.inactive.bg_fill = ColorPalette::BLUE_600;
     style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::ZINC_800;
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_600);
     
@@ -207,26 +207,26 @@ fn apply_dark_theme(style: &mut egui::Style) {
 fn apply_light_theme(style: &mut egui::Style) {
     style.visuals.dark_mode = false;
     
-    style.visuals.panel_fill = ColorPalette::GRAY_50;
-    style.visuals.window_fill = ColorPalette::GRAY_50;
-    style.visuals.faint_bg_color = ColorPalette::GRAY_100;
-    style.visuals.extreme_bg_color = egui::Color32::WHITE;
+    style.visuals.panel_fill = ColorPalette::GRAY_100;
+    style.visuals.window_fill = ColorPalette::GRAY_100;
+    style.visuals.faint_bg_color = ColorPalette::GRAY_200;
+    style.visuals.extreme_bg_color = ColorPalette::SLATE_300;
     
     style.visuals.widgets.noninteractive.bg_fill = egui::Color32::WHITE;
-    style.visuals.widgets.noninteractive.weak_bg_fill = ColorPalette::GRAY_50;
-    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_300);
+    style.visuals.widgets.noninteractive.weak_bg_fill = ColorPalette::GRAY_100;
+    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_400);
     
-    style.visuals.widgets.inactive.bg_fill = ColorPalette::GRAY_50;
-    style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::GRAY_100;
-    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_300);
+    style.visuals.widgets.inactive.bg_fill = ColorPalette::SLATE_300;
+    style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::GRAY_200;
+    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_400);
     
-    style.visuals.widgets.hovered.bg_fill = ColorPalette::GRAY_100;
-    style.visuals.widgets.hovered.weak_bg_fill = ColorPalette::GRAY_200;
-    style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_400);
+    style.visuals.widgets.hovered.bg_fill = ColorPalette::GRAY_200;
+    style.visuals.widgets.hovered.weak_bg_fill = ColorPalette::GRAY_300;
+    style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_500);
     
-    style.visuals.widgets.active.bg_fill = ColorPalette::GRAY_200;
-    style.visuals.widgets.active.weak_bg_fill = ColorPalette::GRAY_300;
-    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_500);
+    style.visuals.widgets.active.bg_fill = ColorPalette::GRAY_300;
+    style.visuals.widgets.active.weak_bg_fill = ColorPalette::GRAY_400;
+    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_600);
     
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_700);
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_800);
@@ -314,10 +314,10 @@ pub fn sidebar_section(ui: &mut egui::Ui, title: &str, expanded: &mut bool, them
             ColorPalette::ZINC_900,
         ),
         ThemeMode::Light => (
-            ColorPalette::GRAY_100,
             ColorPalette::GRAY_200,
+            ColorPalette::GRAY_300,
             ColorPalette::GRAY_800,
-            ColorPalette::GRAY_50,
+            ColorPalette::GRAY_100,
         ),
     };
 
@@ -385,7 +385,7 @@ pub fn sidebar_item(ui: &mut egui::Ui, label: &str, icon: &str, theme: ThemeMode
         ),
         ThemeMode::Light => (
             egui::Color32::TRANSPARENT,
-            ColorPalette::GRAY_100,
+            ColorPalette::GRAY_200,
             ColorPalette::GRAY_800,
         ),
     };
@@ -464,9 +464,9 @@ pub fn tool_card(ui: &mut egui::Ui, title: &str, desc: &str, accent: egui::Color
             ColorPalette::ZINC_500,
         ),
         ThemeMode::Light => (
-            egui::Color32::WHITE,
             ColorPalette::GRAY_50,
-            ColorPalette::GRAY_200,
+            ColorPalette::GRAY_100,
+            ColorPalette::GRAY_300,
             accent,
             ColorPalette::GRAY_900,
             ColorPalette::GRAY_500,
@@ -536,6 +536,56 @@ pub fn tool_card_placeholder(ui: &mut egui::Ui, label: &str, theme: ThemeMode) {
             text_color,
         );
     }
+}
+
+pub fn toolbar_action_btn(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, theme: ThemeMode) -> egui::Response {
+    let (bg, hover, txt) = match theme {
+        ThemeMode::Dark => (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_200),
+        ThemeMode::Light => (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800),
+    };
+    ui.scope(|ui| {
+        let s = ui.style_mut();
+        s.visuals.override_text_color = Some(txt);
+        s.visuals.widgets.inactive.bg_fill = bg;
+        s.visuals.widgets.inactive.weak_bg_fill = bg;
+        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, txt);
+        s.visuals.widgets.hovered.bg_fill = hover;
+        s.visuals.widgets.hovered.weak_bg_fill = hover;
+        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, txt);
+        s.visuals.widgets.active.bg_fill = hover;
+        s.visuals.widgets.active.weak_bg_fill = hover;
+        s.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, txt);
+        ui.add(egui::Button::new(text).min_size(egui::vec2(0.0, 24.0)))
+    }).inner
+}
+
+pub fn toolbar_toggle_btn(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, active: bool, theme: ThemeMode) -> egui::Response {
+    let (bg, hover, txt) = if active {
+        (ColorPalette::BLUE_800, ColorPalette::BLUE_700, egui::Color32::WHITE)
+    } else {
+        match theme {
+            ThemeMode::Dark => (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_200),
+            ThemeMode::Light => (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800),
+        }
+    };
+    ui.scope(|ui| {
+        let s = ui.style_mut();
+        s.visuals.override_text_color = Some(txt);
+        s.visuals.widgets.inactive.bg_fill = bg;
+        s.visuals.widgets.inactive.weak_bg_fill = bg;
+        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, txt);
+        s.visuals.widgets.hovered.bg_fill = hover;
+        s.visuals.widgets.hovered.weak_bg_fill = hover;
+        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, txt);
+        s.visuals.widgets.active.bg_fill = hover;
+        s.visuals.widgets.active.weak_bg_fill = hover;
+        s.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, txt);
+        ui.add(egui::Button::new(text).min_size(egui::vec2(0.0, 24.0)))
+    }).inner
 }
 
 pub fn home_section_header(ui: &mut egui::Ui, title: &str, theme: ThemeMode) {

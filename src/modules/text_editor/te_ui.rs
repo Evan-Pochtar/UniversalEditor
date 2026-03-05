@@ -1,27 +1,29 @@
 use eframe::egui;
-use crate::{modules::EditorModule, style::ColorPalette};
+use crate::{modules::EditorModule, style::{ColorPalette, ThemeMode, toolbar_action_btn}};
 use super::te_main::{TextEditor, ViewMode};
 
 impl TextEditor {
     pub(super) fn render_editor_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, show_toolbar: bool, show_file_info: bool) {
         if show_toolbar {
             ui.horizontal(|ui: &mut egui::Ui| {
+                let dark = ui.visuals().dark_mode;
+                let theme = if dark { ThemeMode::Dark } else { ThemeMode::Light };
                 ui.horizontal(|ui: &mut egui::Ui| {
-                    if ui.button(egui::RichText::new("B").strong()).on_hover_text("Bold (Ctrl+B)").clicked() { self.format_bold(); }
-                    if ui.button(egui::RichText::new("I").italics()).on_hover_text("Italic (Ctrl+I)").clicked() { self.format_italic(); }
-                    if ui.button(egui::RichText::new("U").underline()).on_hover_text("Underline (Ctrl+U)").clicked() { self.format_underline(); }
-                    if ui.button(egui::RichText::new("S").strikethrough()).on_hover_text("Strikethrough (Ctrl+Shift+S)").clicked() { self.format_strikethrough(); }
-                    if ui.button(egui::RichText::new("C").monospace()).on_hover_text("Code (Ctrl+E)").clicked() { self.format_code(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("B").strong().size(12.0), theme).on_hover_text("Bold (Ctrl+B)").clicked() { self.format_bold(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("I").italics().size(12.0), theme).on_hover_text("Italic (Ctrl+I)").clicked() { self.format_italic(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("U").underline().size(12.0), theme).on_hover_text("Underline (Ctrl+U)").clicked() { self.format_underline(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("S").strikethrough().size(12.0), theme).on_hover_text("Strikethrough (Ctrl+Shift+S)").clicked() { self.format_strikethrough(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("C").monospace().size(12.0), theme).on_hover_text("Code (Ctrl+E)").clicked() { self.format_code(); }
                     ui.separator();
-                    if ui.button("H1").on_hover_text("Header 1 (Ctrl+1)").clicked() { self.format_heading(1); }
-                    if ui.button("H2").on_hover_text("Header 2 (Ctrl+2)").clicked() { self.format_heading(2); }
-                    if ui.button("H3").on_hover_text("Header 3 (Ctrl+3)").clicked() { self.format_heading(3); }
-                    if ui.button("H4").on_hover_text("Header 4 (Ctrl+4)").clicked() { self.format_heading(4); }
+                    if toolbar_action_btn(ui, "H1", theme).on_hover_text("Header 1 (Ctrl+1)").clicked() { self.format_heading(1); }
+                    if toolbar_action_btn(ui, "H2", theme).on_hover_text("Header 2 (Ctrl+2)").clicked() { self.format_heading(2); }
+                    if toolbar_action_btn(ui, "H3", theme).on_hover_text("Header 3 (Ctrl+3)").clicked() { self.format_heading(3); }
+                    if toolbar_action_btn(ui, "H4", theme).on_hover_text("Header 4 (Ctrl+4)").clicked() { self.format_heading(4); }
                     ui.separator();
-                    if ui.button(">").on_hover_text("Blockquote (Ctrl+Shift+Q)").clicked() { self.format_blockquote(); }
-                    if ui.button("[ ]").on_hover_text("Checklist Item (Ctrl+Shift+L)").clicked() { self.insert_checklist_item(); }
+                    if toolbar_action_btn(ui, ">", theme).on_hover_text("Blockquote (Ctrl+Shift+Q)").clicked() { self.format_blockquote(); }
+                    if toolbar_action_btn(ui, "[ ]", theme).on_hover_text("Checklist Item (Ctrl+Shift+L)").clicked() { self.insert_checklist_item(); }
                     ui.separator();
-                    let tbl_btn = ui.button("Table").on_hover_text("Insert Table");
+                    let tbl_btn = toolbar_action_btn(ui, "Table", theme).on_hover_text("Insert Table");
                     let tbl_popup_id = tbl_btn.id;
                     egui::Popup::from_toggle_button_response(&tbl_btn)
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)

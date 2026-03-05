@@ -178,7 +178,7 @@ impl RetouchMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub(super) enum BrushShape { Circle, Square, Diamond, CalligraphyFlat, Star, }
+pub(super) enum BrushShape { Circle, Square, Diamond, CalligraphyFlat, }
 
 impl BrushShape {
     pub(super) fn label(&self) -> &'static str {
@@ -187,10 +187,9 @@ impl BrushShape {
             BrushShape::Square => "Square",
             BrushShape::Diamond => "Diamond",
             BrushShape::CalligraphyFlat => "Flat",
-            BrushShape::Star => "Star",
         }
     }
-    pub(super) fn all() -> &'static [BrushShape] { &[BrushShape::Circle, BrushShape::Square, BrushShape::Diamond, BrushShape::CalligraphyFlat, BrushShape::Star] }
+    pub(super) fn all() -> &'static [BrushShape] { &[BrushShape::Circle, BrushShape::Square, BrushShape::Diamond, BrushShape::CalligraphyFlat] }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

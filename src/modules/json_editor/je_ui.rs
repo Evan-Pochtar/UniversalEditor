@@ -1,6 +1,6 @@
 use eframe::egui;
 use serde_json::Value;
-use crate::style::{self, ColorPalette};
+use crate::style::{self, ColorPalette, ThemeMode, toolbar_action_btn};
 use super::je_main::{JsonEditor, JsonViewMode, EditCell, AddKeyDialog};
 use super::je_tools::{
     SortMode, SearchTarget, FlatNode,
@@ -8,7 +8,7 @@ use super::je_tools::{
 };
 use super::je_style::{ 
     c_panel, c_border, c_row_alt, c_row_sel, c_row_match, c_row_match_active, c_key, c_text, c_muted, c_error,
-    val_color, compact_button, danger_button, accent_button, ghost_btn_small, expand_triangle   
+    val_color, danger_button, ghost_btn_small, expand_triangle, accent_button, compact_button   
 };
 
 const ROW_H: f32 = 22.0;
@@ -16,6 +16,7 @@ const ROW_H: f32 = 22.0;
 impl JsonEditor {
     pub(super) fn render_editor_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, show_file_info: bool) {
         let dark = ui.visuals().dark_mode;
+        let theme = if dark { ThemeMode::Dark } else { ThemeMode::Light };
         self.handle_keyboard(ctx);
         self.rebuild_flat_if_needed();
         if self.text_stale && matches!(self.view_mode, JsonViewMode::Text) { self.sync_text_from_root();}
@@ -27,11 +28,11 @@ impl JsonEditor {
                 ui.horizontal(|ui: &mut egui::Ui| {
                     self.render_view_tabs(ui, dark);
                     ui.separator();
-                    if compact_button(ui, "Expand All", dark).clicked() { self.expand_all(); }
-                    if compact_button(ui, "Collapse All", dark).clicked() { self.collapse_all(); }
+                    if toolbar_action_btn(ui, "Expand All", theme).clicked() { self.expand_all(); }
+                    if toolbar_action_btn(ui, "Collapse All", theme).clicked() { self.collapse_all(); }
 
                     ui.separator();
-                    if accent_button(ui, "+ Add Key").clicked() {
+                    if toolbar_action_btn(ui, "+ Add Key", theme).clicked() {
                         self.add_dialog = Some(AddKeyDialog {
                             parent_path: self.scope_path.clone(),
                             key_buf: String::new(),
@@ -40,7 +41,7 @@ impl JsonEditor {
                         });
                     }
 
-                    if compact_button(ui, "New", dark).clicked() { self.show_new_confirm = true; }
+                    if toolbar_action_btn(ui, "New", theme).clicked() { self.show_new_confirm = true; }
                     ui.separator();
                 });
 
@@ -67,7 +68,7 @@ impl JsonEditor {
                             ui.selectable_value(&mut self.export_pretty, false, "Compact");
                         });
                 });
-                if compact_button(ui, "Export", dark).clicked() { self.do_export(); }
+                if toolbar_action_btn(ui, "Export", theme).clicked() { self.do_export(); }
             });
             ui.separator();
 

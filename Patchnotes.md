@@ -119,6 +119,7 @@
 - **JSON EDITOR**: Improved styling and cleaned up backgrounds
 - **JSON EDITOR**: Added option to hide file info in both settings and "View" toolbar
 - **JSON EDITOR**: Search bar can now search non expanded nodes
+- **IMG EDITOR**: Star shape removed from brush settings
 - **TEXT EDITOR**: Can now change between txt and md using file information context window (right click)
 - **TEXT EDITOR**: Can now rename file in the file information context window (right click)
 - **TEXT EDITOR**: Can now open file location using file information context widow (right click)
@@ -126,6 +127,7 @@
 - **DATA CONVERTER**: First prototype of the data converter
 - **GENERAL**: Added support for outputting AVIF files for the Image Editor and Image Converter
 - **GENERAL**: Added easier way to add new screens/converters to the app (Code Only Change)
+- **GENERAL**: Improved Light mode color scheme to be more pleasing to the eye
 
 #### Debugging
 
@@ -136,4 +138,6 @@
 - **JSON EDITOR**: Can now undo/redo on the text view properly
 - **JSON EDITOR**: No longer converts new boolean values to strings
 - **IMG EDITOR**: Options bar buttons, sliders, and drag values are now centered
+- **IMG EDITOR**: Preview filter button now can be turned off and on, rather than having to click cancel
+- **IMG EDITOR**: Sliders and button text are now visible within light mode, slightly more hover visibility with buttons in dark mode
 - **TEXT EDITOR**: Code blocks and Blockquotes no longer desync on font change
