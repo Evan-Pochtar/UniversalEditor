@@ -140,4 +140,5 @@
 - **IMG EDITOR**: Options bar buttons, sliders, and drag values are now centered
 - **IMG EDITOR**: Preview filter button now can be turned off and on, rather than having to click cancel
 - **IMG EDITOR**: Sliders and button text are now visible within light mode, slightly more hover visibility with buttons in dark mode
+- **IMG EDITOR**: Fixed backgrounds and text color of some buttons within "Brush Settings" in light mode
 - **TEXT EDITOR**: Code blocks and Blockquotes no longer desync on font change

@@ -48,7 +48,6 @@
 
 ### Image Editor Bugs
 
-- [ ] Some buttons within the brush settings in light mode are colored white with white background
 - [ ] Text Issues
   - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
   - [ ] Vertical and Horizontal Rotations do not rotate textbox properly

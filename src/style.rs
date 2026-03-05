@@ -182,7 +182,7 @@ fn apply_dark_theme(style: &mut egui::Style) {
     style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(22, 22, 26);
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_700);
     
-    style.visuals.widgets.inactive.bg_fill = ColorPalette::BLUE_600;
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 30, 35);
     style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::ZINC_800;
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_600);
     

@@ -66,6 +66,7 @@
 - [x] Preview button should be able to be turned off and on, rather than having to click cancel
 - [x] Some text on buttons is white in light mode
 - [x] Hover effects of buttons only work in light mode
+- [x] Some buttons within the brush settings in light mode are colored white with white background
 - [x] Sliders are only visible in dark mode
 - [x] Text Issues
   - [x] Bold only shows up when fully saved

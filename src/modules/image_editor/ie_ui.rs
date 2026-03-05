@@ -1625,9 +1625,15 @@ impl ImageEditor {
                                     ui.scope(|ui: &mut egui::Ui| {
                                         let s = ui.style_mut();
                                         let save_bg = if can_save { ColorPalette::BLUE_600 } else if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 };
+                                        let save_hover = if can_save { ColorPalette::BLUE_500 } else { save_bg };
                                         s.visuals.widgets.inactive.bg_fill = save_bg;
+                                        s.visuals.widgets.inactive.weak_bg_fill = save_bg;
                                         s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                                        s.visuals.widgets.hovered.bg_fill = if can_save { ColorPalette::BLUE_500 } else { save_bg };
+                                        s.visuals.widgets.hovered.bg_fill = save_hover;
+                                        s.visuals.widgets.hovered.weak_bg_fill = save_hover;
+                                        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                                        s.visuals.widgets.active.bg_fill = save_hover;
+                                        s.visuals.widgets.active.weak_bg_fill = save_hover;
                                         s.visuals.override_text_color = Some(if can_save { egui::Color32::WHITE } else if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_500 });
                                         if ui.add_enabled(can_save, egui::Button::new(egui::RichText::new("Save").size(12.0)).min_size(egui::vec2(54.0, 24.0))).clicked() {
                                             let name = self.brush_fav_name.trim().to_string();
@@ -1735,10 +1741,13 @@ fn styled_btn(ui: &mut egui::Ui, text: &str, font_size: f32, min_size: egui::Vec
     ui.scope(|ui| {
         let s = ui.style_mut();
         s.visuals.widgets.inactive.bg_fill = bg;
+        s.visuals.widgets.inactive.weak_bg_fill = bg;
         s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
         s.visuals.widgets.hovered.bg_fill = hover;
+        s.visuals.widgets.hovered.weak_bg_fill = hover;
         s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
         s.visuals.widgets.active.bg_fill = hover;
+        s.visuals.widgets.active.weak_bg_fill = hover;
         ui.add(egui::Button::new(egui::RichText::new(text).size(font_size).color(txt)).min_size(min_size))
     }).inner.clicked()
 }
