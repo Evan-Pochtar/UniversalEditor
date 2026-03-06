@@ -1,6 +1,22 @@
 use super::te_main::TextEditor;
 
 impl TextEditor {
+    pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
+        let header: String = (0..cols).map(|i| format!("Header {}", i + 1)).collect::<Vec<_>>().join(" | ");
+        let sep: String = (0..cols).map(|_| "---").collect::<Vec<_>>().join(" | ");
+        let data_row: String = (0..cols).map(|_| "Cell").collect::<Vec<_>>().join(" | ");
+        let data_rows: String = (0..rows).map(|_| format!("| {} |", data_row)).collect::<Vec<_>>().join("\n");
+        let table: String = format!("| {} |\n| {} |\n{}\n", header, sep, data_rows);
+        let byte_idx: usize = self.last_cursor_range
+            .map(|r| self.char_index_to_byte_index(r.primary.index))
+            .unwrap_or(self.content.len());
+        let needs_newline: bool = byte_idx > 0 && !self.content[..byte_idx].ends_with('\n');
+        let insert: String = if needs_newline { format!("\n{}", table) } else { table };
+        self.content.insert_str(byte_idx, &insert);
+        self.dirty = true;
+        self.content_version = self.content_version.wrapping_add(1);
+    }
+
     pub(super) fn char_index_to_byte_index(&self, char_index: usize) -> usize {
         self.content.char_indices()
             .nth(char_index)
@@ -364,5 +380,57 @@ impl TextEditor {
 
     pub(super) fn find_closing_paren(chars: &[char], start: usize) -> Option<usize> {
         chars[start..].iter().position(|&c| c == ')').map(|i: usize| start + i)
+    }
+
+    pub(super) fn open_file_location(&self) {
+        if let Some(path) = &self.file_path {
+            let dir = path.parent().unwrap_or(path.as_path());
+            #[cfg(target_os = "windows")]
+            { let _ = std::process::Command::new("explorer").arg(dir).spawn(); }
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg(dir).spawn(); }
+            #[cfg(target_os = "linux")]
+            { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); }
+        }
+    }
+
+    pub(super) fn apply_rename(&mut self) {
+        if let Some(old_path) = self.file_path.take() {
+            let stem = self.rename_buffer.trim().to_string();
+            if stem.is_empty() { self.file_path = Some(old_path); return; }
+            let ext = self.rename_ext.as_deref().unwrap_or("txt");
+            let new_name = format!("{}.{}", stem, ext);
+            let new_path = old_path.with_file_name(&new_name);
+            if std::fs::rename(&old_path, &new_path).is_ok() {
+                if let Some(tx) = &self.path_replace_tx {
+                    let _ = tx.send((old_path, new_path.clone()));
+                }
+                self.file_path = Some(new_path.clone());
+                self.view_mode = Self::detect_view_mode(&new_path);
+            } else {
+                self.file_path = Some(old_path);
+            }
+        }
+    }
+
+    pub(super) fn convert_file_extension(&mut self) {
+        if let Some(path) = self.file_path.take() {
+            let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase());
+            let new_ext = match ext.as_deref() {
+                Some("md") | Some("markdown") => "txt",
+                Some("txt") => "md",
+                _ => { self.file_path = Some(path); return; }
+            };
+            let new_path = path.with_extension(new_ext);
+            if std::fs::rename(&path, &new_path).is_ok() {
+                if let Some(tx) = &self.path_replace_tx {
+                    let _ = tx.send((path, new_path.clone()));
+                }
+                self.file_path = Some(new_path.clone());
+                self.view_mode = Self::detect_view_mode(&new_path);
+            } else {
+                self.file_path = Some(path);
+            }
+        }
     }
 }

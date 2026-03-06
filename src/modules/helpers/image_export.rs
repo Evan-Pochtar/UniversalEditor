@@ -9,6 +9,7 @@ pub enum ExportFormat {
     Bmp,
     Tiff,
     Ico,
+    Avif,
 }
 
 impl ExportFormat {
@@ -20,6 +21,7 @@ impl ExportFormat {
             ExportFormat::Bmp => "BMP",
             ExportFormat::Tiff => "TIFF",
             ExportFormat::Ico => "ICO",
+            ExportFormat::Avif => "AVIF",
         }
     }
 
@@ -31,6 +33,7 @@ impl ExportFormat {
             ExportFormat::Bmp => "bmp",
             ExportFormat::Tiff => "tiff",
             ExportFormat::Ico => "ico",
+            ExportFormat::Avif => "avif",
         }
     }
 
@@ -42,6 +45,7 @@ impl ExportFormat {
             ExportFormat::Bmp,
             ExportFormat::Tiff,
             ExportFormat::Ico,
+            ExportFormat::Avif,
         ]
     }
 }
@@ -54,6 +58,8 @@ pub fn export_image(
     png_compression: u8,
     _webp_quality: f32,
     auto_scale_ico: bool,
+    avif_quality: u8,
+    avif_speed: u8,
 ) -> Result<(), String> {
     let mut export_img: DynamicImage = img.clone();
     
@@ -116,6 +122,16 @@ pub fn export_image(
             }
             export_img.save_with_format(path, image::ImageFormat::Ico)
                 .map_err(|e: image::ImageError| format!("Failed to save ICO: {}", e))?;
+        }
+        ExportFormat::Avif => {
+            let file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
+            let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(file, avif_speed, avif_quality);
+            encoder.write_image(
+                export_img.as_bytes(),
+                export_img.width(),
+                export_img.height(),
+                export_img.color().into(),
+            ).map_err(|e| format!("Failed to encode AVIF: {}", e))?;
         }
     }
 

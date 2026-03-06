@@ -290,7 +290,15 @@ impl ImageEditor {
                 let mut cur_w: f32 = 0.0f32;
                 for word in paragraph.split_inclusive(' ') {
                     let w: f32 = word.chars().map(|c| scaled.h_advance(font.glyph_id(c))).sum();
-                    if cur_w + w > wrap_w && !cur_line.is_empty() {
+                    if w > wrap_w {
+                        for ch in word.chars() {
+                            let cw: f32 = scaled.h_advance(font.glyph_id(ch));
+                            if cur_w + cw > wrap_w && !cur_line.is_empty() {
+                                visual_lines.push(cur_line.clone()); cur_line.clear(); cur_w = 0.0;
+                            }
+                            cur_line.push(ch); cur_w += cw;
+                        }
+                    } else if cur_w + w > wrap_w && !cur_line.is_empty() {
                         visual_lines.push(cur_line.trim_end().to_string());
                         cur_line = word.to_string(); cur_w = w;
                     } else { cur_line.push_str(word); cur_w += w; }
@@ -707,7 +715,7 @@ impl ImageEditor {
             let bw: f32 = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0));
             let cx: f32 = layer.img_x + bw / 2.0;
             layer.img_x = old_w as f32 - cx - bw / 2.0;
-            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+            layer.rotation = (-layer.rotation).rem_euclid(360.0);
         }
     }
 
@@ -716,7 +724,7 @@ impl ImageEditor {
             let bh: f32 = layer.box_height.unwrap_or_else(|| layer.auto_height(1.0));
             let cy: f32 = layer.img_y + bh / 2.0;
             layer.img_y = old_h as f32 - cy - bh / 2.0;
-            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+            layer.rotation = (180.0 - layer.rotation).rem_euclid(360.0);
         }
     }
 
@@ -1105,7 +1113,7 @@ impl ImageEditor {
         {
             Some(p) => p, None => return Err("Export cancelled".to_string()),
         };
-        export_image(&composite, &path, self.export_format, self.export_jpeg_quality, 6, 100.0, self.export_auto_scale_ico)?;
+        export_image(&composite, &path, self.export_format, self.export_jpeg_quality, 6, 100.0, self.export_auto_scale_ico, self.export_avif_quality, self.export_avif_speed)?;
         self.filter_panel = FilterPanel::None;
         Ok(path)
     }
@@ -1150,14 +1158,6 @@ pub(super) fn brush_shape_falloff(
         BrushShape::CalligraphyFlat => {
             let r_minor: f32 = radius * aspect;
             ((lx / radius).powi(2) + (ly / r_minor).powi(2)).sqrt()
-        }
-        BrushShape::Star => {
-            let r: f32 = (dx * dx + dy * dy).sqrt();
-            if r < 0.0001 { return 1.0; }
-            let theta: f32 = dy.atan2(dx) + angle;
-            let a: f32 = (theta * 2.5).cos();
-            let star_r: f32 = radius * (0.38 + 0.62 * ((a + 1.0) * 0.5));
-            r / star_r
         }
     };
 
