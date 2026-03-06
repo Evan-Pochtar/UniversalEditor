@@ -79,7 +79,8 @@
   - [x] Doesn't actually use font's listed in text box
   - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
   - [x] Cursor getting disconnected from where text is actually being written.
-
+  - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
+  - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
 ### Json Editor Bugs
 
 - [x] Going into Tree view causes "modified" tag to show up

@@ -290,7 +290,15 @@ impl ImageEditor {
                 let mut cur_w: f32 = 0.0f32;
                 for word in paragraph.split_inclusive(' ') {
                     let w: f32 = word.chars().map(|c| scaled.h_advance(font.glyph_id(c))).sum();
-                    if cur_w + w > wrap_w && !cur_line.is_empty() {
+                    if w > wrap_w {
+                        for ch in word.chars() {
+                            let cw: f32 = scaled.h_advance(font.glyph_id(ch));
+                            if cur_w + cw > wrap_w && !cur_line.is_empty() {
+                                visual_lines.push(cur_line.clone()); cur_line.clear(); cur_w = 0.0;
+                            }
+                            cur_line.push(ch); cur_w += cw;
+                        }
+                    } else if cur_w + w > wrap_w && !cur_line.is_empty() {
                         visual_lines.push(cur_line.trim_end().to_string());
                         cur_line = word.to_string(); cur_w = w;
                     } else { cur_line.push_str(word); cur_w += w; }
@@ -707,7 +715,7 @@ impl ImageEditor {
             let bw: f32 = layer.box_width.unwrap_or_else(|| layer.auto_width(1.0));
             let cx: f32 = layer.img_x + bw / 2.0;
             layer.img_x = old_w as f32 - cx - bw / 2.0;
-            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+            layer.rotation = (-layer.rotation).rem_euclid(360.0);
         }
     }
 
@@ -716,7 +724,7 @@ impl ImageEditor {
             let bh: f32 = layer.box_height.unwrap_or_else(|| layer.auto_height(1.0));
             let cy: f32 = layer.img_y + bh / 2.0;
             layer.img_y = old_h as f32 - cy - bh / 2.0;
-            layer.rotation = -(layer.rotation).rem_euclid(360.0);
+            layer.rotation = (180.0 - layer.rotation).rem_euclid(360.0);
         }
     }
 

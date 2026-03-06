@@ -48,13 +48,10 @@
 
 ### Image Editor Bugs
 
-- [ ] Text Issues
-  - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
-  - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
-
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
+- [ ] Text view very laggy with large JSON files
 
 ### Other Bugs
 
@@ -113,6 +110,7 @@
 - [ ] Option to increase size of each row in the tree view
 - [ ] Add line numbers to text view
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
+- [ ] Add loading screen for sorting and changing views
 
 ### CONVERTER: Img 2 Img
 
