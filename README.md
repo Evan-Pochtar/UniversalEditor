@@ -38,6 +38,7 @@ cargo run --release
 | Image Editor    | `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tiff`, `.gif`, `.ico` | Non-destructive image editing, cropping, and transformation       |
 | JSON Editor     | `.json`                                                           | Dual-view editor with a raw text mode and a collapsible tree view |
 | Image Converter | -                                                                 | Batch conversion between any supported image formats              |
+| Data Converter  | -                                                                 | Batch conversion between any supported data formats               |
 
 ## More Information
 

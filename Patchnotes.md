@@ -144,3 +144,11 @@
 - **IMG EDITOR**: Text box now rotates correctly on flip vertical and flip horizontal
 - **IMG EDITOR**: Text box now correctly exports with wrapped words
 - **TEXT EDITOR**: Code blocks and Blockquotes no longer desync on font change
+
+## V0.0.6
+
+#### Features
+- **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
+
+#### Debugging
+

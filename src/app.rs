@@ -170,6 +170,19 @@ pub struct UniversalEditor {
     path_replace_rx: Receiver<(PathBuf, PathBuf)>,
     patch_notes: Vec<PatchVersion>,
     patch_notes_page: usize,
+    rename_target: Option<PathBuf>,
+    rename_buffer: String,
+}
+
+fn open_file_location(path: &PathBuf) {
+    if let Some(_dir) = path.parent() {
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").args(["-R", &path.to_string_lossy()]).spawn();
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let _ = std::process::Command::new("xdg-open").arg(_dir).spawn();
+    }
 }
 
 impl UniversalEditor {
@@ -272,6 +285,8 @@ impl UniversalEditor {
             path_replace_rx: replace_rx,
             patch_notes,
             patch_notes_page: 0,
+            rename_target: None,
+            rename_buffer: String::new(),
         }
     }
 
@@ -748,47 +763,45 @@ impl UniversalEditor {
                         let recent_files: Vec<RecentFile> = self.recent_files.get_files().to_vec();
                         let mut file_to_open: Option<PathBuf> = None;
                         let mut file_to_remove: Option<PathBuf> = None;
-                        
-                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {                 
+                        let mut rename_init: Option<(PathBuf, String)> = None;
+                        let mut location_to_open: Option<PathBuf> = None;
+
+                        style::sidebar_section(ui, "Recent Files", &mut self.recent_files_expanded, theme_mode, |ui| {
                             if recent_files.is_empty() {
-                                ui.centered_and_justified(|ui| {
-                                    ui.weak("No recent files");
-                                });
+                                ui.centered_and_justified(|ui| { ui.weak("No recent files"); });
                             } else {
                                 for recent_file in &recent_files {
                                     if recent_file.path.exists() {
                                         let file_name = recent_file.path
-                                            .file_name()
-                                            .and_then(|n| n.to_str())
-                                            .unwrap_or("Unknown");
-                                        
-                                        ui.horizontal(|ui| {
-                                            if style::sidebar_item(ui, file_name, "F", theme_mode).clicked() {
-                                                file_to_open = Some(recent_file.path.clone());
+                                            .file_name().and_then(|n| n.to_str()).unwrap_or("Unknown");
+                                        let resp = style::sidebar_item(ui, file_name, "F", theme_mode);
+                                        if resp.clicked() { file_to_open = Some(recent_file.path.clone()); }
+                                        resp.context_menu(|ui| {
+                                            if ui.button("Rename").clicked() {
+                                                rename_init = Some((recent_file.path.clone(), file_name.to_string()));
+                                                ui.close();
                                             }
-                                            
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                let delete_color = if matches!(theme_mode, ThemeMode::Dark) {
-                                                    ColorPalette::SLATE_100
-                                                } else {
-                                                    ColorPalette::GRAY_600
-                                                };
-                                                
-                                                if ui.button(egui::RichText::new("🗑").color(delete_color).size(14.0)).clicked() {
-                                                    file_to_remove = Some(recent_file.path.clone());
-                                                }
-                                            });
+                                            if ui.button("Open File Location").clicked() {
+                                                location_to_open = Some(recent_file.path.clone());
+                                                ui.close();
+                                            }
+                                            ui.separator();
+                                            if ui.button("Remove from List").clicked() {
+                                                file_to_remove = Some(recent_file.path.clone());
+                                                ui.close();
+                                            }
                                         });
                                     }
                                 }
                             }
                         });
-                        
-                        if let Some(path) = file_to_remove {
-                            self.recent_files.remove_file(&path);
-                        }
-                        if let Some(path) = file_to_open {
-                            self.open_file(path);
+
+                        if let Some(path) = file_to_remove { self.recent_files.remove_file(&path); }
+                        if let Some(path) = file_to_open { self.open_file(path); }
+                        if let Some(path) = location_to_open { open_file_location(&path); }
+                        if let Some((path, name)) = rename_init {
+                            self.rename_target = Some(path);
+                            self.rename_buffer = name;
                         }
                         
                         ui.add_space(8.0);
@@ -805,6 +818,71 @@ impl UniversalEditor {
                     ui.add_space(4.0);
                 });
             });
+    }
+
+    fn rename_modal(&mut self, ctx: &egui::Context) {
+        let Some(target) = self.rename_target.clone() else { return };
+        let theme = self.theme_mode;
+        let (bg, border, text, subtext, btn_bg, btn_hover) = match theme {
+            ThemeMode::Dark => (ColorPalette::ZINC_900, ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_400, ColorPalette::BLUE_700, ColorPalette::BLUE_600),
+            ThemeMode::Light => (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_500, ColorPalette::BLUE_600, ColorPalette::BLUE_500),
+        };
+        style::draw_modal_overlay(ctx, "rename_overlay", 120);
+        let mut open = true;
+        egui::Window::new("rename_modal_win")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .order(egui::Order::Tooltip)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .fixed_size(egui::vec2(320.0, 0.0))
+            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(egui::Margin::same(20)))
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("Rename File").size(15.0).color(text));
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(target.to_string_lossy().as_ref()).size(11.0).color(subtext));
+                ui.add_space(12.0);
+                let edit = egui::TextEdit::singleline(&mut self.rename_buffer)
+                    .desired_width(f32::INFINITY)
+                    .font(egui::FontId::proportional(14.0));
+                let resp = ui.add(edit);
+                resp.request_focus();
+                ui.add_space(12.0);
+                let confirmed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                let cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                ui.horizontal(|ui| {
+                    let btn_style = |ui: &mut egui::Ui, fill: egui::Color32, hover: egui::Color32| {
+                        let s = ui.style_mut();
+                        s.visuals.widgets.inactive.bg_fill = fill;
+                        s.visuals.widgets.inactive.weak_bg_fill = fill;
+                        s.visuals.widgets.hovered.bg_fill = hover;
+                        s.visuals.widgets.hovered.weak_bg_fill = hover;
+                        s.visuals.override_text_color = Some(egui::Color32::WHITE);
+                    };
+                    let confirm = ui.scope(|ui| { btn_style(ui, btn_bg, btn_hover); ui.button("Rename") }).inner.clicked() || confirmed;
+                    ui.add_space(8.0);
+                    let cancel = ui.scope(|ui| {
+                        let (cb, ch) = match theme { ThemeMode::Dark => (ColorPalette::ZINC_700, ColorPalette::ZINC_600), ThemeMode::Light => (ColorPalette::GRAY_200, ColorPalette::GRAY_300) };
+                        btn_style(ui, cb, ch);
+                        ui.style_mut().visuals.override_text_color = Some(text);
+                        ui.button("Cancel")
+                    }).inner.clicked() || cancelled;
+                    if confirm && !self.rename_buffer.trim().is_empty() {
+                        let new_name = self.rename_buffer.trim().to_string();
+                        if let Some(parent) = target.parent() {
+                            let new_path = parent.join(&new_name);
+                            if std::fs::rename(&target, &new_path).is_ok() {
+                                self.recent_files.remove_file(&target);
+                                self.recent_files.add_file(new_path.clone());
+                            }
+                        }
+                        self.rename_target = None;
+                    }
+                    if cancel { self.rename_target = None; }
+                });
+            });
+        if !open { self.rename_target = None; }
     }
 
     fn landing_page(&mut self, ui: &mut egui::Ui) {
@@ -1264,6 +1342,7 @@ impl eframe::App for UniversalEditor {
         self.render_unsaved_dialog(ctx);
         self.render_settings_modal(ctx);
         self.render_patch_notes_modal(ctx);
+        self.rename_modal(ctx);
         self.top_bar(ctx);
         self.sidebar(ctx);
 
