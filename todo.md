@@ -5,6 +5,7 @@
 - [ ] Create Main Menu
   - [ ] Add About Page
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [ ] Add way to differentiate between same name files in "recent files" list
 
 ## Screens
 
@@ -50,7 +51,12 @@
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
-- [ ] Text view very laggy with large JSON files
+- [ ] Scrolling to the bottom of a large JSON file in text view with a small screen sometimes causes "scroll bounce"
+  - Doesn't allow user to scroll all the way to the bottom of the file
+- [ ] Does not use the raw data of the JSON file for text view, uses edited version
+- [ ] Long numbers turn into scientific value, and save as scientific value instead of staying as the long number
+- [ ] Can't ctrl+s save
+- [ ] Saving does not update "modified" file information value
 
 ### Other Bugs
 
@@ -101,13 +107,10 @@
 
 - [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
-- [ ] Need to add more space for text in very long key values
 - [ ] Search should only show up when clicking ctrl+f
 - [ ] Change cursor when hovering over buttons/navigation
   - [ ] Make navigation bigger and more noticeable
 - [ ] Add true "Table" view, should look like an excel table for example
-- [ ] Option to increase size of each row in the tree view
-- [ ] Add line numbers to text view
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
 - [ ] Add loading screen for sorting and changing views
 

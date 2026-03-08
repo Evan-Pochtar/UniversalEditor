@@ -1,4 +1,5 @@
 use eframe::egui;
+use ropey::Rope;
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -8,6 +9,8 @@ use super::je_tools::{
     build_flat, serialize_value, parse_text, expand_recursive, collapse_recursive,
     search_flat, search_all_nodes, path_key,
 };
+
+pub(super) const TEXT_WIN_LINES: usize = 350;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JsonViewMode { Tree, Text }
@@ -39,6 +42,12 @@ pub struct JsonEditor {
     pub(super) search_stale: bool,
 
     pub(super) text_content: String,
+    pub(super) text_rope: Rope,
+    pub(super) text_win_buf: String,
+    pub(super) text_win_start: usize,
+    pub(super) text_win_line_count: usize,
+    pub(super) text_win_modified: bool,
+    pub(super) text_row_h: f32,
     pub(super) text_stale: bool,
     pub(super) text_modified: bool,
     pub(super) text_errors: Vec<(usize, String)>,
@@ -63,22 +72,25 @@ impl JsonEditor {
     pub fn is_dirty(&self) -> bool { self.dirty }
     pub fn new_empty() -> Self {
         let root = Value::Object(serde_json::Map::new());
-        Self::from_value(root, None)
+        Self::from_value(root, None, None)
     }
 
     pub fn load(path: PathBuf) -> Self {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
         let root = serde_json::from_str(&content).unwrap_or(Value::Null);
-        Self::from_value(root, Some(path))
+        Self::from_value(root, Some(path), Some(content))
     }
 
-    fn from_value(root: Value, path: Option<PathBuf>) -> Self {
+    fn from_value(root: Value, path: Option<PathBuf>, raw_content: Option<String>) -> Self {
         let scope_path: Vec<String> = Vec::new();
         let mut expanded = HashSet::new();
         expanded.insert(path_key(&scope_path));
 
         let flat = build_flat(&root, &scope_path, &expanded, SortMode::None);
-        let text_content = serialize_value(&root, true);
+        let text_content = raw_content.unwrap_or_else(|| serialize_value(&root, true));
+        let text_rope = Rope::from_str(&text_content);
+        let init_win = TEXT_WIN_LINES.min(text_rope.len_lines());
+        let text_win_buf = text_rope.slice(..text_rope.line_to_char(init_win)).to_string();
 
         Self {
             file_path: path,
@@ -98,6 +110,12 @@ impl JsonEditor {
             search_cursor: 0,
             search_stale: false,
             text_content,
+            text_rope,
+            text_win_buf,
+            text_win_start: 0,
+            text_win_line_count: init_win,
+            text_win_modified: false,
+            text_row_h: 0.0,
             text_stale: false,
             text_modified: false,
             text_errors: Vec::new(),
@@ -141,13 +159,19 @@ impl JsonEditor {
                 .unwrap_or(&self.root),
             true,
         );
+        self.text_rope = Rope::from_str(&self.text_content);
+        self.text_win_start = 0;
+        self.text_win_modified = false;
+        self.rebuild_text_window();
         self.text_errors.clear();
         self.text_stale = false;
         self.text_modified = false;
     }
 
     pub(super) fn commit_text_to_root(&mut self) -> bool {
-        match parse_text(&self.text_content) {
+        self.sync_window_to_rope();
+        let full_text = self.text_rope.to_string();
+        match parse_text(&full_text) {
             Ok(v) => {
                 self.push_undo();
                 if self.scope_path.is_empty() {
@@ -155,6 +179,7 @@ impl JsonEditor {
                 } else {
                     super::je_tools::set_at_path(&mut self.root, &self.scope_path, v);
                 }
+                self.text_content = full_text;
                 self.text_errors.clear();
                 self.dirty = true;
                 self.invalidate_flat();
@@ -165,6 +190,32 @@ impl JsonEditor {
                 false
             }
         }
+    }
+
+    pub(super) fn rebuild_text_window(&mut self) {
+        let total = self.text_rope.len_lines();
+        let start = self.text_win_start.min(total.saturating_sub(1));
+        let end = (start + TEXT_WIN_LINES).min(total);
+        self.text_win_start = start;
+        self.text_win_line_count = end - start;
+        let cs = self.text_rope.line_to_char(start);
+        let ce = if end >= total { self.text_rope.len_chars() } else { self.text_rope.line_to_char(end) };
+        self.text_win_buf = self.text_rope.slice(cs..ce).to_string();
+        self.text_win_modified = false;
+    }
+
+    pub(super) fn sync_window_to_rope(&mut self) {
+        if !self.text_win_modified { return; }
+        let total = self.text_rope.len_lines();
+        let start = self.text_win_start.min(total.saturating_sub(1));
+        let end = (start + self.text_win_line_count).min(total);
+        let cs = self.text_rope.line_to_char(start);
+        let ce = if end >= total { self.text_rope.len_chars() } else { self.text_rope.line_to_char(end) };
+        self.text_rope.remove(cs..ce);
+        self.text_rope.insert(cs, &self.text_win_buf);
+        let new_total = self.text_rope.len_lines();
+        self.text_win_line_count = (start + TEXT_WIN_LINES).min(new_total) - start;
+        self.text_win_modified = false;
     }
 
     pub(super) fn push_undo(&mut self) {
@@ -363,6 +414,11 @@ impl EditorModule for JsonEditor {
     fn save(&mut self) -> Result<(), String> {
         if self.file_path.is_none() {
             return self.save_as();
+        }
+        if self.text_modified {
+            if !self.commit_text_to_root() {
+                return Err("Cannot save: the JSON in the text view has syntax errors.".to_string());
+            }
         }
         let content = serialize_value(&self.root, self.export_pretty);
         std::fs::write(self.file_path.as_ref().unwrap(), content)

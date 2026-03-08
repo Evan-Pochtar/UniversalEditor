@@ -92,6 +92,7 @@
 - [x] Search not navigating to results properly
 - [x] Does not allow undo for any text changes
 - [x] Json Editor crashes when trying to navigate back at least 2 parents
+- [x] Text view very laggy with large JSON files
 
 ### Other Bugs
 
@@ -179,6 +180,7 @@
 - [x] Undo and Redo can be moved to top bar
 - [x] Give the ability to show/hide file information
 - [x] Create JSON styling file, move out of ui file
+- [x] Add line numbers to text view
 
 ### CONVERTER: Img 2 Img
 
