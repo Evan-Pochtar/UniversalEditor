@@ -315,7 +315,7 @@ impl UniversalEditor {
                 return image_editor.is_dirty();
             }
             if let Some(json_editor) = module.as_any().downcast_ref::<JsonEditor>() {
-                return json_editor.is_dirty();
+                return json_editor.is_dirty() || json_editor.is_text_modified();
             }
         }
         false

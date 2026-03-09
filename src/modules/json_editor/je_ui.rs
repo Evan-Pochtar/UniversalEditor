@@ -1,6 +1,7 @@
 use eframe::egui;
 use serde_json::Value;
 use crate::style::{self, ColorPalette, ThemeMode, toolbar_action_btn};
+use crate::modules::EditorModule;
 use super::je_main::{JsonEditor, JsonViewMode, EditCell, AddKeyDialog};
 use super::je_tools::{
     SortMode, SearchTarget, FlatNode,
@@ -78,7 +79,7 @@ impl JsonEditor {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
                     ui.separator();
-                    let (status, color) = if self.dirty { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
+                    let (status, color) = if self.dirty || self.text_modified { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
                         else { ("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
 
                     ui.label(egui::RichText::new(status).size(12.0).color(color));
@@ -86,6 +87,26 @@ impl JsonEditor {
                     let node_count = self.flat.len();
                     ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
                 });
+                ui.separator();
+            }
+
+            // Save error banner
+            if let Some(err_msg) = self.save_error.clone() {
+                let err_color = if dark { egui::Color32::from_rgb(60, 20, 20) } else { egui::Color32::from_rgb(255, 235, 235) };
+                let border_color = if dark { egui::Color32::from_rgb(180, 60, 60) } else { egui::Color32::from_rgb(200, 80, 80) };
+                let text_color = if dark { egui::Color32::from_rgb(255, 160, 160) } else { egui::Color32::from_rgb(160, 30, 30) };
+                egui::Frame::new().fill(err_color).stroke(egui::Stroke::new(1.0, border_color)).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 6, top: 4, bottom: 4 })
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("⚠ ").size(12.0).color(text_color));
+                            ui.label(egui::RichText::new(&err_msg).size(12.0).color(text_color));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(egui::Button::new(egui::RichText::new("✕").size(11.0).color(text_color)).frame(false)).clicked() {
+                                    self.save_error = None;
+                                }
+                            });
+                        });
+                    });
                 ui.separator();
             }
 
@@ -204,12 +225,20 @@ impl JsonEditor {
     }
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
-        if matches!(self.view_mode, JsonViewMode::Text) { return; }
+        let mut do_save = false;
+        let mut do_save_as = false;
+        let in_text = matches!(self.view_mode, JsonViewMode::Text);
         ctx.input_mut(|i| {
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) { self.undo(); }
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y)) { self.redo(); }
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)) { self.redo(); }
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S)) { do_save = true; }
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S)) { do_save_as = true; }
+            if !in_text {
+                if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) { self.undo(); }
+                if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y)) { self.redo(); }
+                if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)) { self.redo(); }
+            }
         });
+        if do_save { let _ = self.save(); }
+        if do_save_as { let _ = self.save_as(); }
     }
 
     fn render_view_tabs(&mut self, ui: &mut egui::Ui, dark: bool) {
@@ -348,7 +377,8 @@ impl JsonEditor {
                     if let Some(ec) = &mut self.edit_cell {
                         let er = egui::Rect::from_min_size(egui::pos2(key_x, cy - 9.0), egui::vec2(key_avail, 18.0));
                         let r = ui.put(er, egui::TextEdit::singleline(&mut ec.buffer).font(egui::FontId::proportional(12.0)));
-                        if r.lost_focus() { commit_edit = true; }
+                        if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { commit_edit = true; }
+                        else if r.lost_focus() { commit_edit = true; }
                     }
                 } else {
                     if node.has_children {
@@ -361,7 +391,7 @@ impl JsonEditor {
                     let key_sense_w = (col_key_w - indent - if node.has_children { 16.0 } else { 0.0 }).max(0.0);
                     let kr = egui::Rect::from_min_size(egui::pos2(key_sense_x, row_rect.min.y), egui::vec2(key_sense_w, ROW_H));
                     let ks = ui.allocate_rect(kr, egui::Sense::click());
-                    if ks.double_clicked() { begin_edit = Some((i, true)); }
+                    if ks.double_clicked() && !node.is_array_index { begin_edit = Some((i, true)); }
                     if ks.clicked() { self.selected_row = Some(i); }
                 }
 
@@ -386,12 +416,19 @@ impl JsonEditor {
                                     ui.add(egui::TextEdit::multiline(&mut ec.buffer).desired_width(col_val_w - 8.0).desired_rows(1).font(egui::FontId::proportional(12.0)))
                                 });
                             let r = scroll_resp.inner;
-                            if r.lost_focus() && !ui.input(|inp| inp.key_pressed(egui::Key::Escape)) { commit_edit = true; }
-                            if r.has_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Escape)) { commit_edit = true; }
+                            if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift) {
+                                if ec.buffer.ends_with('\n') { ec.buffer.pop(); }
+                                commit_edit = true;
+                            } else if r.lost_focus() && !ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                                commit_edit = true;
+                            } else if r.has_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                                commit_edit = true;
+                            }
                         } else {
                             let er = egui::Rect::from_min_size(egui::pos2(val_x, cy - 9.0), egui::vec2(col_val_w - 4.0, 18.0));
                             let r = ui.put(er, egui::TextEdit::singleline(&mut ec.buffer).font(egui::FontId::proportional(12.0)));
-                            if r.lost_focus() { commit_edit = true; }
+                            if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { commit_edit = true; }
+                            else if r.lost_focus() { commit_edit = true; }
                         }
                     }
                 } else {
@@ -437,6 +474,7 @@ impl JsonEditor {
                 } else {
                     match &node.val_type {
                         super::je_tools::ValType::Str(s) => (s.clone(), true),
+                        super::je_tools::ValType::Number(n) => (n.clone(), false),
                         _ => (node.val_type.preview_str(), false),
                     }
                 };
@@ -503,9 +541,12 @@ impl JsonEditor {
                 }
 
                 let win_top = area.min.y + self.text_win_start as f32 * row_h;
+                let allocated_bottom = area.min.y + total_h.max(viewport.height());
+                let te_h = (self.text_win_line_count as f32 * row_h + row_h * 4.0)
+                    .min((allocated_bottom - win_top).max(0.0));
                 let te_rect = egui::Rect::from_min_size(
                     egui::pos2(area.min.x + gutter_w, win_top),
-                    egui::vec2(text_w, self.text_win_line_count as f32 * row_h + row_h * 4.0),
+                    egui::vec2(text_w, te_h),
                 );
 
                 let output = ui.scope_builder(

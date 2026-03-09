@@ -45,18 +45,14 @@
 ### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
+- [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
 
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
-- [ ] Scrolling to the bottom of a large JSON file in text view with a small screen sometimes causes "scroll bounce"
-  - Doesn't allow user to scroll all the way to the bottom of the file
-- [ ] Does not use the raw data of the JSON file for text view, uses edited version
-- [ ] Long numbers turn into scientific value, and save as scientific value instead of staying as the long number
-- [ ] Can't ctrl+s save
-- [ ] Saving does not update "modified" file information value
+- [ ] Undoing all changes does not remove "modified" file information status
 
 ### Other Bugs
 

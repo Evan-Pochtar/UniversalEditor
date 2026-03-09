@@ -93,6 +93,12 @@
 - [x] Does not allow undo for any text changes
 - [x] Json Editor crashes when trying to navigate back at least 2 parents
 - [x] Text view very laggy with large JSON files
+- [x] Scrolling to the bottom of a large JSON file in text view with a small screen sometimes causes "scroll bounce"
+  - Doesn't allow user to scroll all the way to the bottom of the file
+- [x] Does not use the raw data of the JSON file for text view, uses edited version
+- [x] Long numbers turn into scientific value, and save as scientific value instead of staying as the long number
+- [x] Can't ctrl+s save
+- [x] Saving does not update "modified" file information value
 
 ### Other Bugs
 

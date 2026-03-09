@@ -153,3 +153,8 @@
 
 #### Debugging
 - **JSON EDITOR**: Fixed lag on large sized files within text view
+- **JSON EDITOR**: Scroll "bounce" issue with large files on small display screens fixed
+- **JSON EDITOR**: No longer pre-formats JSON and uses it's raw data instead
+- **JSON EDITOR**: Ctrl+S save shortcut now works as intended
+- **JSON EDITOR**: "Modified" and "Saved" file information status now shows up correctly
+- **JSON EDITOR**: Long numbers no longer get replaced by scientific numbers

@@ -66,10 +66,12 @@ pub struct JsonEditor {
 
     pub(super) export_pretty: bool,
     pub(super) show_new_confirm: bool,
+    pub(super) save_error: Option<String>,
 }
 
 impl JsonEditor {
     pub fn is_dirty(&self) -> bool { self.dirty }
+    pub fn is_text_modified(&self) -> bool { self.text_modified }
     pub fn new_empty() -> Self {
         let root = Value::Object(serde_json::Map::new());
         Self::from_value(root, None, None)
@@ -130,6 +132,7 @@ impl JsonEditor {
             confirm_delete_path: None,
             export_pretty: true,
             show_new_confirm: false,
+            save_error: None,
         }
     }
 
@@ -417,14 +420,25 @@ impl EditorModule for JsonEditor {
         }
         if self.text_modified {
             if !self.commit_text_to_root() {
-                return Err("Cannot save: the JSON in the text view has syntax errors.".to_string());
+                let msg = "Cannot save: the JSON has syntax errors. Fix them in Text view first.".to_string();
+                self.save_error = Some(msg.clone());
+                return Err(msg);
             }
         }
         let content = serialize_value(&self.root, self.export_pretty);
-        std::fs::write(self.file_path.as_ref().unwrap(), content)
-            .map_err(|e| e.to_string())?;
-        self.dirty = false;
-        Ok(())
+        match std::fs::write(self.file_path.as_ref().unwrap(), &content) {
+            Ok(_) => {
+                self.dirty = false;
+                self.text_modified = false;
+                self.save_error = None;
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("Save failed: {}", e);
+                self.save_error = Some(msg.clone());
+                Err(msg)
+            }
+        }
     }
 
     fn save_as(&mut self) -> Result<(), String> {
