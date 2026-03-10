@@ -614,6 +614,10 @@ impl UniversalEditor {
                     if !contributions.view_items.is_empty() {
                         ui.separator();
                         for (item, action) in &contributions.view_items {
+                            if item.label == "Separator" {
+                                ui.separator();
+                                continue;
+                            }
                             let label = if let Some(ref shortcut) = item.shortcut {
                                 format!("{} ({})", item.label, shortcut)
                             } else {
@@ -700,6 +704,28 @@ impl UniversalEditor {
                                 item.label.clone()
                             };
                             
+                            if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
+                                if let Some(module) = &mut self.active_module {
+                                    module.handle_menu_action(action.clone());
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+
+                if !contributions.layer_items.is_empty() {
+                    ui.menu_button("Layer", |ui| {
+                        for (item, action) in &contributions.layer_items {
+                            if item.label == "Separator" {
+                                ui.separator();
+                                continue;
+                            }
+                            let label = if let Some(ref shortcut) = item.shortcut {
+                                format!("{} ({})", item.label, shortcut)
+                            } else {
+                                item.label.clone()
+                            };
                             if ui.add_enabled(item.enabled, egui::Button::new(label)).clicked() {
                                 if let Some(module) = &mut self.active_module {
                                     module.handle_menu_action(action.clone());

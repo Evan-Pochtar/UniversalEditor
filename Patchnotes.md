@@ -150,6 +150,7 @@
 #### Features
 - **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
 - **JSON EDITOR**: Added Line numbers to the text view
+- **IMG EDITOR**: Added Layer System to the Image Editor
 
 #### Debugging
 - **JSON EDITOR**: Fixed lag on large sized files within text view

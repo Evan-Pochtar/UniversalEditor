@@ -158,6 +158,7 @@ impl EditorModule for TextEditor {
             view_items: Vec::new(),
             image_items: Vec::new(),
             filter_items: Vec::new(),
+            layer_items: Vec::new(),
         }
     }
 

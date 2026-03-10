@@ -138,6 +138,11 @@
 
 ### Image Editor
 
+- [x] Layer system
+  - [x] Add
+  - [x] Reorder
+  - [x] Merge
+  - [x] Opacity
 - [x] Retouch tool
   - [x] Blur
   - [x] Sharpen

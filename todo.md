@@ -6,6 +6,7 @@
   - [ ] Add About Page
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [ ] Add way to differentiate between same name files in "recent files" list
+- [ ] Improve look of patch notes
 
 ## Screens
 
@@ -48,6 +49,9 @@
 - [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
+- [ ] Can't scroll down on the color picker
+- [ ] Eraser is currently just a white brush, messes up when using layers
+- [ ] Opacity Slider in the layer panel is not that visible and also lags on large images
 
 ### Json Editor Bugs
 
@@ -66,11 +70,6 @@
 
 ### Image Editor
 
-- [ ] Layer system
-  - [ ] Add
-  - [ ] Reorder
-  - [ ] Merge
-  - [ ] Opacity
 - [ ] Selection tools
   - [ ] Ellipse
   - [ ] Free-hand lasso
@@ -98,6 +97,7 @@
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
+- [ ] Center hue picker and color square within color picker
 
 ### Json Editor
 
