@@ -1158,7 +1158,9 @@ impl ImageEditor {
             let partial = self.composite_dirty_rect.take();
             let tex_opt = self.texture;
             if let (Some(tex_id), Some([cx0, cy0, cx1, cy1])) = (tex_opt, partial) {
-                if !self.has_visible_text_in_rect(cx0, cy0, cx1, cy1) {
+                let all_rgba8 = self.image.as_ref().map_or(true, |i| matches!(i, DynamicImage::ImageRgba8(_)))
+                    && self.layer_images.values().all(|i| matches!(i, DynamicImage::ImageRgba8(_)));
+                if all_rgba8 && !self.has_visible_text_in_rect(cx0, cy0, cx1, cy1) {
                     self.upload_partial_composite(ctx, tex_id, cx0, cy0, cx1, cy1);
                     self.composite_dirty = false;
                     self.texture_dirty = false;

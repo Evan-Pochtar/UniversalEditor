@@ -43,8 +43,9 @@ impl ImageEditor {
         let height: u32 = buf.height();
 
         let is_eraser: bool = self.tool == Tool::Eraser;
+        let eraser_transparent_eff = is_eraser && (self.eraser_transparent || matches!(kind, LayerKind::Raster));
         let (r, g, b_ch, base_a) = if is_eraser {
-            if self.eraser_transparent { (0u8, 0u8, 0u8, 0u8) } else { (255u8, 255u8, 255u8, 255u8) }
+            if eraser_transparent_eff { (0u8, 0u8, 0u8, 0u8) } else { (255u8, 255u8, 255u8, 255u8) }
         } else {
             (self.color.r(), self.color.g(), self.color.b(), self.color.a())
         };
@@ -213,7 +214,7 @@ impl ImageEditor {
                             let pixel: Rgba<u8> = buf.unsafe_get_pixel(px, py);
                             let [er, eg, eb, ea] = pixel.0;
 
-                            let new_pixel: Rgba<u8> = if is_eraser && self.eraser_transparent {
+                            let new_pixel: Rgba<u8> = if is_eraser && eraser_transparent_eff {
                                 Rgba([er, eg, eb, ea.saturating_sub(alpha)])
                             } else {
                                 let fa: u16 = alpha as u16;

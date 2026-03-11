@@ -1763,7 +1763,7 @@ impl ImageEditor {
 
     pub(super) fn render_layers_panel(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let is_dark = matches!(theme, ThemeMode::Dark);
-        let bg_deep = if is_dark { egui::Color32::from_rgb(28, 28, 32) } else { egui::Color32::from_rgb(245, 245, 248) };
+        let bg_deep = if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::from_rgb(245, 245, 248) };
         let bg_row = if is_dark { egui::Color32::from_rgb(38, 38, 44) } else { egui::Color32::from_rgb(252, 252, 255) };
         let bg_active = if is_dark { egui::Color32::from_rgb(45, 75, 120) } else { egui::Color32::from_rgb(210, 228, 255) };
         let border = if is_dark { egui::Color32::from_rgb(55, 55, 65) } else { egui::Color32::from_rgb(210, 210, 220) };
@@ -1773,7 +1773,7 @@ impl ImageEditor {
         let danger = egui::Color32::from_rgb(200, 60, 60);
 
         egui::Frame::new()
-            .fill(if is_dark { egui::Color32::from_rgb(22, 22, 28) } else { egui::Color32::from_rgb(235, 235, 242) })
+            .fill(if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::from_rgb(235, 235, 242) })
             .stroke(egui::Stroke::new(0.0, border))
             .inner_margin(egui::Margin { left: 10, right: 6, top: 8, bottom: 8 })
             .show(ui, |ui| {
@@ -2024,10 +2024,13 @@ impl ImageEditor {
                     let mut opacity_pct = (old_opacity * 100.0).round() as i32;
                     ui.horizontal(|ui| {
                         ui.spacing_mut().slider_width = panel_w - 80.0;
-                        if ui.add(egui::Slider::new(&mut opacity_pct, 0..=100).show_value(false)).changed() {
+                        let resp = ui.add(egui::Slider::new(&mut opacity_pct, 0..=100).show_value(false));
+                        if resp.changed() {
                             self.layers[idx].opacity = opacity_pct as f32 / 100.0;
-                            self.composite_dirty = true;
                             self.dirty = true;
+                        }
+                        if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
+                            self.composite_dirty = true;
                         }
                         ui.label(egui::RichText::new(format!("{}%", opacity_pct)).size(11.0).color(text_prim));
                     });

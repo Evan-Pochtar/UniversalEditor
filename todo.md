@@ -50,8 +50,6 @@
 
 ### Image Editor Bugs
 - [ ] Can't scroll down on the color picker
-- [ ] Eraser is currently just a white brush, messes up when using layers
-- [ ] Opacity Slider in the layer panel is not that visible and also lags on large images
 
 ### Json Editor Bugs
 

@@ -159,3 +159,6 @@
 - **JSON EDITOR**: Ctrl+S save shortcut now works as intended
 - **JSON EDITOR**: "Modified" and "Saved" file information status now shows up correctly
 - **JSON EDITOR**: Long numbers no longer get replaced by scientific numbers
+- **IMG EDITOR**: Eraser now properly erases on layers
+- **IMG EDITOR**: Opacity slider now only loads when you are no longer sliding to prevent lag
+- **IMG EDITOR**: Brush now no longer periodically erases background while drawing
