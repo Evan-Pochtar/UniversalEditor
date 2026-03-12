@@ -71,6 +71,7 @@
 - [x] Hover effects of buttons only work in light mode
 - [x] Some buttons within the brush settings in light mode are colored white with white background
 - [x] Sliders are only visible in dark mode
+- [x] Can't scroll down on the color picker
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -187,6 +188,7 @@
 - [x] Make image converter and image editor use the same export function
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
+- [x] Center hue picker and color square within color picker
 
 ### Json Editor
 

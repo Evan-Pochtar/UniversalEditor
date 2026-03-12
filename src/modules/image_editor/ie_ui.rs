@@ -65,7 +65,7 @@ impl ImageEditor {
                     match self.tool {
                         Tool::Brush => {
                             ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
-                            ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0));
+                            ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=100.0));
                             ui.label(egui::RichText::new("Opacity:").size(12.0).color(label_col));
                             ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
                             ui.separator();
@@ -523,94 +523,103 @@ impl ImageEditor {
         let win_resp = egui::Window::new("Color Picker")
             .collapsible(false).resizable(false)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 60.0))
-            .fixed_size(egui::vec2(340.0, 0.0))
+            .default_size(egui::vec2(330.0, 580.0))
             .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.5, border)).corner_radius(8.0).inner_margin(16.0))
             .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("cp_scroll")
+                    .auto_shrink([false, false])
+                    .min_scrolled_height(540.0)
+                    .max_height(ctx.content_rect().height() - 120.0)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                    .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
 
                 let mut rgb: [f32; 3] = [self.color.r() as f32 / 255.0, self.color.g() as f32 / 255.0, self.color.b() as f32 / 255.0];
-                let (h_current, s, v) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                let hue_id: egui::Id = ui.make_persistent_id("picker_hue_state");
-                let mut h: f32  = ui.data(|d| d.get_temp(hue_id)).unwrap_or(h_current);
-                if s > 0.005 && v > 0.005 { h = h_current; ui.data_mut(|d| d.insert_temp(hue_id, h)); }
+                let (h_curr, s_curr, v_curr) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                let hue_id = egui::Id::new("ie_cp_hue");
+                let sv_id  = egui::Id::new("ie_cp_sv");
+                let mut h: f32 = ctx.data(|d| d.get_temp(hue_id)).unwrap_or(h_curr);
+                let (mut s, mut v): (f32, f32) = ctx.data(|d| d.get_temp(sv_id)).unwrap_or((s_curr, v_curr));
 
-                let mut color_changed: bool = false;
-                let picker_size: egui::Vec2 = egui::vec2(280.0, 280.0);
-                let (rect, response) = ui.allocate_exact_size(picker_size, egui::Sense::click_and_drag());
+                let picker_w: f32 = 280.0;
+                let avail_w = ui.available_width();
+                let x_offset = ((avail_w - picker_w) / 2.0).max(0.0);
+                let mut color_changed = false;
+                let mut sq_used = false;
+                let mut hue_used = false;
 
+                let (outer_sq, _) = ui.allocate_exact_size(egui::vec2(avail_w, picker_w), egui::Sense::hover());
+                let rect = egui::Rect::from_min_size(egui::pos2(outer_sq.min.x + x_offset, outer_sq.min.y), egui::vec2(picker_w, picker_w));
+                let response = ui.interact(rect, ui.id().with("cp_sq"), egui::Sense::click_and_drag());
                 if ui.is_rect_visible(rect) {
-                    let painter: egui::Painter = ui.painter_at(rect);
-                    let steps: i32 = 40;
-                    let cell_w: f32 = rect.width() / steps as f32;
-                    let cell_h: f32 = rect.height() / steps as f32;
-                    for y in 0..steps {
-                        for x in 0..steps {
-                            let s_cell: f32 = x as f32 / (steps - 1) as f32;
-                            let v_cell: f32 = 1.0 - (y as f32 / (steps - 1) as f32);
-                            let (r, g, b) = hsv_to_rgb_f32(h, s_cell, v_cell);
-                            let color: egui::Color32 = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+                    let painter = ui.painter_at(rect);
+                    let steps = 40i32;
+                    let (cw, ch) = (rect.width() / steps as f32, rect.height() / steps as f32);
+                    for cy in 0..steps {
+                        for cx in 0..steps {
+                            let (sc, vc) = (cx as f32 / (steps - 1) as f32, 1.0 - cy as f32 / (steps - 1) as f32);
+                            let (r, g, b) = hsv_to_rgb_f32(h, sc, vc);
                             painter.rect_filled(egui::Rect::from_min_size(
-                                egui::pos2(rect.min.x + x as f32 * cell_w, rect.min.y + y as f32 * cell_h),
-                                egui::vec2(cell_w.ceil(), cell_h.ceil()),
-                            ), 0.0, color);
+                                egui::pos2(rect.min.x + cx as f32 * cw, rect.min.y + cy as f32 * ch),
+                                egui::vec2(cw.ceil(), ch.ceil()),
+                            ), 0.0, egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
                         }
                     }
-                    let cursor_pos: egui::Pos2 = egui::pos2(rect.min.x + s * rect.width(), rect.min.y + (1.0 - v) * rect.height());
-                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
-                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
+                    let cur = egui::pos2(rect.min.x + s * rect.width(), rect.min.y + (1.0 - v) * rect.height());
+                    painter.circle_stroke(cur, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+                    painter.circle_stroke(cur, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
                 }
-
-                if response.clicked() || response.dragged() {
+                if response.dragged() || response.clicked() {
                     if let Some(pos) = response.interact_pointer_pos() {
-                        let x: f32 = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
-                        let y: f32 = ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
-                        let (r, g, b) = hsv_to_rgb_f32(h, x, 1.0 - y);
-                        rgb = [r, g, b]; color_changed = true;
+                        let (x, y) = (((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0));
+                        s = x; v = 1.0 - y;
+                        ctx.data_mut(|d| d.insert_temp(sv_id, (s, v)));
+                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        rgb = [r, g, b]; color_changed = true; sq_used = true;
                     }
                 }
 
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Hue:").size(12.0).color(weak_col));
-                    let hue_size: egui::Vec2 = egui::vec2(ui.available_width(), 24.0);
-                    let (hue_rect, hue_response) = ui.allocate_exact_size(hue_size, egui::Sense::click_and_drag());
 
-                    if ui.is_rect_visible(hue_rect) {
-                        let painter: egui::Painter = ui.painter_at(hue_rect);
-                        let steps: i32 = 60;
-                        let step_w: f32 = hue_rect.width() / steps as f32;
-
-                        for i in 0..steps {
-                            let h_step: f32 = (i as f32 / steps as f32) * 360.0;
-                            let (r, g, b) = hsv_to_rgb_f32(h_step, 1.0, 1.0);
-                            let color: egui::Color32 = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
-                            painter.rect_filled(egui::Rect::from_min_size(
-                                egui::pos2(hue_rect.min.x + i as f32 * step_w, hue_rect.min.y),
-                                egui::vec2(step_w.ceil(), hue_rect.height()),
-                            ), 0.0, color);
-                        }
-
-                        painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0,
-                            if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
-                        ), egui::StrokeKind::Outside);
-
-                        let hue_cursor_x: f32 = hue_rect.min.x + (h / 360.0) * hue_rect.width();
-                        let hcr: egui::Rect = egui::Rect::from_center_size(egui::pos2(hue_cursor_x, hue_rect.center().y), egui::vec2(4.0, hue_rect.height() + 2.0));
-                        painter.rect_filled(hcr, 2.0, egui::Color32::WHITE);
-                        painter.rect_stroke(hcr, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
+                let (outer_hue, _) = ui.allocate_exact_size(egui::vec2(avail_w, 24.0), egui::Sense::hover());
+                let hue_rect = egui::Rect::from_min_size(egui::pos2(outer_hue.min.x + x_offset, outer_hue.min.y), egui::vec2(picker_w, 24.0));
+                let hue_resp = ui.interact(hue_rect, ui.id().with("cp_hue"), egui::Sense::click_and_drag());
+                if ui.is_rect_visible(hue_rect) {
+                    let painter = ui.painter_at(hue_rect);
+                    let steps = 60i32;
+                    let sw = hue_rect.width() / steps as f32;
+                    for i in 0..steps {
+                        let (r, g, b) = hsv_to_rgb_f32((i as f32 / steps as f32) * 360.0, 1.0, 1.0);
+                        painter.rect_filled(egui::Rect::from_min_size(
+                            egui::pos2(hue_rect.min.x + i as f32 * sw, hue_rect.min.y),
+                            egui::vec2(sw.ceil(), hue_rect.height()),
+                        ), 0.0, egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
                     }
-
-                    if hue_response.clicked() || hue_response.dragged() {
-                        if let Some(pos) = hue_response.interact_pointer_pos() {
-                            let x: f32 = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0);
-                            h = x * 360.0;
-                            ui.data_mut(|d: &mut egui::util::IdTypeMap| d.insert_temp(hue_id, h));
-                            let (_, s_curr, v_curr) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                            let (r, g, b) = hsv_to_rgb_f32(h, s_curr, v_curr);
-                            rgb = [r, g, b]; color_changed = true;
-                        }
+                    painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0,
+                        if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
+                    ), egui::StrokeKind::Outside);
+                    let hx = hue_rect.min.x + (h / 360.0) * hue_rect.width();
+                    let hcr = egui::Rect::from_center_size(egui::pos2(hx, hue_rect.center().y), egui::vec2(4.0, hue_rect.height() + 2.0));
+                    painter.rect_filled(hcr, 2.0, egui::Color32::WHITE);
+                    painter.rect_stroke(hcr, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
+                }
+                if hue_resp.dragged() || hue_resp.clicked() {
+                    if let Some(pos) = hue_resp.interact_pointer_pos() {
+                        h = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0) * 360.0;
+                        ctx.data_mut(|d| d.insert_temp(hue_id, h));
+                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        rgb = [r, g, b]; color_changed = true; hue_used = true;
                     }
-                });
+                }
+
+                if !sq_used && !hue_used {
+                    let (er, eg, eb) = hsv_to_rgb_f32(h, s, v);
+                    let expected = egui::Color32::from_rgb((er * 255.0) as u8, (eg * 255.0) as u8, (eb * 255.0) as u8);
+                    if expected != self.color {
+                        ctx.data_mut(|d| { d.insert_temp(hue_id, h_curr); d.insert_temp(sv_id, (s_curr, v_curr)); });
+                    }
+                }
 
                 self.color = egui::Color32::from_rgb((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8);
                 if color_changed { self.hex_input = RgbaColor::from_egui(self.color).to_hex(); }
@@ -626,7 +635,7 @@ impl ImageEditor {
 
                 ui.horizontal(|ui: &mut egui::Ui| {
                     ui.label(egui::RichText::new("Hex:").size(12.0).color(weak_col));
-                    let response: egui::Response = ui.text_edit_singleline(&mut self.hex_input);
+                    let response: egui::Response = ui.add(egui::TextEdit::singleline(&mut self.hex_input).desired_width(120.0));
                     if response.changed() {
                         if let Some(mut c) = RgbaColor::from_hex(&self.hex_input) { c.a = 255; self.color = c.to_egui(); }
                     }
@@ -639,15 +648,42 @@ impl ImageEditor {
                     ui.label(egui::RichText::new("Recent").size(13.0).color(text_col));
                     if ui.small_button("Clear").clicked() { self.color_history = super::ie_main::ColorHistory::new(); }
                 });
-                
-                ui.horizontal_wrapped(|ui: &mut egui::Ui| {
-                    let history: std::collections::VecDeque<RgbaColor> = self.color_history.get_colors().clone();
-                    for color in history.iter() {
-                        if ui.add(egui::Button::new("").fill(color.to_egui()).min_size(egui::vec2(28.0, 28.0))).clicked() {
-                            let mut c: RgbaColor = *color; c.a = 255; self.color = c.to_egui(); self.hex_input = c.to_hex();
+
+                {
+                    let history = self.color_history.get_colors().clone();
+                    let n = history.len();
+                    let (sw, sp) = (28.0f32, 4.0f32);
+                    let avail = ui.available_width();
+                    let per_row = ((avail + sp) / (sw + sp)).floor().max(1.0) as usize;
+                    let rows = if n == 0 { 1 } else { (n + per_row - 1) / per_row };
+                    let total_h = if n == 0 { sw } else { rows as f32 * (sw + sp) - sp };
+                    let origin = ui.cursor().min;
+                    let (rec_rect, _) = ui.allocate_exact_size(egui::vec2(avail, total_h), egui::Sense::hover());
+                    let painter = ui.painter_at(rec_rect);
+                    let ptr = ctx.pointer_latest_pos();
+                    let released = ctx.input(|i| i.pointer.any_released());
+                    for (idx, color) in history.iter().enumerate() {
+                        let (row, col) = (idx / per_row, idx % per_row);
+                        let items_this_row = if (row + 1) * per_row <= n { per_row } else { n - row * per_row };
+                        let row_w = items_this_row as f32 * (sw + sp) - sp;
+                        let lpad = ((avail - row_w) / 2.0).max(0.0);
+                        let sr = egui::Rect::from_min_size(
+                            egui::pos2(origin.x + lpad + col as f32 * (sw + sp), origin.y + row as f32 * (sw + sp)),
+                            egui::vec2(sw, sw),
+                        );
+                        painter.rect_filled(sr, 4.0, color.to_egui());
+                        painter.rect_stroke(sr, 4.0, egui::Stroke::new(1.0,
+                            if matches!(theme, ThemeMode::Dark) { egui::Color32::from_rgba_unmultiplied(255,255,255,40) }
+                            else { egui::Color32::from_rgba_unmultiplied(0,0,0,40) }
+                        ), egui::StrokeKind::Outside);
+                        if let Some(pp) = ptr {
+                            if sr.contains(pp) {
+                                ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                                if released { let mut c = *color; c.a = 255; self.color = c.to_egui(); self.hex_input = c.to_hex(); }
+                            }
                         }
                     }
-                });
+                }
 
                 ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
 
@@ -690,7 +726,10 @@ impl ImageEditor {
                 for idx in 0..n {
                     let row = idx / swatches_per_row.max(1);
                     let col = idx % swatches_per_row.max(1);
-                    let x = grid_start.x + col as f32 * (swatch_size + swatch_spacing);
+                    let items_in_row = if (row + 1) * swatches_per_row <= n { swatches_per_row } else { n - row * swatches_per_row };
+                    let row_w = items_in_row as f32 * (swatch_size + swatch_spacing) - swatch_spacing;
+                    let row_pad = ((available_w - row_w) / 2.0).max(0.0);
+                    let x = grid_start.x + row_pad + col as f32 * (swatch_size + swatch_spacing);
                     let y = grid_start.y + row as f32 * (swatch_size + swatch_spacing);
                     swatch_rects.push(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(swatch_size, swatch_size)));
                 }
@@ -808,6 +847,7 @@ impl ImageEditor {
                     if ui.button("Apply").clicked()  { self.add_color_to_history(); self.show_color_picker = false; }
                     if ui.button("Cancel").clicked() { self.show_color_picker = false; }
                 });
+                    });
             });
         self.color_picker_rect = win_resp.map(|r| r.response.rect);
     }
@@ -883,6 +923,7 @@ impl ImageEditor {
             }
         }
 
+        let mut height_updates: Vec<(u64, f32)> = Vec::with_capacity(self.text_layers.len());
         for layer in &self.text_layers {
             let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
             let font_size_screen: f32 = layer.font_size * self.zoom;
@@ -908,6 +949,7 @@ impl ImageEditor {
             let d: egui::Vec2 = anchor - center;
             let text_pos: egui::Pos2 = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
             let galley: std::sync::Arc<egui::Galley> = ui.painter().layout_job(make_job(&layer.content));
+            height_updates.push((layer.id, (galley.rect.height() / self.zoom).max(layer.font_size)));
             let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer.color);
             text_shape.angle = angle_rad;
 
@@ -963,7 +1005,7 @@ impl ImageEditor {
                     let row_h: f32 = galley.rows.iter().find(|r| r.rect().min.y <= lp.y && lp.y <= r.rect().max.y).map(|r| r.rect().height()).unwrap_or(font_size_screen);
                     painter.line_segment([galley_to_canvas(lp), galley_to_canvas(egui::pos2(lp.x, lp.y + row_h))], egui::Stroke::new(2.0, layer.color));
                 }
-                ctx.request_repaint();
+                ctx.request_repaint_after(std::time::Duration::from_millis(500));
             }
 
             if self.editing_text && self.selected_text == Some(layer.id) {
@@ -973,18 +1015,8 @@ impl ImageEditor {
                 TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400);
             }
         }
-        let zoom: f32 = self.zoom;
-        let height_updates: Vec<(u64, f32)> = self.text_layers.iter().map(|layer| {
-            let font_family: egui::FontFamily = egui::FontFamily::Name(layer.font_family_name().into());
-            let font_id: egui::FontId = egui::FontId::new(layer.font_size * zoom, font_family);
-            let box_w_screen: f32 = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
-            let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
-            job.wrap.max_width = box_w_screen;
-            job.append(&layer.content, 0.0, egui::TextFormat { font_id, color: layer.color, ..Default::default() });
-            (layer.id, ui.painter().layout_job(job).rect.height() / zoom)
-        }).collect();
         for (id, h) in height_updates {
-            if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) { layer.rendered_height = h.max(layer.font_size); }
+            if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) { layer.rendered_height = h; }
         }
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
@@ -1372,6 +1404,7 @@ impl ImageEditor {
             .show(ctx, |ui: &mut egui::Ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .min_scrolled_height(540.0)
                     .max_height(panel_max_h)
                     .show(ui, |ui: &mut egui::Ui| {
                         ui.set_min_width(420.0);

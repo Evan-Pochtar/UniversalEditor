@@ -49,7 +49,6 @@
 - [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
-- [ ] Can't scroll down on the color picker
 
 ### Json Editor Bugs
 
@@ -95,7 +94,6 @@
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
-- [ ] Center hue picker and color square within color picker
 
 ### Json Editor
 

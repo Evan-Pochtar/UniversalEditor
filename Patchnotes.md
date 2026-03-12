@@ -151,8 +151,10 @@
 - **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
 - **JSON EDITOR**: Added Line numbers to the text view
 - **IMG EDITOR**: Added Layer System to the Image Editor
+- **IMG EDITOR**: Color picker panel information now centered
 
 #### Debugging
+- **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing
 - **JSON EDITOR**: Fixed lag on large sized files within text view
 - **JSON EDITOR**: Scroll "bounce" issue with large files on small display screens fixed
 - **JSON EDITOR**: No longer pre-formats JSON and uses it's raw data instead
@@ -162,3 +164,6 @@
 - **IMG EDITOR**: Eraser now properly erases on layers
 - **IMG EDITOR**: Opacity slider now only loads when you are no longer sliding to prevent lag
 - **IMG EDITOR**: Brush now no longer periodically erases background while drawing
+- **IMG EDITOR**: No longer has jumpy cursor on the bottom of the color picker square
+- **IMG EDITOR**: Hue slider no longer sometimes moves color square cursor
+- **IMG EDITOR**: Can now scroll down on the color picker panel
