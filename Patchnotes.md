@@ -167,3 +167,6 @@
 - **IMG EDITOR**: No longer has jumpy cursor on the bottom of the color picker square
 - **IMG EDITOR**: Hue slider no longer sometimes moves color square cursor
 - **IMG EDITOR**: Can now scroll down on the color picker panel
+- **IMG EDITOR**: Textbox no longer lags on large images
+- **IMG EDITOR**: Textbox no longer allows empty textbox's (deletes layer as well)
+- **IMG EDITOR**: Stamped text now matches the exact size of preview text

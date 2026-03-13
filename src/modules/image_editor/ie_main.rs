@@ -4,10 +4,10 @@ use crate::modules::helpers::image_export::ExportFormat;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::style::{ThemeMode};
+use crate::style::ThemeMode;
 use crate::modules::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use super::ie_helpers::{load_persisted, save_persisted, blend_pixels_u8};
 
 pub(super) const MAX_UNDO: usize = 20;
 pub(super) const MAX_COLOR_HISTORY: usize = 20;
@@ -53,31 +53,14 @@ impl RgbaColor {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct ColorHistory { pub colors: VecDeque<RgbaColor> }
 
 impl ColorHistory {
-    pub(super) fn new() -> Self { Self { colors: VecDeque::new() } }
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("color_history.json");
-        p
-    }
-    
+    pub(super) fn load() -> Self { load_persisted("color_history.json") }
+    pub(super) fn save(&self) { save_persisted("color_history.json", self); }
     pub(super) fn add_color(&mut self, color: RgbaColor) {
-        if let Some(pos) = self.colors.iter().position(|c: &RgbaColor| *c == color) { self.colors.remove(pos); }
+        if let Some(pos) = self.colors.iter().position(|c| *c == color) { self.colors.remove(pos); }
         self.colors.push_front(color);
         if self.colors.len() > MAX_COLOR_HISTORY { self.colors.pop_back(); }
         self.save();
@@ -85,31 +68,12 @@ impl ColorHistory {
     pub(super) fn get_colors(&self) -> &VecDeque<RgbaColor> { &self.colors }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct ColorFavorites { pub colors: Vec<RgbaColor> }
 
 impl ColorFavorites {
-    pub(super) fn new() -> Self { Self { colors: Vec::new() } }
-
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("color_favorites.json");
-        p
-    }
+    pub(super) fn load() -> Self { load_persisted("color_favorites.json") }
+    pub(super) fn save(&self) { save_persisted("color_favorites.json", self); }
 
     pub(super) fn toggle(&mut self, color: RgbaColor) -> bool {
         if let Some(pos) = self.colors.iter().position(|c| *c == color) {
@@ -257,64 +221,63 @@ impl BrushPreset {
     }
 
     pub(super) fn settings(&self, current_size: f32) -> BrushSettings {
-        let sz = current_size;
         match self {
             Self::Regular => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Pencil => BrushSettings {
-                size: sz, opacity: 0.85, softness: 0.0, step: 0.35, flow: 0.75,
-                shape: BrushShape::Circle, scatter: sz * 0.08, angle: 0.0, angle_jitter: 0.0,
+                size: current_size, opacity: 0.85, softness: 0.0, step: 0.35, flow: 0.75,
+                shape: BrushShape::Circle, scatter: current_size * 0.08, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.45,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Pen => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.0, step: 0.12, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.0, step: 0.12, flow: 1.0,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Crayon => BrushSettings {
-                size: sz, opacity: 0.75, softness: 0.05, step: 0.20, flow: 0.65,
-                shape: BrushShape::Square, scatter: sz * 0.18, angle: 15.0, angle_jitter: 12.0,
+                size: current_size, opacity: 0.75, softness: 0.05, step: 0.20, flow: 0.65,
+                shape: BrushShape::Square, scatter: current_size * 0.18, angle: 15.0, angle_jitter: 12.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.55,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Marker => BrushSettings {
-                size: sz, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.90,
+                size: current_size, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.90,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Calligraphy => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,
                 shape: BrushShape::CalligraphyFlat, scatter: 0.0, angle: 45.0, angle_jitter: 0.0,
                 aspect_ratio: 0.18, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::SprayPaint => BrushSettings {
-                size: sz.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.06,
-                shape: BrushShape::Circle, scatter: sz * 0.6, angle: 0.0, angle_jitter: 0.0,
+                size: current_size.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.06,
+                shape: BrushShape::Circle, scatter: current_size * 0.6, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: true, spray_particles: 60, wetness: 0.0,
             },
             Self::Watercolor => BrushSettings {
-                size: sz, opacity: 0.70, softness: 0.90, step: 0.15, flow: 0.25,
-                shape: BrushShape::Circle, scatter: sz * 0.12, angle: 0.0, angle_jitter: 0.0,
+                size: current_size, opacity: 0.70, softness: 0.90, step: 0.15, flow: 0.25,
+                shape: BrushShape::Circle, scatter: current_size * 0.12, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Paper, texture_strength: 0.30,
                 spray_mode: false, spray_particles: 40, wetness: 0.40,
             },
             Self::Charcoal => BrushSettings {
-                size: sz, opacity: 0.80, softness: 0.08, step: 0.28, flow: 0.55,
-                shape: BrushShape::Diamond, scatter: sz * 0.14, angle: 30.0, angle_jitter: 18.0,
+                size: current_size, opacity: 0.80, softness: 0.08, step: 0.28, flow: 0.55,
+                shape: BrushShape::Diamond, scatter: current_size * 0.14, angle: 30.0, angle_jitter: 18.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Canvas, texture_strength: 0.50,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Airbrush => BrushSettings {
-                size: sz, opacity: 0.80, softness: 1.0, step: 0.12, flow: 0.12,
+                size: current_size, opacity: 0.80, softness: 1.0, step: 0.12, flow: 0.12,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
@@ -326,31 +289,12 @@ impl BrushPreset {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct SavedBrush { pub name: String, pub settings: BrushSettings, }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct BrushFavorites { pub brushes: Vec<SavedBrush>, }
 
 impl BrushFavorites {
-    pub(super) fn new() -> Self { Self { brushes: Vec::new() } }
-
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("brush_favorites.json");
-        p
-    }
+    pub(super) fn load() -> Self { load_persisted("brush_favorites.json") }
+    pub(super) fn save(&self) { save_persisted("brush_favorites.json", self); }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -455,6 +399,7 @@ pub(super) struct TextLayer {
     pub underline: bool,
     pub font_name: String,
     pub rendered_height: f32,
+    pub cached_lines: Vec<String>,
 }
 
 impl TextLayer {
@@ -501,11 +446,8 @@ pub(super) struct TextDrag {
     pub orig_rot_start_angle: f32,
 }
 
+#[derive(Default)]
 pub(super) struct CropState { pub start: Option<(f32, f32)>, pub end: Option<(f32, f32)> }
-
-impl Default for CropState {
-    fn default() -> Self { Self { start: None, end: None } }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BlendMode {
@@ -684,6 +626,8 @@ pub struct ImageEditor {
     pub(super) layer_rename_id: Option<u64>,
     pub(super) layer_rename_buf: String,
     pub(super) filter_target_layer_id: u64,
+    pub(super) checker_texture: Option<egui::TextureId>,
+    pub(super) checker_texture_dark: bool,
 }
 
 impl ImageEditor {
@@ -748,6 +692,8 @@ impl ImageEditor {
             layer_rename_id: None,
             layer_rename_buf: String::new(),
             filter_target_layer_id: 0,
+            checker_texture: None,
+            checker_texture_dark: false,
         }
     }
 
@@ -839,11 +785,9 @@ impl ImageEditor {
     }
 
     pub(super) fn active_raster_image(&self) -> Option<&DynamicImage> {
-        let id = self.active_layer_id;
-        let kind = self.layers.iter().find(|l| l.id == id).map(|l| l.kind)?;
-        match kind {
+        match self.layers.iter().find(|l| l.id == self.active_layer_id)?.kind {
             LayerKind::Background => self.image.as_ref(),
-            LayerKind::Raster => self.layer_images.get(&id),
+            LayerKind::Raster => self.layer_images.get(&self.active_layer_id),
             LayerKind::Text => None,
         }
     }
@@ -878,23 +822,8 @@ impl ImageEditor {
             let mode = layer.blend_mode;
             for y in 0..h {
                 for x in 0..w {
-                    let s = src_rgba.get_pixel(x, y).0;
-                    let d = result.get_pixel(x, y).0;
-                    let sa = (s[3] as f32 / 255.0) * opacity;
-                    if sa < 1e-6 { continue; }
-                    let da = d[3] as f32 / 255.0;
-                    let out_a = sa + da * (1.0 - sa);
-                    if out_a < 1e-6 { result.put_pixel(x, y, Rgba([0, 0, 0, 0])); continue; }
-                    let sr = [s[0] as f32 / 255.0, s[1] as f32 / 255.0, s[2] as f32 / 255.0];
-                    let dr = [d[0] as f32 / 255.0, d[1] as f32 / 255.0, d[2] as f32 / 255.0];
-                    let mut out = [0f32; 3];
-                    for i in 0..3 { out[i] = (mode.blend_channel(dr[i], sr[i]) * sa + dr[i] * da * (1.0 - sa)) / out_a; }
-                    result.put_pixel(x, y, Rgba([
-                        (out[0] * 255.0).clamp(0.0, 255.0) as u8,
-                        (out[1] * 255.0).clamp(0.0, 255.0) as u8,
-                        (out[2] * 255.0).clamp(0.0, 255.0) as u8,
-                        (out_a  * 255.0).clamp(0.0, 255.0) as u8,
-                    ]));
+                    let out = blend_pixels_u8(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
+                    result.put_pixel(x, y, Rgba(out));
                 }
             }
         }
@@ -905,9 +834,6 @@ impl ImageEditor {
         Some(DynamicImage::ImageRgba8(result))
     }
 
-    pub(super) fn composite_for_export(&self) -> Option<DynamicImage> {
-        self.composite_all_layers()
-    }
 
     fn insert_above_active(&self) -> usize {
         self.layers.iter().rposition(|l| l.id == self.active_layer_id).map(|pos| pos + 1).unwrap_or(self.layers.len())
@@ -1022,24 +948,8 @@ impl ImageEditor {
 
             for y in 0..h {
                 for x in 0..w {
-                    let s = top_rgba.get_pixel(x, y).0;
-                    let d = result.get_pixel(x, y).0;
-                    let sa = (s[3] as f32 / 255.0) * top_opacity;
-                    if sa < 1e-6 { continue; }
-                    let da = d[3] as f32 / 255.0;
-                    let out_a = sa + da * (1.0 - sa);
-                    if out_a < 1e-6 { result.put_pixel(x, y, Rgba([0,0,0,0])); continue; }
-                    let sr = [s[0] as f32/255.0, s[1] as f32/255.0, s[2] as f32/255.0];
-                    let dr = [d[0] as f32/255.0, d[1] as f32/255.0, d[2] as f32/255.0];
-                    let mut out = [0f32; 3];
-                    for i in 0..3 {
-                        let blended = top_mode.blend_channel(dr[i], sr[i]);
-                        out[i] = (blended * sa + dr[i] * da * (1.0 - sa)) / out_a;
-                    }
-                    result.put_pixel(x, y, Rgba([
-                        (out[0]*255.0) as u8, (out[1]*255.0) as u8,
-                        (out[2]*255.0) as u8, (out_a*255.0) as u8,
-                    ]));
+                    let out = blend_pixels_u8(result.get_pixel(x, y).0, top_rgba.get_pixel(x, y).0, top_opacity, top_mode);
+                    result.put_pixel(x, y, Rgba(out));
                 }
             }
 
@@ -1058,7 +968,7 @@ impl ImageEditor {
     }
 
     pub(super) fn flatten_all_layers(&mut self) {
-        if let Some(composite) = self.composite_for_export() {
+        if let Some(composite) = self.composite_all_layers() {
             self.push_undo();
             self.image = Some(composite);
             self.layer_images.clear();
@@ -1125,6 +1035,34 @@ impl ImageEditor {
         Some((rx as u32, ry as u32))
     }
 
+    pub(super) fn ensure_checker_texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        let is_dark = ctx.style().visuals.dark_mode;
+        if let Some(tid) = self.checker_texture {
+            if self.checker_texture_dark == is_dark { return tid; }
+            ctx.tex_manager().write().free(tid);
+        }
+        let sq: usize = 16;
+        let sz = sq * 2;
+        let (light, dark) = if is_dark {
+            ([55u8, 55, 55, 255], [40u8, 40, 40, 255])
+        } else {
+            ([220u8, 220, 220, 255], [200u8, 200, 200, 255])
+        };
+        let mut pixels: Vec<u8> = Vec::with_capacity(sz * sz * 4);
+        for row in 0..sz {
+            for col in 0..sz {
+                let c = if (row / sq + col / sq) % 2 == 0 { light } else { dark };
+                pixels.extend_from_slice(&c);
+            }
+        }
+        let img = egui::ColorImage::from_rgba_unmultiplied([sz, sz], &pixels);
+        let opts = egui::TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..Default::default() };
+        let tid = ctx.tex_manager().write().alloc("checker_bg".into(), img.into(), opts);
+        self.checker_texture = Some(tid);
+        self.checker_texture_dark = is_dark;
+        tid
+    }
+
     pub(super) fn image_to_screen(&self, ix: f32, iy: f32) -> egui::Pos2 {
         let canvas: egui::Rect = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
         let (img_w, img_h) = self.image.as_ref()
@@ -1160,7 +1098,7 @@ impl ImageEditor {
             if let (Some(tex_id), Some([cx0, cy0, cx1, cy1])) = (tex_opt, partial) {
                 let all_rgba8 = self.image.as_ref().map_or(true, |i| matches!(i, DynamicImage::ImageRgba8(_)))
                     && self.layer_images.values().all(|i| matches!(i, DynamicImage::ImageRgba8(_)));
-                if all_rgba8 && !self.has_visible_text_in_rect(cx0, cy0, cx1, cy1) {
+                if all_rgba8 && (self.is_dragging || !self.has_visible_text_in_rect(cx0, cy0, cx1, cy1)) {
                     self.upload_partial_composite(ctx, tex_id, cx0, cy0, cx1, cy1);
                     self.composite_dirty = false;
                     self.texture_dirty = false;
@@ -1245,14 +1183,12 @@ impl ImageEditor {
     }
 
     fn has_visible_text_in_rect(&self, x0: u32, y0: u32, x1: u32, y1: u32) -> bool {
-        for tl in &self.text_layers {
+        self.text_layers.iter().any(|tl| {
             let bw = tl.box_width.unwrap_or_else(|| tl.auto_width(1.0)).ceil() as u32 + 1;
             let bh = tl.box_height.unwrap_or_else(|| tl.auto_height(1.0)).ceil() as u32 + 1;
-            let tx0 = tl.img_x.max(0.0) as u32;
-            let ty0 = tl.img_y.max(0.0) as u32;
-            if tx0 < x1 && tx0.saturating_add(bw) > x0 && ty0 < y1 && ty0.saturating_add(bh) > y0 { return true; }
-        }
-        false
+            let (tx0, ty0) = (tl.img_x.max(0.0) as u32, tl.img_y.max(0.0) as u32);
+            tx0 < x1 && tx0.saturating_add(bw) > x0 && ty0 < y1 && ty0.saturating_add(bh) > y0
+        })
     }
 
     fn upload_partial_composite(&self, ctx: &egui::Context, tex_id: egui::TextureId, x0: u32, y0: u32, x1: u32, y1: u32) {
@@ -1275,16 +1211,12 @@ impl ImageEditor {
             for py in y0..y1 {
                 for px in x0..x1 {
                     let s = unsafe { src_buf.unsafe_get_pixel(px, py) }.0;
-                    let sa = (s[3] as f32 / 255.0) * opacity;
-                    if sa < 1e-6 { continue; }
+                    if (s[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
                     let idx = (py - y0) as usize * pw + (px - x0) as usize;
-                    let d = &mut out[idx];
-                    let da = d[3];
-                    let out_a = sa + da * (1.0 - sa);
-                    if out_a < 1e-6 { *d = [0.0; 4]; continue; }
-                    let sr = [s[0] as f32/255.0, s[1] as f32/255.0, s[2] as f32/255.0];
-                    let blended = std::array::from_fn::<f32, 3, _>(|i| (mode.blend_channel(d[i], sr[i]) * sa + d[i] * da * (1.0 - sa)) / out_a);
-                    *d = [blended[0], blended[1], blended[2], out_a];
+                    let d = out[idx];
+                    let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
+                    let r = blend_pixels_u8(d_u8, s, opacity, mode);
+                    out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
                 }
             }
         }
@@ -1333,19 +1265,9 @@ impl ImageEditor {
                 for y in 0..h {
                     for x in 0..w {
                         let s = unsafe { src.unsafe_get_pixel(x, y) }.0;
-                        let sa = (s[3] as f32 / 255.0) * opacity;
-                        if sa < 1e-6 { continue; }
                         let d = unsafe { result.unsafe_get_pixel(x, y) }.0;
-                        let da = d[3] as f32 / 255.0;
-                        let out_a = sa + da * (1.0 - sa);
-                        if out_a < 1e-6 { unsafe { result.unsafe_put_pixel(x, y, Rgba([0,0,0,0])); } continue; }
-                        let sr = [s[0] as f32/255.0, s[1] as f32/255.0, s[2] as f32/255.0];
-                        let dr = [d[0] as f32/255.0, d[1] as f32/255.0, d[2] as f32/255.0];
-                        let out = std::array::from_fn::<f32, 3, _>(|i| (mode.blend_channel(dr[i], sr[i]) * sa + dr[i] * da * (1.0 - sa)) / out_a);
-                        unsafe { result.unsafe_put_pixel(x, y, Rgba([
-                            (out[0]*255.0).clamp(0.0,255.0) as u8, (out[1]*255.0).clamp(0.0,255.0) as u8,
-                            (out[2]*255.0).clamp(0.0,255.0) as u8, (out_a*255.0).clamp(0.0,255.0) as u8,
-                        ])); }
+                        let out = super::ie_helpers::blend_pixels_u8(d, s, *opacity, *mode);
+                        unsafe { result.unsafe_put_pixel(x, y, Rgba(out)); }
                     }
                 }
             }
@@ -1460,7 +1382,7 @@ impl ImageEditor {
         };
 
         if self.image.is_some() {
-            let composite = self.composite_for_export().ok_or("No image to save")?;
+            let composite = self.composite_all_layers().ok_or("No image to save")?;
             composite.save(&path).map_err(|e| e.to_string())?;
             self.dirty = false;
         }
@@ -1473,7 +1395,7 @@ impl ImageEditor {
             .save_file()
         {
             if self.image.is_some() {
-                let composite = self.composite_for_export().ok_or("No image to save")?;
+                let composite = self.composite_all_layers().ok_or("No image to save")?;
                 composite.save(&path).map_err(|e| e.to_string())?;
                 self.file_path = Some(path);
                 self.dirty = false;

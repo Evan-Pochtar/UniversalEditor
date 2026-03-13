@@ -2,15 +2,28 @@ use eframe::egui;
 use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
 use crate::modules::helpers::image_export::export_image;
 use std::path::PathBuf;
-use std::sync::{Arc};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont, point};
 use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL};
 use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
-    ImageEditor, Tool, FilterPanel, CropState, TransformHandleSet,
-    BrushShape, BrushTextureMode, RetouchMode, LayerKind,
+    ImageEditor, Tool, FilterPanel, TextLayer, BrushSettings, CropState, TransformHandleSet,
+    BrushShape, BrushTextureMode, RetouchMode, LayerKind, RgbaColor
 };
+
+static FONT_CACHE: OnceLock<[FontRef<'static>; 6]> = OnceLock::new();
+
+fn cached_fonts() -> &'static [FontRef<'static>; 6] {
+    FONT_CACHE.get_or_init(|| [
+        FontRef::try_from_slice(FONT_UB_REG).expect("ub"),
+        FontRef::try_from_slice(FONT_UB_BLD).expect("ub-b"),
+        FontRef::try_from_slice(FONT_UB_ITL).expect("ub-i"),
+        FontRef::try_from_slice(FONT_RB_REG).expect("rb"),
+        FontRef::try_from_slice(FONT_RB_BLD).expect("rb-b"),
+        FontRef::try_from_slice(FONT_RB_ITL).expect("rb-i"),
+    ])
+}
 
 impl ImageEditor {
     pub(super) fn apply_brush_stroke(&mut self) {
@@ -50,7 +63,7 @@ impl ImageEditor {
             (self.color.r(), self.color.g(), self.color.b(), self.color.a())
         };
 
-        let bs: super::ie_main::BrushSettings = self.brush.clone();
+        let bs: BrushSettings = self.brush.clone();
         let radius: f32 = if is_eraser { self.eraser_size / 2.0 } else { bs.size / 2.0 };
         let opacity: f32 = if is_eraser { 1.0 } else { bs.opacity };
         let softness: f32 = if is_eraser { 0.0 } else { bs.softness };
@@ -125,20 +138,7 @@ impl ImageEditor {
                 self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
             }
             self.texture_dirty = true;
-            if let Some(old_bg) = swapped_bg {
-                let rect = self.texture_dirty_rect.take();
-                self.texture_dirty = false;
-                if let Some(painted) = self.image.take() { self.layer_images.insert(active_id, painted); }
-                self.image = Some(old_bg);
-                self.composite_dirty = true;
-                if let Some(r) = rect {
-                    match &mut self.composite_dirty_rect {
-                        None => self.composite_dirty_rect = Some(r),
-                        Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
-                    }
-                }
-                self.texture_dirty = true;
-            }
+            if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
             return;
         }
 
@@ -265,20 +265,22 @@ impl ImageEditor {
         }
         self.texture_dirty = true;
 
-        if let Some(old_bg) = swapped_bg {
-            let rect = self.texture_dirty_rect.take();
-            self.texture_dirty = false;
-            if let Some(painted) = self.image.take() { self.layer_images.insert(active_id, painted); }
-            self.image = Some(old_bg);
-            self.composite_dirty = true;
-            if let Some(r) = rect {
-                match &mut self.composite_dirty_rect {
-                    None => self.composite_dirty_rect = Some(r),
-                    Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
-                }
+        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
+    }
+
+    fn restore_layer_swap(&mut self, active_id: u64, old_bg: DynamicImage) {
+        let rect = self.texture_dirty_rect.take();
+        self.texture_dirty = false;
+        if let Some(painted) = self.image.take() { self.layer_images.insert(active_id, painted); }
+        self.image = Some(old_bg);
+        self.composite_dirty = true;
+        if let Some(r) = rect {
+            match &mut self.composite_dirty_rect {
+                None => self.composite_dirty_rect = Some(r),
+                Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
             }
-            self.texture_dirty = true;
         }
+        self.texture_dirty = true;
     }
 
     pub(super) fn flood_fill(&mut self, start_x: u32, start_y: u32) {
@@ -341,48 +343,50 @@ impl ImageEditor {
             let p = composite.get_pixel(x, y).0;
             self.color = egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]);
             self.add_color_to_history();
-            self.hex_input = super::ie_main::RgbaColor::from_egui(self.color).to_hex();
+            self.hex_input = RgbaColor::from_egui(self.color).to_hex();
         }
     }
 
-    pub(super) fn stamp_single_text_layer(&self, base: &DynamicImage, tl: &super::ie_main::TextLayer, opacity: f32) -> DynamicImage {
-        let ub_reg = FontRef::try_from_slice(FONT_UB_REG).expect("ub");
-        let ub_bld = FontRef::try_from_slice(FONT_UB_BLD).expect("ub-b");
-        let ub_itl = FontRef::try_from_slice(FONT_UB_ITL).expect("ub-i");
-        let rb_reg = FontRef::try_from_slice(FONT_RB_REG).expect("rb");
-        let rb_bld = FontRef::try_from_slice(FONT_RB_BLD).expect("rb-b");
-        let rb_itl = FontRef::try_from_slice(FONT_RB_ITL).expect("rb-i");
+    pub(super) fn stamp_single_text_layer(&self, base: &DynamicImage, tl: &TextLayer, opacity: f32) -> DynamicImage {
+        let fonts = cached_fonts();
         let font: &FontRef = match (tl.font_name.as_str(), tl.bold, tl.italic) {
-            ("Roboto", true, _) => &rb_bld, ("Roboto", _, true) => &rb_itl, ("Roboto", ..) => &rb_reg,
-            (_, true, _)  => &ub_bld, (_, _, true) => &ub_itl, _ => &ub_reg,
+            ("Roboto", true, _) => &fonts[4], ("Roboto", _, true) => &fonts[5], ("Roboto", ..) => &fonts[3],
+            (_, true, _)  => &fonts[1], (_, _, true) => &fonts[2], _ => &fonts[0],
         };
-        let scale  = PxScale::from(tl.font_size);
-        let scaled = font.as_scaled(scale);
-        let line_h = tl.font_size * 1.35;
         let wrap_w = tl.box_width.unwrap_or(f32::MAX);
+        let early_scale = PxScale::from(tl.font_size);
+        let early_scaled = font.as_scaled(early_scale);
 
-        let mut visual_lines: Vec<String> = Vec::new();
-        for paragraph in tl.content.split('\n') {
-            if paragraph.is_empty() { visual_lines.push(String::new()); continue; }
-            let mut cur_line = String::new(); let mut cur_w = 0.0f32;
-            for word in paragraph.split_inclusive(' ') {
-                let w: f32 = word.chars().map(|c| scaled.h_advance(font.glyph_id(c))).sum();
-                if w > wrap_w {
-                    for ch in word.chars() {
-                        let cw = scaled.h_advance(font.glyph_id(ch));
-                        if cur_w + cw > wrap_w && !cur_line.is_empty() { visual_lines.push(cur_line.clone()); cur_line.clear(); cur_w = 0.0; }
-                        cur_line.push(ch); cur_w += cw;
-                    }
-                } else if cur_w + w > wrap_w && !cur_line.is_empty() {
-                    visual_lines.push(cur_line.trim_end().to_string()); cur_line = word.to_string(); cur_w = w;
-                } else { cur_line.push_str(word); cur_w += w; }
+        let visual_lines: Vec<String> = if !tl.cached_lines.is_empty() {
+            tl.cached_lines.clone()
+        } else {
+            let mut lines: Vec<String> = Vec::new();
+            for paragraph in tl.content.split('\n') {
+                if paragraph.is_empty() { lines.push(String::new()); continue; }
+                let mut cur_line = String::new(); let mut cur_w = 0.0f32;
+                for word in paragraph.split_inclusive(' ') {
+                    let w: f32 = word.chars().map(|c| early_scaled.h_advance(font.glyph_id(c))).sum();
+                    if w > wrap_w {
+                        for ch in word.chars() {
+                            let cw = early_scaled.h_advance(font.glyph_id(ch));
+                            if cur_w + cw > wrap_w && !cur_line.is_empty() { lines.push(cur_line.clone()); cur_line.clear(); cur_w = 0.0; }
+                            cur_line.push(ch); cur_w += cw;
+                        }
+                    } else if cur_w + w > wrap_w && !cur_line.is_empty() {
+                        lines.push(cur_line.trim_end().to_string()); cur_line = word.to_string(); cur_w = w;
+                    } else { cur_line.push_str(word); cur_w += w; }
+                }
+                lines.push(cur_line);
             }
-            visual_lines.push(cur_line);
-        }
-        let actual_h = if tl.rendered_height > 0.0 { tl.rendered_height + 4.0 } else { visual_lines.len() as f32 * line_h + 4.0 };
-        let bw = tl.box_width.unwrap_or_else(|| tl.auto_width(1.0)) + 4.0;
-        let bh = tl.box_height.unwrap_or(actual_h);
-        let ibw = bw.ceil() as usize; let ibh = bh.ceil() as usize;
+            lines
+        };
+        let num_lines = visual_lines.len().max(1);
+        let line_h = if tl.rendered_height > 0.0 { tl.rendered_height / num_lines as f32 } else { tl.font_size * 1.35 };
+        let actual_h = if tl.rendered_height > 0.0 { tl.rendered_height } else { num_lines as f32 * line_h };
+        let bw = tl.box_width.unwrap_or_else(|| tl.auto_width(1.0));
+        let scale = PxScale::from(line_h);
+        let scaled = font.as_scaled(scale);
+        let ibw = bw.ceil() as usize; let ibh = actual_h.ceil() as usize;
         let mut tbuf: Vec<[f32; 4]> = vec![[0.0; 4]; ibw * ibh];
         let (cr, cg, cb, ca) = (tl.color.r() as f32/255.0, tl.color.g() as f32/255.0, tl.color.b() as f32/255.0, tl.color.a() as f32/255.0 * opacity);
         let put = |tbuf: &mut Vec<[f32;4]>, tx: i32, ty: i32, cov: f32| {
@@ -410,10 +414,10 @@ impl ImageEditor {
                 cx2 += adv;
             }
         }
-        let rcx = tl.img_x + bw/2.0; let rcy = tl.img_y + bh/2.0;
+        let rcx = tl.img_x + bw/2.0; let rcy = tl.img_y + actual_h/2.0;
         let ar = tl.rotation.to_radians();
         let (cos_a, sin_a) = (ar.cos(), ar.sin());
-        let (hw, hh) = (bw/2.0, bh/2.0);
+        let (hw, hh) = (bw/2.0, actual_h/2.0);
         let corners = [(rcx-hw*cos_a+hh*sin_a, rcy-hw*sin_a-hh*cos_a),(rcx+hw*cos_a+hh*sin_a,rcy+hw*sin_a-hh*cos_a),(rcx+hw*cos_a-hh*sin_a,rcy+hw*sin_a+hh*cos_a),(rcx-hw*cos_a-hh*sin_a,rcy-hw*sin_a+hh*cos_a)];
         let mut buf = base.to_rgba8();
         let (iw, ih) = (buf.width(), buf.height());
@@ -425,7 +429,7 @@ impl ImageEditor {
             for px in min_xi..max_xi {
                 let lx = (px as f32 - rcx)*cos_a + (py as f32 - rcy)*sin_a + hw;
                 let ly = -(px as f32 - rcx)*sin_a + (py as f32 - rcy)*cos_a + hh;
-                if lx < 0.0 || ly < 0.0 || lx >= bw || ly >= bh { continue; }
+                if lx < 0.0 || ly < 0.0 || lx >= bw || ly >= actual_h { continue; }
                 let tx = lx as usize; let ty = ly as usize;
                 if tx >= ibw || ty >= ibh { continue; }
                 let texel = tbuf[ty*ibw+tx];
@@ -455,15 +459,19 @@ impl ImageEditor {
 
     pub(super) fn text_transform_handles(&self) -> Option<TransformHandleSet> {
         let id: u64 = self.selected_text?;
-        let layer: &super::ie_main::TextLayer = self.text_layers.iter().find(|l| l.id == id)?;
+        let layer: &TextLayer = self.text_layers.iter().find(|l| l.id == id)?;
         let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
         Some(TransformHandleSet::with_rotation(layer.screen_rect(anchor, self.zoom), layer.rotation.to_radians()))
     }
 
     pub(super) fn commit_or_discard_active_text(&mut self) {
         if let Some(id) = self.selected_text {
-            let empty: bool = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id).map(|l: &super::ie_main::TextLayer| l.content.is_empty()).unwrap_or(true);
-            if empty { self.text_layers.retain(|l: &super::ie_main::TextLayer| l.id != id); }
+            let empty: bool = self.text_layers.iter().find(|l: &&TextLayer| l.id == id).map(|l: &TextLayer| l.content.is_empty()).unwrap_or(true);
+            if empty {
+                self.text_layers.retain(|l: &TextLayer| l.id != id);
+                self.layers.retain(|l| l.linked_text_id != Some(id));
+                self.active_layer_id = self.layers.last().map(|l| l.id).unwrap_or(0);
+            }
         }
         self.selected_text = None; self.editing_text = false;
         self.text_drag = None; self.text_cursor = 0; self.text_sel_anchor = None;
@@ -476,36 +484,46 @@ impl ImageEditor {
         let (events, _shift, ctrl) = ctx.input(|i: &egui::InputState| {
             (i.events.clone(), i.modifiers.shift, i.modifiers.ctrl || i.modifiers.mac_cmd)
         });
+        let mut text_content_changed = false;
+        let mut should_deselect = false;
         for event in &events {
             let cursor: usize = self.text_cursor;
             let sel: Option<usize> = self.text_sel_anchor;
             match event {
                 egui::Event::Text(t) => {
-                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut super::ie_main::TextLayer| l.id == id) {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                         if let Some(anchor) = sel {
                             let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                             layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
                         }
                         let c: usize = self.text_cursor; layer.content.insert_str(c, t); self.text_cursor += t.len();
+                        text_content_changed = true;
                     }
                 }
-                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => {
-                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut super::ie_main::TextLayer| l.id == id) {
-                        if let Some(anchor) = sel {
-                            let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
-                            layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
+                egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } => {
+                    if modifiers.shift {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
+                            if let Some(anchor) = sel {
+                                let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+                                layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
+                            }
+                            let c = self.text_cursor; layer.content.insert(c, '\n'); self.text_cursor += 1;
+                            text_content_changed = true;
                         }
-                        let c = self.text_cursor; layer.content.insert(c, '\n'); self.text_cursor += 1;
+                    } else {
+                        should_deselect = true;
                     }
                 }
                 egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
-                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut super::ie_main::TextLayer| l.id == id) {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                         if let Some(anchor) = sel {
                             let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                             layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
+                            text_content_changed = true;
                         } else if cursor > 0 {
                             let prev: usize = layer.content[..cursor].char_indices().next_back().map(|(i, _)| i).unwrap_or(0);
                             layer.content.drain(prev..cursor); self.text_cursor = prev;
+                            text_content_changed = true;
                         }
                     }
                 }
@@ -514,9 +532,11 @@ impl ImageEditor {
                         if let Some(anchor) = sel {
                             let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                             layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
+                            text_content_changed = true;
                         } else if cursor < layer.content.len() {
                             let next: usize = layer.content[cursor..].char_indices().nth(1).map(|(i, _)| cursor + i).unwrap_or(layer.content.len());
                             layer.content.drain(cursor..next);
+                            text_content_changed = true;
                         }
                     }
                 }
@@ -536,7 +556,7 @@ impl ImageEditor {
                 }
                 egui::Event::Key { key: egui::Key::ArrowRight, pressed: true, modifiers, .. } => {
                     let shift: bool = modifiers.shift;
-                    if let Some(layer) = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id) {
+                    if let Some(layer) = self.text_layers.iter().find(|l: &&TextLayer| l.id == id) {
                         if !shift && sel.is_some() {
                             self.text_cursor = cursor.max(sel.unwrap()); self.text_sel_anchor = None;
                         } else {
@@ -554,7 +574,7 @@ impl ImageEditor {
                     self.text_cursor = 0;
                 }
                 egui::Event::Key { key: egui::Key::End, pressed: true, modifiers, .. } => {
-                    let len: usize = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id).map(|l: &super::ie_main::TextLayer| l.content.len()).unwrap_or(0);
+                    let len: usize = self.text_layers.iter().find(|l: &&TextLayer| l.id == id).map(|l: &TextLayer| l.content.len()).unwrap_or(0);
                     if modifiers.shift && self.text_sel_anchor.is_none() { self.text_sel_anchor = Some(cursor); }
                     else if !modifiers.shift { self.text_sel_anchor = None; }
                     self.text_cursor = len;
@@ -562,40 +582,42 @@ impl ImageEditor {
                 egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. }
                     if modifiers.ctrl || modifiers.mac_cmd =>
                 {
-                    let len: usize = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id).map(|l| l.content.len()).unwrap_or(0);
+                    let len: usize = self.text_layers.iter().find(|l: &&TextLayer| l.id == id).map(|l| l.content.len()).unwrap_or(0);
                     self.text_sel_anchor = Some(0); self.text_cursor = len;
                 }
                 egui::Event::Copy => {
-                    if let (Some(anchor), Some(layer)) = (sel, self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id)) {
+                    if let (Some(anchor), Some(layer)) = (sel, self.text_layers.iter().find(|l: &&TextLayer| l.id == id)) {
                         let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                         if lo < hi && hi <= layer.content.len() { ctx.copy_text(layer.content[lo..hi].to_string()); }
                     }
                 }
                 egui::Event::Cut => {
                     if let Some(anchor) = sel {
-                        if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut super::ie_main::TextLayer| l.id == id) {
+                        if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                             let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                             if lo < hi && hi <= layer.content.len() {
                                 ctx.copy_text(layer.content[lo..hi].to_string());
                                 layer.content.drain(lo..hi);
                                 self.text_cursor = lo; self.text_sel_anchor = None;
+                                text_content_changed = true;
                             }
                         }
                     }
                 }
                 egui::Event::Paste(text) => {
-                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut super::ie_main::TextLayer| l.id == id) {
+                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                         if let Some(anchor) = sel {
                             let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
                             layer.content.drain(lo..hi); self.text_cursor = lo; self.text_sel_anchor = None;
                         }
                         let c = self.text_cursor; layer.content.insert_str(c, text); self.text_cursor += text.len();
+                        text_content_changed = true;
                     }
                 }
                 _ => {}
             }
         }
-        if let Some(layer) = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id) {
+        if let Some(layer) = self.text_layers.iter().find(|l: &&TextLayer| l.id == id) {
             let clamp = |c: usize| -> usize {
                 let c: usize = c.min(layer.content.len());
                 if layer.content.is_char_boundary(c) { c }
@@ -604,7 +626,8 @@ impl ImageEditor {
             self.text_cursor = clamp(self.text_cursor);
             if let Some(a) = self.text_sel_anchor { self.text_sel_anchor = Some(clamp(a)); }
         }
-        self.composite_dirty = true;
+        if text_content_changed { self.composite_dirty = true; }
+        if should_deselect { self.commit_or_discard_active_text(); }
         let _ = ctrl;
     }
 
@@ -1166,20 +1189,7 @@ impl ImageEditor {
         }
         self.texture_dirty = true;
 
-        if let Some(old_bg) = swapped_bg {
-            let rect = self.texture_dirty_rect.take();
-            self.texture_dirty = false;
-            if let Some(painted) = self.image.take() { self.layer_images.insert(active_id, painted); }
-            self.image = Some(old_bg);
-            self.composite_dirty = true;
-            if let Some(r) = rect {
-                match &mut self.composite_dirty_rect {
-                    None => self.composite_dirty_rect = Some(r),
-                    Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
-                }
-            }
-            self.texture_dirty = true;
-        }
+        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
     }
 
     pub(super) fn apply_flip_h(&mut self) {
@@ -1232,7 +1242,7 @@ impl ImageEditor {
     }
 
     pub(super) fn export_image_to_file(&mut self) -> Result<PathBuf, String> {
-        let composite: DynamicImage = self.composite_for_export()
+        let composite: DynamicImage = self.composite_all_layers()
             .ok_or_else(|| "No image to export".to_string())?;
         let default_name: &str = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str()).unwrap_or("export");
         let filename: String = format!("{}.{}", default_name, self.export_format.extension());

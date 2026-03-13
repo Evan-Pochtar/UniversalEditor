@@ -72,6 +72,10 @@
 - [x] Some buttons within the brush settings in light mode are colored white with white background
 - [x] Sliders are only visible in dark mode
 - [x] Can't scroll down on the color picker
+- [x] Text is slightly smaller when stamped then when actually edited
+- [x] Text get's cut off if textbox isn't big enough
+- [x] Selecting text should auto move to text layer
+- [x] Un-selecting on a text box with no text should auto remove the text box
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
