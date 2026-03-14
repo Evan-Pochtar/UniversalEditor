@@ -50,8 +50,6 @@
 
 ### Image Editor Bugs
 
-- [ ] Brushes remove background/text close to the brush while drawing, reapplies after drawing is done
-
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view

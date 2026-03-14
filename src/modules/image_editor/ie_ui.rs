@@ -48,7 +48,7 @@ impl ImageEditor {
     }
 
     pub(super) fn render_options_bar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
-        ui.spacing_mut().slider_width = 100.0;
+        ui.spacing_mut().slider_width = 200.0;
         let (bg, border, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_400)
         } else {
@@ -65,7 +65,7 @@ impl ImageEditor {
                     match self.tool {
                         Tool::Brush => {
                             ui.label(egui::RichText::new("Size:").size(12.0).color(label_col));
-                            ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=100.0));
+                            ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0));
                             ui.label(egui::RichText::new("Opacity:").size(12.0).color(label_col));
                             ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
                             ui.separator();

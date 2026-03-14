@@ -152,6 +152,8 @@
 - **JSON EDITOR**: Added Line numbers to the text view
 - **IMG EDITOR**: Added Layer System to the Image Editor
 - **IMG EDITOR**: Color picker panel information now centered
+- **IMG EDITOR**: Increased size of selection sliders
+- **IMG EDITOR**: Adjusted Spray brush preset to be thicker
 
 #### Debugging
 - **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing
@@ -170,3 +172,5 @@
 - **IMG EDITOR**: Textbox no longer lags on large images
 - **IMG EDITOR**: Textbox no longer allows empty textbox's (deletes layer as well)
 - **IMG EDITOR**: Stamped text now matches the exact size of preview text
+- **IMG EDITOR**: Background layer brush strokes no longer sometimes remove background of layer brush strokes
+- **IMG EDITOR**: Drag value input no longer interferes with color picker favorites

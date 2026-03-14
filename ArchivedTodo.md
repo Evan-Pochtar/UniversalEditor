@@ -52,6 +52,7 @@
 
 - [x] Can't just click to color for brush, must drag
 - [x] Retouch tool bar is placed randomly, some things very high, some very low
+- [x] Brushes remove background/text close to the brush while drawing, reapplies after drawing is done
 - [x] Color picker
   - [x] Hex code Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker

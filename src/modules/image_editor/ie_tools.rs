@@ -138,7 +138,7 @@ impl ImageEditor {
                 self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
             }
             self.texture_dirty = true;
-            if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
+            if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); } else { self.promote_dirty_to_composite(); }
             return;
         }
 
@@ -265,7 +265,22 @@ impl ImageEditor {
         }
         self.texture_dirty = true;
 
-        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
+        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); } else { self.promote_dirty_to_composite(); }
+    }
+
+    fn promote_dirty_to_composite(&mut self) {
+        if self.layers.iter().any(|l| l.visible && l.kind == LayerKind::Raster) {
+            let rect = self.texture_dirty_rect.take();
+            self.texture_dirty = false;
+            self.composite_dirty = true;
+            if let Some(r) = rect {
+                match &mut self.composite_dirty_rect {
+                    None => self.composite_dirty_rect = Some(r),
+                    Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
+                }
+            }
+            self.texture_dirty = true;
+        }
     }
 
     fn restore_layer_swap(&mut self, active_id: u64, old_bg: DynamicImage) {
@@ -1189,7 +1204,7 @@ impl ImageEditor {
         }
         self.texture_dirty = true;
 
-        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); }
+        if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); } else { self.promote_dirty_to_composite(); }
     }
 
     pub(super) fn apply_flip_h(&mut self) {

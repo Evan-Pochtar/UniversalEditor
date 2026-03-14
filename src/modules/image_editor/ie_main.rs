@@ -259,7 +259,7 @@ impl BrushPreset {
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::SprayPaint => BrushSettings {
-                size: current_size.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.06,
+                size: current_size.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.12,
                 shape: BrushShape::Circle, scatter: current_size * 0.6, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: true, spray_particles: 60, wetness: 0.0,
@@ -1346,7 +1346,7 @@ impl ImageEditor {
             }
         });
 
-        if !self.editing_text {
+        if !self.editing_text && ctx.memory(|m| m.focused().is_none()) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::B) { self.commit_or_discard_active_text(); self.tool = Tool::Brush; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::E) { self.commit_or_discard_active_text(); self.tool = Tool::Eraser; }
