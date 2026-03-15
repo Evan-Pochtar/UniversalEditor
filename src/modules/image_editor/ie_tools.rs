@@ -896,11 +896,8 @@ impl ImageEditor {
         } else { None };
 
         if let Some(img) = self.image.as_mut() {
-            if !matches!(img, DynamicImage::ImageRgba8(_)) {
-                *img = DynamicImage::ImageRgba8(img.to_rgba8());
-            }
+            if !matches!(img, DynamicImage::ImageRgba8(_)) { *img = DynamicImage::ImageRgba8(img.to_rgba8()); }
         }
-
         if self.stroke_points.len() < 2 { return; }
 
         let mode: RetouchMode = self.retouch_mode;
@@ -909,26 +906,29 @@ impl ImageEditor {
         let softness: f32 = self.retouch_softness.clamp(0.0, 1.0);
         let stroke: Vec<(f32, f32)> = self.stroke_points.clone();
         let mut smudge: [f32; 4] = self.retouch_smudge_sample;
+        let pixelate_block: u32 = self.retouch_pixelate_block.max(2);
 
         let buf: &mut ImageBuffer<Rgba<u8>, Vec<u8>> = match self.image.as_mut() {
-            Some(DynamicImage::ImageRgba8(b)) => b,
-            _ => return,
+            Some(DynamicImage::ImageRgba8(b)) => b, _ => return,
         };
         let width: u32 = buf.width();
         let height: u32 = buf.height();
+        let stride: usize = width as usize * 4;
+        let mut flat_samples = buf.as_flat_samples_mut();
+        let raw: &mut [u8] = flat_samples.as_mut_slice();
 
         let step_dist: f32 = (radius * 0.4).max(0.5);
+        let (mut dr_x0, mut dr_y0, mut dr_x1, mut dr_y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
+        let mut snap_buf: Vec<u8> = Vec::new();
 
-        let mut dr_x0: u32 = u32::MAX;
-        let mut dr_y0: u32 = u32::MAX;
-        let mut dr_x1: u32 = 0;
-        let mut dr_y1: u32 = 0;
+        let vib_delta: f32 = (strength - 0.5) * 2.0;
+        let temp_delta: f32 = (strength - 0.5) * 2.0;
+        let bri_delta: f32 = (strength - 0.5) * 2.0 * 45.0;
 
         for i in 0..stroke.len().saturating_sub(1) {
             let (x0, y0) = stroke[i];
             let (x1, y1) = stroke[i + 1];
-            let dx: f32 = x1 - x0;
-            let dy: f32 = y1 - y0;
+            let (dx, dy) = (x1 - x0, y1 - y0);
             let seg_len: f32 = (dx * dx + dy * dy).sqrt();
             let steps: usize = ((seg_len / step_dist).ceil() as usize).max(1);
 
@@ -942,132 +942,86 @@ impl ImageEditor {
                 let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
                 let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
 
-                dr_x0 = dr_x0.min(min_x);
-                dr_y0 = dr_y0.min(min_y);
-                dr_x1 = dr_x1.max(max_x);
-                dr_y1 = dr_y1.max(max_y);
+                dr_x0 = dr_x0.min(min_x); dr_y0 = dr_y0.min(min_y);
+                dr_x1 = dr_x1.max(max_x); dr_y1 = dr_y1.max(max_y);
 
                 match mode {
-                    RetouchMode::Blur => {
-                        let mut changes: Vec<(u32, u32, Rgba<u8>)> = Vec::with_capacity(
-                            ((max_x - min_x) * (max_y - min_y)) as usize
-                        );
+                    RetouchMode::Blur | RetouchMode::Sharpen => {
+                        let sx0 = min_x.saturating_sub(1);
+                        let sy0 = min_y.saturating_sub(1);
+                        let sx1 = (max_x + 1).min(width);
+                        let sy1 = (max_y + 1).min(height);
+                        let srw = (sx1 - sx0) as usize;
+                        let srh = (sy1 - sy0) as usize;
+                        snap_buf.resize(srw * srh * 4, 0);
+                        for (ri, py) in (sy0..sy1).enumerate() {
+                            let src = py as usize * stride + sx0 as usize * 4;
+                            snap_buf[ri * srw * 4..ri * srw * 4 + srw * 4].copy_from_slice(&raw[src..src + srw * 4]);
+                        }
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let (mut sr, mut sg, mut sb, mut sa, mut count) =
-                                    (0u32, 0u32, 0u32, 0u32, 0u32);
-                                for ky in -1i32..=1 {
-                                    for kx in -1i32..=1 {
-                                        let nx: i32 = px as i32 + kx;
-                                        let ny: i32 = py as i32 + ky;
-                                        if nx >= 0 && ny >= 0 && (nx as u32) < width && (ny as u32) < height {
-                                            let p: Rgba<u8> = *buf.get_pixel(nx as u32, ny as u32);
-                                            sr += p.0[0] as u32; sg += p.0[1] as u32;
-                                            sb += p.0[2] as u32; sa += p.0[3] as u32;
-                                            count += 1;
-                                        }
-                                    }
+                                let lx = (px - sx0) as usize;
+                                let ly = (py - sy0) as usize;
+                                let (mut sr, mut sg, mut sb, mut sa, mut cnt) = (0u32, 0u32, 0u32, 0u32, 0u32);
+                                for ky in -1i32..=1 { for kx in -1i32..=1 {
+                                    let nlx = (lx as i32 + kx).clamp(0, srw as i32 - 1) as usize;
+                                    let nly = (ly as i32 + ky).clamp(0, srh as i32 - 1) as usize;
+                                    let so = nly * srw * 4 + nlx * 4;
+                                    sr += snap_buf[so] as u32; sg += snap_buf[so+1] as u32;
+                                    sb += snap_buf[so+2] as u32; sa += snap_buf[so+3] as u32;
+                                    cnt += 1;
+                                }}
+                                let so = ly * srw * 4 + lx * 4;
+                                let off = py as usize * stride + px as usize * 4;
+                                if matches!(mode, RetouchMode::Blur) {
+                                    let blend = falloff * strength;
+                                    raw[off]   = retouch_lerp_u8(snap_buf[so],   (sr/cnt) as u8, blend);
+                                    raw[off+1] = retouch_lerp_u8(snap_buf[so+1], (sg/cnt) as u8, blend);
+                                    raw[off+2] = retouch_lerp_u8(snap_buf[so+2], (sb/cnt) as u8, blend);
+                                    raw[off+3] = retouch_lerp_u8(snap_buf[so+3], (sa/cnt) as u8, blend);
+                                } else {
+                                    let amt = falloff * strength * 0.16;
+                                    let [r, g, b] = [snap_buf[so], snap_buf[so+1], snap_buf[so+2]];
+                                    raw[off]   = ((r as i32 + ((r as i32 - (sr/cnt) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                    raw[off+1] = ((g as i32 + ((g as i32 - (sg/cnt) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                    raw[off+2] = ((b as i32 + ((b as i32 - (sb/cnt) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
+                                    raw[off+3] = snap_buf[so+3];
                                 }
-                                if count == 0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let blend: f32 = falloff * strength;
-                                changes.push((px, py, Rgba([
-                                    retouch_lerp_u8(orig.0[0], (sr / count) as u8, blend),
-                                    retouch_lerp_u8(orig.0[1], (sg / count) as u8, blend),
-                                    retouch_lerp_u8(orig.0[2], (sb / count) as u8, blend),
-                                    retouch_lerp_u8(orig.0[3], (sa / count) as u8, blend),
-                                ])));
                             }
-                        }
-                        for (px, py, pixel) in changes {
-                            buf.put_pixel(px, py, pixel);
-                        }
-                    }
-
-                    RetouchMode::Sharpen => {
-                        let mut changes: Vec<(u32, u32, Rgba<u8>)> = Vec::with_capacity(
-                            ((max_x - min_x) * (max_y - min_y)) as usize
-                        );
-                        for py in min_y..max_y {
-                            for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
-                                if falloff <= 0.0 { continue; }
-                                let (mut sr, mut sg, mut sb, mut count) = (0u32, 0u32, 0u32, 0u32);
-                                for ky in -1i32..=1 {
-                                    for kx in -1i32..=1 {
-                                        let nx: i32 = px as i32 + kx;
-                                        let ny: i32 = py as i32 + ky;
-                                        if nx >= 0 && ny >= 0 && (nx as u32) < width && (ny as u32) < height {
-                                            let p: Rgba<u8> = *buf.get_pixel(nx as u32, ny as u32);
-                                            sr += p.0[0] as u32; sg += p.0[1] as u32;
-                                            sb += p.0[2] as u32; count += 1;
-                                        }
-                                    }
-                                }
-                                if count == 0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let [r, g, b, a] = orig.0;
-                                let amt: f32 = falloff * strength * 0.16;
-                                let nr: u8 = ((r as i32 + ((r as i32 - (sr / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
-                                let ng: u8 = ((g as i32 + ((g as i32 - (sg / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
-                                let nb: u8 = ((b as i32 + ((b as i32 - (sb / count) as i32) as f32 * amt) as i32).clamp(0, 255)) as u8;
-                                changes.push((px, py, Rgba([nr, ng, nb, a])));
-                            }
-                        }
-                        for (px, py, pixel) in changes {
-                            buf.put_pixel(px, py, pixel);
                         }
                     }
 
                     RetouchMode::Smudge => {
+                        let [sm0, sm1, sm2] = [(smudge[0]*255.0) as u8, (smudge[1]*255.0) as u8, (smudge[2]*255.0) as u8];
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let blend: f32 = falloff * strength;
-                                buf.put_pixel(px, py, Rgba([
-                                    retouch_lerp_u8(orig.0[0], (smudge[0] * 255.0) as u8, blend),
-                                    retouch_lerp_u8(orig.0[1], (smudge[1] * 255.0) as u8, blend),
-                                    retouch_lerp_u8(orig.0[2], (smudge[2] * 255.0) as u8, blend),
-                                    orig.0[3],
-                                ]));
+                                let blend = falloff * strength;
+                                let off = py as usize * stride + px as usize * 4;
+                                raw[off]   = retouch_lerp_u8(raw[off],   sm0, blend);
+                                raw[off+1] = retouch_lerp_u8(raw[off+1], sm1, blend);
+                                raw[off+2] = retouch_lerp_u8(raw[off+2], sm2, blend);
                             }
                         }
-                        let cxi: u32 = cx.clamp(0.0, (width - 1) as f32) as u32;
-                        let cyi: u32 = cy.clamp(0.0, (height - 1) as f32) as u32;
-                        let p: Rgba<u8> = *buf.get_pixel(cxi, cyi);
-                        smudge = [
-                            p.0[0] as f32 / 255.0,
-                            p.0[1] as f32 / 255.0,
-                            p.0[2] as f32 / 255.0,
-                            p.0[3] as f32 / 255.0,
-                        ];
+                        let cxi = cx.clamp(0.0, (width-1) as f32) as usize;
+                        let cyi = cy.clamp(0.0, (height-1) as f32) as usize;
+                        let off = cyi * stride + cxi * 4;
+                        smudge = [raw[off] as f32/255.0, raw[off+1] as f32/255.0, raw[off+2] as f32/255.0, raw[off+3] as f32/255.0];
                     }
 
                     RetouchMode::Vibrance => {
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let [r, g, b, a] = orig.0;
-                                let (h, s, v) = rgb_to_hsv(r, g, b);
-                                let delta: f32 = (strength - 0.5) * 2.0;
-                                let vib_factor: f32 = if delta >= 0.0 { 1.0 - s } else { s };
-                                let new_s: f32 = (s + delta * vib_factor * falloff).clamp(0.0, 1.0);
-                                let (nr, ng, nb) = hsv_to_rgb(h, new_s, v);
-                                buf.put_pixel(px, py, Rgba([nr, ng, nb, a]));
+                                let off = py as usize * stride + px as usize * 4;
+                                let (h, s, v) = rgb_to_hsv(raw[off], raw[off+1], raw[off+2]);
+                                let vib_factor = if vib_delta >= 0.0 { 1.0 - s } else { s };
+                                let (nr, ng, nb) = hsv_to_rgb(h, (s + vib_delta * vib_factor * falloff).clamp(0.0, 1.0), v);
+                                raw[off] = nr; raw[off+1] = ng; raw[off+2] = nb;
                             }
                         }
                     }
@@ -1075,21 +1029,17 @@ impl ImageEditor {
                     RetouchMode::Saturation => {
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let [r, g, b, a] = orig.0;
-                                let (h, s, v) = rgb_to_hsv(r, g, b);
-                                let delta: f32 = (strength - 0.5) * 2.0;
-                                let new_s: f32 = if delta >= 0.0 {
-                                    (s + delta * (1.0 - s) * falloff).clamp(0.0, 1.0)
+                                let off = py as usize * stride + px as usize * 4;
+                                let (h, s, v) = rgb_to_hsv(raw[off], raw[off+1], raw[off+2]);
+                                let new_s = if vib_delta >= 0.0 {
+                                    (s + vib_delta * (1.0 - s) * falloff).clamp(0.0, 1.0)
                                 } else {
-                                    (s + delta * s * falloff).clamp(0.0, 1.0)
+                                    (s + vib_delta * s * falloff).clamp(0.0, 1.0)
                                 };
                                 let (nr, ng, nb) = hsv_to_rgb(h, new_s, v);
-                                buf.put_pixel(px, py, Rgba([nr, ng, nb, a]));
+                                raw[off] = nr; raw[off+1] = ng; raw[off+2] = nb;
                             }
                         }
                     }
@@ -1097,20 +1047,12 @@ impl ImageEditor {
                     RetouchMode::Temperature => {
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let [r, g, b, a] = orig.0;
-                                let delta: f32 = (strength - 0.5) * 2.0 * falloff;
-                                let shift: i32 = (delta * 35.0) as i32;
-                                buf.put_pixel(px, py, Rgba([
-                                    (r as i32 + shift).clamp(0, 255) as u8,
-                                    g,
-                                    (b as i32 - shift).clamp(0, 255) as u8,
-                                    a,
-                                ]));
+                                let shift = (temp_delta * falloff * 35.0) as i32;
+                                let off = py as usize * stride + px as usize * 4;
+                                raw[off] = (raw[off] as i32 + shift).clamp(0, 255) as u8;
+                                raw[off+2] = (raw[off+2] as i32 - shift).clamp(0, 255) as u8;
                             }
                         }
                     }
@@ -1118,75 +1060,50 @@ impl ImageEditor {
                     RetouchMode::Brightness => {
                         for py in min_y..max_y {
                             for px in min_x..max_x {
-                                let ddx: f32 = px as f32 - cx;
-                                let ddy: f32 = py as f32 - cy;
-                                let falloff: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let falloff = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                 if falloff <= 0.0 { continue; }
-                                let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                let [r, g, b, a] = orig.0;
-                                let delta: f32 = (strength - 0.5) * 2.0 * falloff * 45.0;
-                                buf.put_pixel(px, py, Rgba([
-                                    (r as f32 + delta).clamp(0.0, 255.0) as u8,
-                                    (g as f32 + delta).clamp(0.0, 255.0) as u8,
-                                    (b as f32 + delta).clamp(0.0, 255.0) as u8,
-                                    a,
-                                ]));
+                                let d = (bri_delta * falloff) as i32;
+                                let off = py as usize * stride + px as usize * 4;
+                                raw[off]   = (raw[off] as i32 + d).clamp(0, 255) as u8;
+                                raw[off+1] = (raw[off+1] as i32 + d).clamp(0, 255) as u8;
+                                raw[off+2] = (raw[off+2] as i32 + d).clamp(0, 255) as u8;
                             }
                         }
                     }
 
                     RetouchMode::Pixelate => {
-                        let block: u32 = self.retouch_pixelate_block.max(2);
-                        let bx0: u32 = (min_x / block) * block;
-                        let by0: u32 = (min_y / block) * block;
-
-                        let mut bx: u32 = bx0;
+                        let block = pixelate_block;
+                        let bx0 = (min_x / block) * block;
+                        let by0 = (min_y / block) * block;
+                        let mut bx = bx0;
                         while bx < max_x {
-                            let mut by: u32 = by0;
+                            let mut by = by0;
                             while by < max_y {
-                                let mut sr: u32 = 0; let mut sg: u32 = 0;
-                                let mut sb: u32 = 0; let mut sa: u32 = 0;
-                                let mut count: u32 = 0;
-                                let mut max_falloff: f32 = 0.0;
-
-                                for py in by..(by + block).min(height) {
-                                    for px in bx..(bx + block).min(width) {
-                                        let ddx: f32 = px as f32 - cx;
-                                        let ddy: f32 = py as f32 - cy;
-                                        let fo: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                let bx1 = (bx + block).min(width);
+                                let by1 = (by + block).min(height);
+                                let (mut sr, mut sg, mut sb, mut sa, mut cnt) = (0u32, 0u32, 0u32, 0u32, 0u32);
+                                let mut max_fo = 0.0f32;
+                                for py in by..by1 { for px in bx..bx1 {
+                                    let fo = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                    if fo <= 0.0 { continue; }
+                                    let off = py as usize * stride + px as usize * 4;
+                                    sr += raw[off] as u32; sg += raw[off+1] as u32;
+                                    sb += raw[off+2] as u32; sa += raw[off+3] as u32;
+                                    cnt += 1;
+                                    if fo > max_fo { max_fo = fo; }
+                                }}
+                                if cnt > 0 {
+                                    let avg = [(sr/cnt) as u8, (sg/cnt) as u8, (sb/cnt) as u8, (sa/cnt) as u8];
+                                    for py in by..by1 { for px in bx..bx1 {
+                                        let fo = brush_shape_falloff(px as f32 - cx, py as f32 - cy, radius, 1.0, 0.0, softness, BrushShape::Circle);
                                         if fo <= 0.0 { continue; }
-                                        let p: Rgba<u8> = *buf.get_pixel(px, py);
-                                        sr += p.0[0] as u32; sg += p.0[1] as u32;
-                                        sb += p.0[2] as u32; sa += p.0[3] as u32;
-                                        count += 1;
-                                        if fo > max_falloff { max_falloff = fo; }
-                                    }
+                                        let off = py as usize * stride + px as usize * 4;
+                                        raw[off] = retouch_lerp_u8(raw[off],   avg[0], max_fo);
+                                        raw[off+1] = retouch_lerp_u8(raw[off+1], avg[1], max_fo);
+                                        raw[off+2] = retouch_lerp_u8(raw[off+2], avg[2], max_fo);
+                                        raw[off+3] = retouch_lerp_u8(raw[off+3], avg[3], max_fo);
+                                    }}
                                 }
-
-                                if count > 0 {
-                                    let avg: Rgba<u8> = Rgba([
-                                        (sr / count) as u8,
-                                        (sg / count) as u8,
-                                        (sb / count) as u8,
-                                        (sa / count) as u8,
-                                    ]);
-                                    for py in by..(by + block).min(height) {
-                                        for px in bx..(bx + block).min(width) {
-                                            let ddx: f32 = px as f32 - cx;
-                                            let ddy: f32 = py as f32 - cy;
-                                            let fo: f32 = brush_shape_falloff(ddx, ddy, radius, 1.0, 0.0, softness, BrushShape::Circle);
-                                            if fo <= 0.0 { continue; }
-                                            let orig: Rgba<u8> = *buf.get_pixel(px, py);
-                                            buf.put_pixel(px, py, Rgba([
-                                                retouch_lerp_u8(orig.0[0], avg.0[0], max_falloff),
-                                                retouch_lerp_u8(orig.0[1], avg.0[1], max_falloff),
-                                                retouch_lerp_u8(orig.0[2], avg.0[2], max_falloff),
-                                                retouch_lerp_u8(orig.0[3], avg.0[3], max_falloff),
-                                            ]));
-                                        }
-                                    }
-                                }
-
                                 by += block;
                             }
                             bx += block;
@@ -1196,14 +1113,11 @@ impl ImageEditor {
             }
         }
 
-        let _ = buf;
+        let _ = raw;
         self.retouch_smudge_sample = smudge;
         self.dirty = true;
-        if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
-            self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1);
-        }
+        if dr_x1 > dr_x0 && dr_y1 > dr_y0 { self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1); }
         self.texture_dirty = true;
-
         if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); } else { self.promote_dirty_to_composite(); }
     }
 

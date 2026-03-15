@@ -154,6 +154,9 @@
 - **IMG EDITOR**: Color picker panel information now centered
 - **IMG EDITOR**: Increased size of selection sliders
 - **IMG EDITOR**: Adjusted Spray brush preset to be thicker
+- **IMG EDITOR**: Adjusted Marker to display with higher default wetness
+- **IMG EDITOR**: Improved performance of retouch tool filters
+- **IMG EDITOR**: Custom Slider for Saturation in the retouch tool
 
 #### Debugging
 - **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing

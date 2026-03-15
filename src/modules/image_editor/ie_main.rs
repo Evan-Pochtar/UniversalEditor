@@ -247,10 +247,10 @@ impl BrushPreset {
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Marker => BrushSettings {
-                size: current_size, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.90,
+                size: current_size, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.85,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
-                spray_mode: false, spray_particles: 40, wetness: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.4,
             },
             Self::Calligraphy => BrushSettings {
                 size: current_size, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,

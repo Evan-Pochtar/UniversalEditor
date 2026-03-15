@@ -160,6 +160,8 @@
   - [x] Temperature
   - [x] Brightness
   - [x] Pixelate
+  - [x] Saturation tool should have a custom slider
+  - [x] Improve performance on bigger sizes
   - [x] Clearer slider for dark/light amount on brightness
   - [x] Clearer slider for cold/warm amount on temperature
   - [x] Clearer slider for difference between vibrant and non vibrant for vibrance

@@ -203,6 +203,16 @@ impl ImageEditor {
                                                     "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
                                                 );
                                             }
+                                            RetouchMode::Saturation => {
+                                                ui.spacing_mut().slider_width = 230.0;
+                                                ui.add_space(4.0);
+                                                ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
+                                                ui.add_space(8.0);
+                                                gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
+                                                    egui::Color32::from_rgb(100, 100, 100), egui::Color32::from_rgb(220, 50, 180),
+                                                    "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
+                                                );
+                                            }
                                             RetouchMode::Pixelate => {
                                                 ui.label(egui::RichText::new("Block Size:").size(12.0).color(label_col));
                                                 ui.add(egui::DragValue::new(&mut self.retouch_pixelate_block).range(2..=80).speed(0.5).suffix("px"));
