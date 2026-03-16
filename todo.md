@@ -7,6 +7,7 @@
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [ ] Add way to differentiate between same name files in "recent files" list
 - [ ] Improve look of patch notes
+- [ ] Allow for right click, open with universal_editor on windows
 
 ## Screens
 
@@ -50,6 +51,11 @@
 
 ### Image Editor Bugs
 
+- [ ] Text cannot be placed on top of imported images
+- [ ] Text cannot be above imported image, even when it's layer is higher
+- [ ] Image always acts as highest layer, even when it shouldn't be
+- [ ] When moving image on image layer, slightly moves background image
+
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
@@ -85,8 +91,6 @@
   - [ ] Hover tooltips for more information about parameters
   - [ ] Brush preview
   - [ ] Library of custom brushes?
-- [ ] Import Images into Canvas
-  - [ ] Drag-and-drop image open
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter

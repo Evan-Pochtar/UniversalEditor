@@ -157,6 +157,7 @@
 - **IMG EDITOR**: Adjusted Marker to display with higher default wetness
 - **IMG EDITOR**: Improved performance of retouch tool filters
 - **IMG EDITOR**: Custom Slider for Saturation in the retouch tool
+- **IMG EDITOR**: Added Image Imports and Image Layers
 
 #### Debugging
 - **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing

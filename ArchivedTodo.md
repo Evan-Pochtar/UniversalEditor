@@ -196,6 +196,8 @@
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
 - [x] Center hue picker and color square within color picker
+- [x] Import Images into Canvas
+  - [x] Drag-and-drop image open
 
 ### Json Editor
 

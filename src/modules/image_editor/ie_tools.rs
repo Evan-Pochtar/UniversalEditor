@@ -9,7 +9,7 @@ use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_B
 use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, TextLayer, BrushSettings, CropState, TransformHandleSet,
-    BrushShape, BrushTextureMode, RetouchMode, LayerKind, RgbaColor
+    BrushShape, BrushTextureMode, RetouchMode, LayerKind, RgbaColor,
 };
 
 static FONT_CACHE: OnceLock<[FontRef<'static>; 6]> = OnceLock::new();
@@ -33,6 +33,11 @@ impl ImageEditor {
             .map(|l| (l.kind, l.locked))
             .unwrap_or((LayerKind::Background, false));
         if locked || matches!(kind, LayerKind::Text) { return; }
+
+        if kind == LayerKind::Image {
+            self.apply_brush_stroke_on_image_layer();
+            return;
+        }
 
         let swapped_bg: Option<DynamicImage> = if matches!(kind, LayerKind::Raster) {
             self.layer_images.remove(&active_id).map(|layer_img| {
@@ -93,8 +98,9 @@ impl ImageEditor {
                 let n = bs.spray_particles as usize;
                 let spray_x0: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
                 let spray_y0: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
-                let spray_x1: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
-                let spray_y1: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+                let spray_x1: u32 = ((cx + radius + 1.0).max(0.0).ceil() as u32).min(width);
+                let spray_y1: u32 = ((cy + radius + 1.0).max(0.0).ceil() as u32).min(height);
+                
                 dr_x0 = dr_x0.min(spray_x0);
                 dr_y0 = dr_y0.min(spray_y0);
                 dr_x1 = dr_x1.max(spray_x1);
@@ -183,9 +189,9 @@ impl ImageEditor {
                 };
 
                 let min_x: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
-                let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
+                let max_x: u32 = ((cx + radius + 1.0).max(0.0).ceil() as u32).min(width);
                 let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
-                let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+                let max_y: u32 = ((cy + radius + 1.0).max(0.0).ceil() as u32).min(height);
 
                 dr_x0 = dr_x0.min(min_x);
                 dr_y0 = dr_y0.min(min_y);
@@ -304,6 +310,11 @@ impl ImageEditor {
             .map(|l| (l.kind, l.locked)).unwrap_or((LayerKind::Background, false));
         if locked || matches!(kind, LayerKind::Text) { return; }
 
+        if kind == LayerKind::Image {
+            self.flood_fill_image_layer(start_x, start_y);
+            return;
+        }
+
         let swapped_bg: Option<DynamicImage> = if matches!(kind, LayerKind::Raster) {
             self.layer_images.remove(&active_id).map(|layer_img| {
                 self.image.replace(layer_img).unwrap_or_else(|| DynamicImage::ImageRgba8(ImageBuffer::new(1,1)))
@@ -351,6 +362,64 @@ impl ImageEditor {
             self.image = Some(result);
         }
         self.texture_dirty = true; self.dirty = true;
+    }
+
+    pub(super) fn flood_fill_image_layer(&mut self, start_x: u32, start_y: u32) {
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        let ild = match self.image_layer_data.get_mut(&iid) { Some(d) => d, None => return };
+        
+        let (lx_f, ly_f) = ild.canvas_to_local_f32(start_x as f32, start_y as f32);
+        if lx_f < 0.0 || ly_f < 0.0 || lx_f >= ild.orig_w() as f32 || ly_f >= ild.orig_h() as f32 { return; }
+        let lx = lx_f as u32; let ly = ly_f as u32;
+
+        if !matches!(ild.image, DynamicImage::ImageRgba8(_)) {
+            ild.image = DynamicImage::ImageRgba8(ild.image.to_rgba8());
+        }
+        let buf = if let DynamicImage::ImageRgba8(b) = &mut ild.image { b } else { return };
+        
+        let width = buf.width(); let height = buf.height();
+        if lx >= width || ly >= height { return; }
+
+        let target = buf.get_pixel(lx, ly).0;
+        let fill = [self.color.r(), self.color.g(), self.color.b(), self.color.a()];
+
+        if target == fill { return; }
+        let mut visited = vec![false; (width * height) as usize];
+        let mut stack = Vec::with_capacity(1024);
+        stack.push((lx, ly));
+
+        let tolerance = 30i32;
+        let mut dr_x0 = width; let mut dr_y0 = height; let mut dr_x1 = 0u32; let mut dr_y1 = 0u32;
+        
+        while let Some((x, y)) = stack.pop() {
+            let idx = (y * width + x) as usize;
+            if visited[idx] { continue; }
+            visited[idx] = true;
+            let cur = buf.get_pixel(x, y).0;
+            let diff: i32 = (0..4).map(|i| (cur[i] as i32 - target[i] as i32).abs()).sum();
+            if diff > tolerance { continue; }
+            buf.put_pixel(x, y, Rgba(fill));
+            
+            dr_x0 = dr_x0.min(x); dr_y0 = dr_y0.min(y);
+            dr_x1 = dr_x1.max(x); dr_y1 = dr_y1.max(y);
+
+            if x > 0 { stack.push((x - 1, y)); }
+            if x + 1 < width { stack.push((x + 1, y)); }
+            if y > 0 { stack.push((x, y - 1)); }
+            if y + 1 < height { stack.push((x, y + 1)); }
+        }
+
+        if dr_x1 >= dr_x0 && dr_y1 >= dr_y0 {
+            let entry = self.image_layer_stroke_rects.entry(iid).or_insert([width, height, 0, 0]);
+            entry[0] = entry[0].min(dr_x0); entry[1] = entry[1].min(dr_y0);
+            entry[2] = entry[2].max(dr_x1); entry[3] = entry[3].max(dr_y1);
+        }
+        
+        self.image_layer_texture_dirty.insert(iid);
+        self.composite_dirty = true;
+        self.composite_dirty_rect = None;
+        self.texture_dirty = true;
+        self.dirty = true;
     }
 
     pub(super) fn sample_color(&mut self, x: u32, y: u32) {
@@ -752,36 +821,44 @@ impl ImageEditor {
         let id = self.active_layer_id;
         let kind = self.layers.iter().find(|l| l.id == id).map(|l| l.kind).unwrap_or(LayerKind::Background);
         match kind {
-            LayerKind::Background => {
-                if let Some(img) = &self.image {
-                    self.image = Some(DynamicImage::ImageRgba8(img.grayscale().to_rgba8()));
-                }
-            }
-            LayerKind::Raster => {
-                if let Some(img) = self.layer_images.get(&id) {
-                    let g = img.grayscale().to_rgba8();
-                    self.layer_images.insert(id, DynamicImage::ImageRgba8(g));
+            LayerKind::Background => { if let Some(img) = &self.image { self.image = Some(DynamicImage::ImageRgba8(img.grayscale().to_rgba8())); } }
+            LayerKind::Raster => { if let Some(img) = self.layer_images.get(&id) { let g = img.grayscale().to_rgba8(); self.layer_images.insert(id, DynamicImage::ImageRgba8(g)); } }
+            LayerKind::Image => {
+                if let Some(iid) = self.image_layer_for_active() {
+                    if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                        ild.image = DynamicImage::ImageRgba8(ild.image.grayscale().to_rgba8());
+                        self.image_layer_texture_dirty.insert(iid);
+                    }
                 }
             }
             LayerKind::Text => return,
         }
-        self.composite_dirty = true;
-        self.texture_dirty = true; self.dirty = true;
+        self.composite_dirty = true; self.texture_dirty = true; self.dirty = true;
     }
 
     pub(super) fn apply_invert(&mut self) {
         let id = self.active_layer_id;
         let kind = self.layers.iter().find(|l| l.id == id).map(|l| l.kind).unwrap_or(LayerKind::Background);
+        if kind == LayerKind::Image {
+            if let Some(iid) = self.image_layer_for_active() {
+                if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                    let mut buf = ild.image.to_rgba8();
+                    for chunk in buf.as_flat_samples_mut().as_mut_slice().chunks_exact_mut(4) { chunk[0]=255-chunk[0]; chunk[1]=255-chunk[1]; chunk[2]=255-chunk[2]; }
+                    ild.image = DynamicImage::ImageRgba8(buf);
+                    self.image_layer_texture_dirty.insert(iid);
+                }
+            }
+            self.composite_dirty = true; self.texture_dirty = true; self.dirty = true;
+            return;
+        }
         let img_ref = match kind {
             LayerKind::Background => self.image.as_ref(),
             LayerKind::Raster => self.layer_images.get(&id),
-            LayerKind::Text => return,
+            LayerKind::Text | LayerKind::Image => return,
         };
         if let Some(src) = img_ref {
             let mut buf = src.to_rgba8();
-            for chunk in buf.as_flat_samples_mut().as_mut_slice().chunks_exact_mut(4) {
-                chunk[0] = 255 - chunk[0]; chunk[1] = 255 - chunk[1]; chunk[2] = 255 - chunk[2];
-            }
+            for chunk in buf.as_flat_samples_mut().as_mut_slice().chunks_exact_mut(4) { chunk[0] = 255 - chunk[0]; chunk[1] = 255 - chunk[1]; chunk[2] = 255 - chunk[2]; }
             let res = DynamicImage::ImageRgba8(buf);
             match kind {
                 LayerKind::Background => self.image = Some(res),
@@ -789,35 +866,47 @@ impl ImageEditor {
                 _ => {}
             }
         }
-        self.composite_dirty = true;
-        self.texture_dirty = true; self.dirty = true;
+        self.composite_dirty = true; self.texture_dirty = true; self.dirty = true;
     }
 
     pub(super) fn apply_sepia(&mut self) {
         let id = self.active_layer_id;
         let kind = self.layers.iter().find(|l| l.id == id).map(|l| l.kind).unwrap_or(LayerKind::Background);
-        let img_ref = match kind {
-            LayerKind::Background => self.image.as_ref(),
-            LayerKind::Raster => self.layer_images.get(&id),
-            LayerKind::Text => return,
-        };
-        if let Some(src) = img_ref {
-            let mut buf = src.to_rgba8();
+        let sepia = |buf: &mut ImageBuffer<Rgba<u8>, Vec<u8>>| {
             for pixel in buf.pixels_mut() {
                 let [r, g, b, a] = pixel.0;
                 let (rf, gf, bf) = (r as f32, g as f32, b as f32);
                 pixel.0 = [(rf*0.393+gf*0.769+bf*0.189).min(255.0) as u8, (rf*0.349+gf*0.686+bf*0.168).min(255.0) as u8, (rf*0.272+gf*0.534+bf*0.131).min(255.0) as u8, a];
             }
+        };
+        if kind == LayerKind::Image {
+            if let Some(iid) = self.image_layer_for_active() {
+                if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                    let mut buf = ild.image.to_rgba8();
+                    sepia(&mut buf);
+                    ild.image = DynamicImage::ImageRgba8(buf);
+                    self.image_layer_texture_dirty.insert(iid);
+                }
+            }
+            self.composite_dirty = true; self.texture_dirty = true; self.dirty = true;
+            return;
+        }
+        let img_ref = match kind {
+            LayerKind::Background => self.image.as_ref(),
+            LayerKind::Raster => self.layer_images.get(&id),
+            LayerKind::Text | LayerKind::Image => return,
+        };
+        if let Some(src) = img_ref {
+            let mut buf = src.to_rgba8();
+            sepia(&mut buf);
             let res = DynamicImage::ImageRgba8(buf);
             match kind {
                 LayerKind::Background => self.image = Some(res),
-                LayerKind::Raster     => { self.layer_images.insert(id, res); }
+                LayerKind::Raster => { self.layer_images.insert(id, res); }
                 _ => {}
             }
         }
-        self.composite_dirty = true;
-        self.texture_dirty = true;
-        self.dirty = true;
+        self.composite_dirty = true; self.texture_dirty = true; self.dirty = true;
     }
 
     fn transform_text_rotate_cw(&mut self, _old_w: u32, old_h: u32) {
@@ -868,7 +957,7 @@ impl ImageEditor {
         let img_ref = match kind {
             LayerKind::Background => self.image.as_ref(),
             LayerKind::Raster => self.layer_images.get(&active_id),
-            LayerKind::Text => return,
+            LayerKind::Text | LayerKind::Image => return,
         };
         if let Some(DynamicImage::ImageRgba8(buf)) = img_ref {
             if ix < buf.width() && iy < buf.height() {
@@ -888,6 +977,11 @@ impl ImageEditor {
         let (kind, locked) = self.layers.iter().find(|l| l.id == active_id)
             .map(|l| (l.kind, l.locked)).unwrap_or((LayerKind::Background, false));
         if locked || matches!(kind, LayerKind::Text) { return; }
+
+        if kind == LayerKind::Image {
+            self.apply_retouch_stroke_on_image_layer();
+            return;
+        }
 
         let swapped_bg: Option<DynamicImage> = if matches!(kind, LayerKind::Raster) {
             self.layer_images.remove(&active_id).map(|layer_img| {
@@ -936,11 +1030,10 @@ impl ImageEditor {
                 let t: f32 = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
                 let cx: f32 = x0 + dx * t;
                 let cy: f32 = y0 + dy * t;
-
                 let min_x: u32 = ((cx - radius - 1.0).max(0.0)) as u32;
-                let max_x: u32 = ((cx + radius + 1.0).ceil() as u32).min(width);
+                let max_x: u32 = ((cx + radius + 1.0).max(0.0).ceil() as u32).min(width);
                 let min_y: u32 = ((cy - radius - 1.0).max(0.0)) as u32;
-                let max_y: u32 = ((cy + radius + 1.0).ceil() as u32).min(height);
+                let max_y: u32 = ((cy + radius + 1.0).max(0.0).ceil() as u32).min(height);
 
                 dr_x0 = dr_x0.min(min_x); dr_y0 = dr_y0.min(min_y);
                 dr_x1 = dr_x1.max(max_x); dr_y1 = dr_y1.max(max_y);
@@ -1020,7 +1113,7 @@ impl ImageEditor {
                                 let off = py as usize * stride + px as usize * 4;
                                 let (h, s, v) = rgb_to_hsv(raw[off], raw[off+1], raw[off+2]);
                                 let vib_factor = if vib_delta >= 0.0 { 1.0 - s } else { s };
-                                let (nr, ng, nb) = hsv_to_rgb(h, (s + vib_delta * vib_factor * falloff).clamp(0.0, 1.0), v);
+                                let (nr, ng, nb) = hsv_to_rgb((h + vib_delta * vib_factor * falloff).clamp(0.0, 1.0), (s + vib_delta * vib_factor * falloff).clamp(0.0, 1.0), v);
                                 raw[off] = nr; raw[off+1] = ng; raw[off+2] = nb;
                             }
                         }
@@ -1119,6 +1212,387 @@ impl ImageEditor {
         if dr_x1 > dr_x0 && dr_y1 > dr_y0 { self.expand_dirty_rect(dr_x0, dr_y0, dr_x1, dr_y1); }
         self.texture_dirty = true;
         if let Some(old_bg) = swapped_bg { self.restore_layer_swap(active_id, old_bg); } else { self.promote_dirty_to_composite(); }
+    }
+
+    fn apply_brush_stroke_on_image_layer(&mut self) {
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        if self.stroke_points.len() < 2 { return; }
+        let ild = match self.image_layer_data.get_mut(&iid) { Some(d) => d, None => return };
+        if !matches!(ild.image, DynamicImage::ImageRgba8(_)) {
+            ild.image = DynamicImage::ImageRgba8(ild.image.to_rgba8());
+        }
+        let is_eraser = self.tool == Tool::Eraser;
+        let (r, g, b_ch, base_a) = if is_eraser { (0u8, 0u8, 0u8, 0u8) } else { (self.color.r(), self.color.g(), self.color.b(), self.color.a()) };
+        
+        let pixel_scale = ild.pixel_scale();
+        let canvas_radius = if is_eraser { self.eraser_size / 2.0 } else { self.brush.size / 2.0 };
+        let radius = canvas_radius * pixel_scale;
+        let opacity = if is_eraser { 1.0 } else { self.brush.opacity };
+        let flow = if is_eraser { 1.0 } else { self.brush.flow };
+        let softness = if is_eraser { 0.0 } else { self.brush.softness };
+        let shape = if is_eraser { BrushShape::Circle } else { self.brush.shape };
+        let eraser_transparent = is_eraser;
+        let step_dist = (radius * (if is_eraser { 0.25 } else { self.brush.step })).max(0.5);
+        let (flip_h, flip_v, display_w, display_h, orig_w, orig_h) =
+            (ild.flip_h, ild.flip_v, ild.display_w, ild.display_h, ild.orig_w(), ild.orig_h());
+        let (ctr_cx, ctr_cy) = ild.center_canvas();
+        let angle = -ild.rotation.to_radians();
+        let (cos_a, sin_a) = (angle.cos(), angle.sin());
+        let canvas_to_img = |cx: f32, cy: f32| -> (f32, f32) {
+            let (dx, dy) = (cx - ctr_cx, cy - ctr_cy);
+            let lx = dx * cos_a - dy * sin_a + display_w / 2.0;
+            let ly = dx * sin_a + dy * cos_a + display_h / 2.0;
+            let mut sx = lx / display_w.max(1.0) * orig_w as f32;
+            let mut sy = ly / display_h.max(1.0) * orig_h as f32;
+            if flip_h { sx = orig_w as f32 - 1.0 - sx; }
+            if flip_v { sy = orig_h as f32 - 1.0 - sy; }
+            (sx, sy)
+        };
+        let points = self.stroke_points.clone();
+        let buf = if let DynamicImage::ImageRgba8(b) = &mut ild.image { b } else { return };
+        let (bw, bh) = (buf.width(), buf.height());
+        let mut dr_x0 = bw; let mut dr_y0 = bh; let mut dr_x1 = 0u32; let mut dr_y1 = 0u32;
+        
+        let mut canvas_dr_x0 = f32::MAX; let mut canvas_dr_y0 = f32::MAX;
+        let mut canvas_dr_x1 = f32::MIN; let mut canvas_dr_y1 = f32::MIN;
+
+        for i in 0..points.len().saturating_sub(1) {
+            let (x0c, y0c) = points[i]; let (x1c, y1c) = points[i + 1];
+            let (dxc, dyc) = (x1c - x0c, y1c - y0c);
+            let (s0, s1) = (canvas_to_img(x0c, y0c), canvas_to_img(x1c, y1c));
+            let seg_len = ((s1.0-s0.0).powi(2) + (s1.1-s0.1).powi(2)).sqrt();
+            let steps = ((seg_len / step_dist).ceil() as usize).max(1);
+            for s in 0..=steps {
+                let t = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
+                let cx_c = x0c + dxc * t;
+                let cy_c = y0c + dyc * t;
+                
+                canvas_dr_x0 = canvas_dr_x0.min(cx_c - canvas_radius - 1.0);
+                canvas_dr_y0 = canvas_dr_y0.min(cy_c - canvas_radius - 1.0);
+                canvas_dr_x1 = canvas_dr_x1.max(cx_c + canvas_radius + 1.0);
+                canvas_dr_y1 = canvas_dr_y1.max(cy_c + canvas_radius + 1.0);
+
+                let (cx_img, cy_img) = canvas_to_img(cx_c, cy_c);
+                let min_px = (cx_img - radius - 1.0).max(0.0) as u32;
+                let max_px = ((cx_img + radius + 1.0).max(0.0).ceil() as u32).min(bw);
+                let min_py = (cy_img - radius - 1.0).max(0.0) as u32;
+                let max_py = ((cy_img + radius + 1.0).max(0.0).ceil() as u32).min(bh);
+                
+                dr_x0 = dr_x0.min(min_px); dr_y0 = dr_y0.min(min_py);
+                dr_x1 = dr_x1.max(max_px); dr_y1 = dr_y1.max(max_py);
+                for py in min_py..max_py {
+                    for px in min_px..max_px {
+                        let falloff = brush_shape_falloff(px as f32 - cx_img, py as f32 - cy_img, radius, 1.0, 0.0, softness, shape);
+                        if falloff <= 0.0 { continue; }
+                        let alpha = (falloff * flow * opacity * 255.0).clamp(0.0, 255.0) as u8;
+                        if alpha == 0 { continue; }
+                        unsafe {
+                            let pixel = buf.unsafe_get_pixel(px, py);
+                            let [er, eg, eb, ea] = pixel.0;
+                            let new_pixel = if eraser_transparent {
+                                Rgba([er, eg, eb, ea.saturating_sub(alpha)])
+                            } else {
+                                let fa = alpha as u16; let bf = (base_a as u16 * fa) / 255; let ba = 255 - bf;
+                                Rgba([((r as u16*bf + er as u16*ba)/255) as u8, ((g as u16*bf + eg as u16*ba)/255) as u8, ((b_ch as u16*bf + eb as u16*ba)/255) as u8, ((bf + ea as u16*ba/255).min(255)) as u8])
+                            };
+                            buf.unsafe_put_pixel(px, py, new_pixel);
+                        }
+                    }
+                }
+            }
+        }
+        if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
+            let entry = self.image_layer_stroke_rects.entry(iid).or_insert([bw, bh, 0, 0]);
+            entry[0] = entry[0].min(dr_x0); entry[1] = entry[1].min(dr_y0);
+            entry[2] = entry[2].max(dr_x1); entry[3] = entry[3].max(dr_y1);
+        }
+        
+        if canvas_dr_x1 > canvas_dr_x0 && canvas_dr_y1 > canvas_dr_y0 {
+            let cx0 = canvas_dr_x0.max(0.0) as u32; let cy0 = canvas_dr_y0.max(0.0) as u32;
+            let cx1 = canvas_dr_x1.ceil() as u32; let cy1 = canvas_dr_y1.ceil() as u32;
+            let bg_w = self.image.as_ref().map(|i| i.width()).unwrap_or(u32::MAX);
+            let bg_h = self.image.as_ref().map(|i| i.height()).unwrap_or(u32::MAX);
+            let r = [cx0.min(bg_w), cy0.min(bg_h), cx1.min(bg_w), cy1.min(bg_h)];
+            if r[2] > r[0] && r[3] > r[1] {
+                match &mut self.composite_dirty_rect {
+                    None => self.composite_dirty_rect = Some(r),
+                    Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
+                }
+            }
+        }
+
+        self.image_layer_texture_dirty.insert(iid);
+        self.composite_dirty = true;
+        self.texture_dirty = true;
+        self.dirty = true;
+    }
+
+    fn apply_retouch_stroke_on_image_layer(&mut self) {
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        if self.stroke_points.len() < 2 { return; }
+        let ild = match self.image_layer_data.get_mut(&iid) { Some(d) => d, None => return };
+        if !matches!(ild.image, DynamicImage::ImageRgba8(_)) {
+            ild.image = DynamicImage::ImageRgba8(ild.image.to_rgba8());
+        }
+        let mode = self.retouch_mode;
+        let pixel_scale = ild.pixel_scale();
+        let canvas_radius = self.retouch_size / 2.0;
+        let radius = (canvas_radius * pixel_scale).max(1.0);
+        let strength = self.retouch_strength.clamp(0.0, 1.0);
+        let softness = self.retouch_softness.clamp(0.0, 1.0);
+        let step_dist = (radius * 0.4).max(0.5);
+        let pixelate_block = self.retouch_pixelate_block.max(2);
+        let (flip_h, flip_v, display_w, display_h, orig_w, orig_h) =
+            (ild.flip_h, ild.flip_v, ild.display_w, ild.display_h, ild.orig_w(), ild.orig_h());
+        let (ctr_cx, ctr_cy) = ild.center_canvas();
+        let angle = -ild.rotation.to_radians();
+        let (cos_a, sin_a) = (angle.cos(), angle.sin());
+        let canvas_to_img = |cx: f32, cy: f32| -> (f32, f32) {
+            let (dx, dy) = (cx - ctr_cx, cy - ctr_cy);
+            let lx = dx * cos_a - dy * sin_a + display_w / 2.0;
+            let ly = dx * sin_a + dy * cos_a + display_h / 2.0;
+            let mut sx = lx / display_w.max(1.0) * orig_w as f32;
+            let mut sy = ly / display_h.max(1.0) * orig_h as f32;
+            if flip_h { sx = orig_w as f32 - 1.0 - sx; }
+            if flip_v { sy = orig_h as f32 - 1.0 - sy; }
+            (sx, sy)
+        };
+        let points = self.stroke_points.clone();
+        let mut smudge = self.retouch_smudge_sample;
+        let vib_delta = (strength - 0.5) * 2.0;
+        let temp_delta = (strength - 0.5) * 2.0;
+        let bri_delta = (strength - 0.5) * 2.0 * 45.0;
+        let buf = if let DynamicImage::ImageRgba8(b) = &mut ild.image { b } else { return };
+        let (bw, bh) = (buf.width(), buf.height());
+        let stride = bw as usize * 4;
+        let mut dr_x0 = bw; let mut dr_y0 = bh; let mut dr_x1 = 0u32; let mut dr_y1 = 0u32;
+        
+        let mut canvas_dr_x0 = f32::MAX; let mut canvas_dr_y0 = f32::MAX;
+        let mut canvas_dr_x1 = f32::MIN; let mut canvas_dr_y1 = f32::MIN;
+
+        let mut flat = buf.as_flat_samples_mut();
+        let raw = flat.as_mut_slice();
+        for i in 0..points.len().saturating_sub(1) {
+            let (x0c, y0c) = points[i]; let (x1c, y1c) = points[i+1];
+            let (dxc, dyc) = (x1c-x0c, y1c-y0c);
+            let (s0, s1) = (canvas_to_img(x0c, y0c), canvas_to_img(x1c, y1c));
+            let seg_len = ((s1.0-s0.0).powi(2)+(s1.1-s0.1).powi(2)).sqrt();
+            let steps = ((seg_len/step_dist).ceil() as usize).max(1);
+            for s in 0..=steps {
+                let t = if steps == 0 { 0.0 } else { s as f32/steps as f32 };
+                let cx_c = x0c + dxc * t;
+                let cy_c = y0c + dyc * t;
+
+                canvas_dr_x0 = canvas_dr_x0.min(cx_c - canvas_radius - 1.0);
+                canvas_dr_y0 = canvas_dr_y0.min(cy_c - canvas_radius - 1.0);
+                canvas_dr_x1 = canvas_dr_x1.max(cx_c + canvas_radius + 1.0);
+                canvas_dr_y1 = canvas_dr_y1.max(cy_c + canvas_radius + 1.0);
+
+                let (cx_img, cy_img) = canvas_to_img(cx_c, cy_c);
+                let min_px = (cx_img - radius - 1.0).max(0.0) as i32;
+                let max_px = ((cx_img + radius + 1.0).max(0.0).ceil() as i32).min(bw as i32);
+                let min_py = (cy_img - radius - 1.0).max(0.0) as i32;
+                let max_py = ((cy_img + radius + 1.0).max(0.0).ceil() as i32).min(bh as i32);
+                
+                dr_x0 = dr_x0.min(min_px.max(0) as u32); dr_y0 = dr_y0.min(min_py.max(0) as u32);
+                dr_x1 = dr_x1.max(max_px as u32); dr_y1 = dr_y1.max(max_py as u32);
+                match mode {
+                    RetouchMode::Blur | RetouchMode::Sharpen => {
+                        let blur_r = ((strength * 5.0) as i32).max(1);
+                        let sx0 = (min_px - blur_r).max(0) as usize;
+                        let sy0 = (min_py - blur_r).max(0) as usize;
+                        let sx1 = (max_px + blur_r).min(bw as i32) as usize;
+                        let sy1 = (max_py + blur_r).min(bh as i32) as usize;
+                        let srw = sx1.saturating_sub(sx0);
+                        let srh = sy1.saturating_sub(sy0);
+                        let mut snap = vec![0u8; srw * srh * 4];
+                        for (ri, py2) in (sy0..sy1).enumerate() {
+                            let src = py2 * stride + sx0 * 4;
+                            snap[ri * srw * 4..ri * srw * 4 + srw * 4].copy_from_slice(&raw[src..src + srw * 4]);
+                        }
+
+                        let sum = |px: u32, py: u32, r: i32| -> [f32;4] {
+                            let mut acc = [0f32;4]; let mut cnt = 0i32;
+                            for ky in (-r)..=r { for kx in (-r)..=r {
+                                let nx = px as i32+kx; let ny = py as i32+ky;
+                                if nx < sx0 as i32 || ny < sy0 as i32 || nx >= sx1 as i32 || ny >= sy1 as i32 { continue; }
+                                let lx = (nx - sx0 as i32) as usize;
+                                let ly = (ny - sy0 as i32) as usize;
+                                let o = ly * srw * 4 + lx * 4;
+                                for c in 0..4 { acc[c] += snap[o+c] as f32; } cnt += 1;
+                            }}
+                            if cnt > 0 { [acc[0]/cnt as f32,acc[1]/cnt as f32,acc[2]/cnt as f32,acc[3]/cnt as f32] } else { acc }
+                        };
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let blurred = sum(px2, py2, blur_r);
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            if mode == RetouchMode::Blur {
+                                for c in 0..4 { raw[off+c] = retouch_lerp_u8(raw[off+c], blurred[c] as u8, fo*strength); }
+                            } else {
+                                let orig = [raw[off] as f32, raw[off+1] as f32, raw[off+2] as f32, raw[off+3] as f32];
+                                for c in 0..3 { let sv = orig[c]+(orig[c]-blurred[c])*strength*2.0; raw[off+c]=sv.clamp(0.0,255.0) as u8; }
+                            }
+                        }}
+                    }
+                    RetouchMode::Smudge => {
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            for c in 0..4 { smudge[c]=smudge[c]*(1.0-fo*strength)+raw[off+c] as f32/255.0*(fo*strength); raw[off+c]=(smudge[c]*255.0).clamp(0.0,255.0) as u8; }
+                        }}
+                    }
+                    RetouchMode::Vibrance => {
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            let (r2,g2,b2) = (raw[off] as f32/255.0,raw[off+1] as f32/255.0,raw[off+2] as f32/255.0);
+                            let max_c = r2.max(g2).max(b2); let min_c = r2.min(g2).min(b2);
+                            let sat = if max_c > 0.0 { (max_c-min_c)/max_c } else { 0.0 };
+                            let vib_mult = 1.0 + vib_delta * fo * (1.0-sat);
+                            raw[off]=((r2*vib_mult).clamp(0.0,1.0)*255.0) as u8;
+                            raw[off+1]=((g2*vib_mult).clamp(0.0,1.0)*255.0) as u8;
+                            raw[off+2]=((b2*vib_mult).clamp(0.0,1.0)*255.0) as u8;
+                        }}
+                    }
+                    RetouchMode::Saturation => {
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            let (h,s,v) = rgb_to_hsv(raw[off],raw[off+1],raw[off+2]);
+                            let (nr,ng,nb) = hsv_to_rgb(h,(s*(1.0+vib_delta*fo)).clamp(0.0,1.0),v);
+                            raw[off]=nr; raw[off+1]=ng; raw[off+2]=nb;
+                        }}
+                    }
+                    RetouchMode::Temperature => {
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            let shift = (temp_delta*fo*35.0) as i32;
+                            raw[off]=(raw[off] as i32+shift).clamp(0,255) as u8;
+                            raw[off+2]=(raw[off+2] as i32-shift).clamp(0,255) as u8;
+                        }}
+                    }
+                    RetouchMode::Brightness => {
+                        for py2 in min_py.max(0) as u32..max_py.max(0) as u32 { for px2 in min_px.max(0) as u32..max_px.max(0) as u32 {
+                            let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                            if fo <= 0.0 { continue; }
+                            let off = py2 as usize*stride+px2 as usize*4;
+                            let d = (bri_delta*fo) as i32;
+                            raw[off]=(raw[off] as i32+d).clamp(0,255) as u8;
+                            raw[off+1]=(raw[off+1] as i32+d).clamp(0,255) as u8;
+                            raw[off+2]=(raw[off+2] as i32+d).clamp(0,255) as u8;
+                        }}
+                    }
+                    RetouchMode::Pixelate => {
+                        let block = pixelate_block;
+                        let bx0 = (min_px.max(0) as u32/block)*block;
+                        let by0 = (min_py.max(0) as u32/block)*block;
+                        let mut bx = bx0;
+                        while bx < (max_px as u32).min(bw) {
+                            let mut by = by0;
+                            while by < (max_py as u32).min(bh) {
+                                let bx1=(bx+block).min(bw); let by1=(by+block).min(bh);
+                                let (mut sr,mut sg,mut sb,mut sa,mut cnt,mut mfo)=(0u32,0u32,0u32,0u32,0u32,0f32);
+                                for py2 in by..by1 { for px2 in bx..bx1 {
+                                    let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                    if fo <= 0.0 { continue; }
+                                    let off = py2 as usize*stride+px2 as usize*4;
+                                    sr+=raw[off] as u32; sg+=raw[off+1] as u32; sb+=raw[off+2] as u32; sa+=raw[off+3] as u32; cnt+=1;
+                                    if fo > mfo { mfo=fo; }
+                                }}
+                                if cnt > 0 {
+                                    let avg=[(sr/cnt) as u8,(sg/cnt) as u8,(sb/cnt) as u8,(sa/cnt) as u8];
+                                    for py2 in by..by1 { for px2 in bx..bx1 {
+                                        let fo = brush_shape_falloff(px2 as f32-cx_img, py2 as f32-cy_img, radius, 1.0, 0.0, softness, BrushShape::Circle);
+                                        if fo <= 0.0 { continue; }
+                                        let off = py2 as usize*stride+px2 as usize*4;
+                                        raw[off]=retouch_lerp_u8(raw[off],avg[0],mfo); raw[off+1]=retouch_lerp_u8(raw[off+1],avg[1],mfo);
+                                        raw[off+2]=retouch_lerp_u8(raw[off+2],avg[2],mfo); raw[off+3]=retouch_lerp_u8(raw[off+3],avg[3],mfo);
+                                    }}
+                                }
+                                by += block;
+                            }
+                            bx += block;
+                        }
+                    }
+                }
+            }
+        }
+        let _ = raw;
+        self.retouch_smudge_sample = smudge;
+        if dr_x1 > dr_x0 && dr_y1 > dr_y0 {
+            let entry = self.image_layer_stroke_rects.entry(iid).or_insert([bw, bh, 0, 0]);
+            entry[0] = entry[0].min(dr_x0); entry[1] = entry[1].min(dr_y0);
+            entry[2] = entry[2].max(dr_x1); entry[3] = entry[3].max(dr_y1);
+        }
+
+        if canvas_dr_x1 > canvas_dr_x0 && canvas_dr_y1 > canvas_dr_y0 {
+            let cx0 = canvas_dr_x0.max(0.0) as u32; let cy0 = canvas_dr_y0.max(0.0) as u32;
+            let cx1 = canvas_dr_x1.ceil() as u32; let cy1 = canvas_dr_y1.ceil() as u32;
+            let bg_w = self.image.as_ref().map(|i| i.width()).unwrap_or(u32::MAX);
+            let bg_h = self.image.as_ref().map(|i| i.height()).unwrap_or(u32::MAX);
+            let r = [cx0.min(bg_w), cy0.min(bg_h), cx1.min(bg_w), cy1.min(bg_h)];
+            if r[2] > r[0] && r[3] > r[1] {
+                match &mut self.composite_dirty_rect {
+                    None => self.composite_dirty_rect = Some(r),
+                    Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
+                }
+            }
+        }
+
+        self.image_layer_texture_dirty.insert(iid);
+        self.composite_dirty = true;
+        self.texture_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn apply_crop_to_image_layer(&mut self) {
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        let (s, e) = match (self.crop_state.start, self.crop_state.end) { (Some(s), Some(e)) => (s, e), _ => return };
+        let ild = match self.image_layer_data.get_mut(&iid) { Some(d) => d, None => return };
+        let (lx0, ly0) = ild.canvas_to_local_f32(s.0, s.1);
+        let (lx1, ly1) = ild.canvas_to_local_f32(e.0, e.1);
+        let x0 = lx0.min(lx1).max(0.0) as u32;
+        let y0 = ly0.min(ly1).max(0.0) as u32;
+        let x1 = (lx0.max(lx1).ceil() as u32).min(ild.orig_w());
+        let y1 = (ly0.max(ly1).ceil() as u32).min(ild.orig_h());
+        if x1 <= x0 || y1 <= y0 { return; }
+        self.push_undo();
+        let ild = self.image_layer_data.get_mut(&iid).unwrap();
+        let scale_x = ild.display_w / ild.orig_w() as f32;
+        let scale_y = ild.display_h / ild.orig_h() as f32;
+        let cropped = ild.image.crop_imm(x0, y0, x1-x0, y1-y0);
+        let new_dw = (x1-x0) as f32 * scale_x;
+        let new_dh = (y1-y0) as f32 * scale_y;
+        ild.canvas_x += x0 as f32 * scale_x;
+        ild.canvas_y += y0 as f32 * scale_y;
+        ild.display_w = new_dw;
+        ild.display_h = new_dh;
+        ild.image = cropped;
+        self.image_layer_texture_dirty.insert(iid);
+        self.crop_state = CropState::default();
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn init_smudge_sample_image_layer(&mut self, canvas_x: f32, canvas_y: f32) {
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        if let Some(ild) = self.image_layer_data.get(&iid) {
+            if let Some((px, py)) = ild.canvas_to_local(canvas_x, canvas_y) {
+                if let DynamicImage::ImageRgba8(ref buf) = ild.image {
+                    if px < buf.width() && py < buf.height() {
+                        let p = buf.get_pixel(px, py);
+                        self.retouch_smudge_sample = [p.0[0] as f32/255.0, p.0[1] as f32/255.0, p.0[2] as f32/255.0, p.0[3] as f32/255.0];
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn apply_flip_h(&mut self) {
