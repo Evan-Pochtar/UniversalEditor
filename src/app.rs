@@ -186,7 +186,7 @@ fn open_file_location(path: &PathBuf) {
 }
 
 impl UniversalEditor {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, startup_file: Option<PathBuf>) -> Self {
         let settings = AppSettings::load();
         
         let system_theme = match cc.egui_ctx.theme() {
@@ -259,13 +259,40 @@ impl UniversalEditor {
                     else if i == total - 1 { "Initial Release".to_string() }
                     else { "Update".to_string() };
         }
+
+        let mut recent_files = RecentFiles::load();
+        let active_module = startup_file.map(|path| {
+            recent_files.add_file(path.clone());
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let create = registry::screen_for_extension(ext).map(|s| s.create).unwrap_or(CreateModule::TextEditor);
+            let m: Box<dyn EditorModule> = match create {
+                CreateModule::TextEditor => {
+                    let mut e = TextEditor::load(path);
+                    e.set_default_font(
+                        egui::FontFamily::Name(settings.default_font.clone().into()),
+                        settings.default_font_size,
+                    );
+                    e.set_path_replace_tx(replace_tx.clone());
+                    Box::new(e)
+                }
+                CreateModule::ImageEditor => {
+                    let mut e = ImageEditor::load(path);
+                    let tx = tx.clone();
+                    e.set_file_callback(Box::new(move |p: PathBuf| { let _ = tx.send(p); }));
+                    Box::new(e)
+                }
+                CreateModule::JsonEditor => Box::new(JsonEditor::load(path)),
+                _ => Box::new(TextEditor::load(path)),
+            };
+            m
+        });
         
         Self {
-            active_module: None,
+            active_module,
             sidebar_open: true,
             theme_mode: initial_theme,
             theme_preference: settings.theme_preference,
-            recent_files: RecentFiles::load(),
+            recent_files,
             screens_expanded: false,
             converters_expanded: false,
             recent_files_expanded: false,

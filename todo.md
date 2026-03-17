@@ -7,7 +7,6 @@
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [ ] Add way to differentiate between same name files in "recent files" list
 - [ ] Improve look of patch notes
-- [ ] Allow for right click, open with universal_editor on windows
 
 ## Screens
 
@@ -55,6 +54,7 @@
 - [ ] Text cannot be above imported image, even when it's layer is higher
 - [ ] Image always acts as highest layer, even when it shouldn't be
 - [ ] When moving image on image layer, slightly moves background image
+- [ ] Can't move the text box using the select tool
 
 ### Json Editor Bugs
 

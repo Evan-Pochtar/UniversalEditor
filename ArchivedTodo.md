@@ -16,6 +16,7 @@
 - [x] Better File System
 - [x] Easier way to add new screens/converters (Code only change)
 - [x] Add right click context menu to change file name and open file location in "recent files" list
+- [x] Allow for right click, open with universal_editor on windows
 
 ## Screens
 

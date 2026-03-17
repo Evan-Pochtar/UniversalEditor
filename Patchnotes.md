@@ -149,6 +149,7 @@
 
 #### Features
 - **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
+- **GENERAL**: Allow for right click, open with universal_editor on windows
 - **JSON EDITOR**: Added Line numbers to the text view
 - **IMG EDITOR**: Added Layer System to the Image Editor
 - **IMG EDITOR**: Color picker panel information now centered
