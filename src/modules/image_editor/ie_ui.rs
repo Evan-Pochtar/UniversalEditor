@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::{ColorPalette, ThemeMode, toolbar_action_btn, toolbar_toggle_btn};
 use crate::modules::helpers::image_export::ExportFormat;
-use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT, BrushShape, BrushTextureMode, BrushPreset, SavedBrush, RetouchMode};
+use super::ie_main::{ImageEditor, Tool, FilterPanel, TransformHandleSet, THandle, RgbaColor, CropState, TextDrag, HANDLE_HIT, BrushShape, BrushTextureMode, BrushPreset, SavedBrush, RetouchMode, LayerKind, BlendMode, TextLayer, ColorHistory, MAX_COLOR_FAVORITES, COLOR_FAV_HOTKEYS, ImageDrag};
 use super::ie_helpers::{rgb_to_hsv_f32, hsv_to_rgb_f32, crop_hit_handle, draw_crop_handles};
 
 impl ImageEditor {
@@ -29,8 +29,22 @@ impl ImageEditor {
                             self.tool_btn(ui, "Text", Tool::Text, Some("T"), theme);
                             self.tool_btn(ui, "Eyedrop", Tool::Eyedropper, Some("D"), theme);
                             self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
-                            self.tool_btn(ui, "Pan", Tool::Pan, Some("P"), theme);
+                            self.tool_btn(ui, "Select/Pan", Tool::Pan, Some("P"), theme);
                             self.tool_btn(ui, "Retouch", Tool::Retouch, Some("R"), theme);
+                            ui.separator();
+                            if toolbar_action_btn(ui, egui::RichText::new("Place Image").size(12.0), theme)
+                                .on_hover_text("Import image as new layer (I)")
+                                .clicked()
+                            {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif"])
+                                    .pick_file()
+                                {
+                                    if let Ok(img) = image::open(&path) {
+                                        self.insert_image_layer(img, true);
+                                    }
+                                }
+                            }
                         });
                     });
             });
@@ -48,7 +62,7 @@ impl ImageEditor {
     }
 
     pub(super) fn render_options_bar(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
-        ui.spacing_mut().slider_width = 100.0;
+        ui.spacing_mut().slider_width = 200.0;
         let (bg, border, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_400)
         } else {
@@ -91,7 +105,7 @@ impl ImageEditor {
                                         if ui.selectable_label(self.text_font_name == *f, *f).clicked() {
                                             self.text_font_name = f.to_string();
                                             if let Some(id) = self.selected_text {
-                                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) {
+                                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                                                     layer.font_name = f.to_string();
                                                 }
                                             }
@@ -104,7 +118,7 @@ impl ImageEditor {
                             if ui.add(egui::DragValue::new(&mut fs).range(6.0..=400.0).speed(1.0)).changed() {
                                 self.text_font_size = fs;
                                 if let Some(id) = self.selected_text {
-                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.font_size = fs; }
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) { layer.font_size = fs; }
                                 }
                             }
                             ui.separator();
@@ -112,33 +126,35 @@ impl ImageEditor {
                             if toolbar_toggle_btn(ui, egui::RichText::new("B").strong().size(13.0), self.text_bold, theme).clicked() {
                                 self.text_bold = !self.text_bold;
                                 if let Some(id) = self.selected_text {
-                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.bold = self.text_bold; }
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) { layer.bold = self.text_bold; }
                                 }
                             }
                             if toolbar_toggle_btn(ui, egui::RichText::new("I").italics().size(13.0), self.text_italic, theme).clicked() {
                                 self.text_italic = !self.text_italic;
                                 if let Some(id) = self.selected_text {
-                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.italic = self.text_italic; }
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) { layer.italic = self.text_italic; }
                                 }
                             }
                             if toolbar_toggle_btn(ui, egui::RichText::new("U").underline().size(13.0), self.text_underline, theme).clicked() {
                                 self.text_underline = !self.text_underline;
                                 if let Some(id) = self.selected_text {
-                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.underline = self.text_underline; }
+                                    if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) { layer.underline = self.text_underline; }
                                 }
                             }
 
                             if let Some(id) = self.selected_text {
-                                ui.separator();
-                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) { layer.color = self.color; }
-                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut crate::modules::image_editor::ie_main::TextLayer| l.id == id) {
+                                let cur_color = self.color;
+                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
+                                    if layer.color != cur_color { layer.color = cur_color; }
+                                }
+                                if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
                                     ui.separator();
                                     ui.label(egui::RichText::new("Rot:").size(12.0).color(label_col));
                                     ui.add(egui::DragValue::new(&mut layer.rotation).speed(1.0).range(-360.0..=360.0).suffix("°")).on_hover_text("Rotation in degrees");
                                 }
                                 if ui.button("Deselect").clicked() { self.commit_or_discard_active_text(); }
                                 if ui.button("Delete").clicked() {
-                                    self.text_layers.retain(|l: &crate::modules::image_editor::ie_main::TextLayer| l.id != id);
+                                    self.text_layers.retain(|l: &TextLayer| l.id != id);
                                     self.selected_text = None; self.editing_text = false;
                                 }
                             }
@@ -147,10 +163,80 @@ impl ImageEditor {
                                 ui.label(egui::RichText::new(format!("{} layer(s)", self.text_layers.len())).size(11.0).color(label_col));
                             }
                         }
+                        Tool::Pan => {
+                            let has_img_sel = self.selected_image_layer.is_some();
+                            let has_txt_sel = self.selected_text.is_some();
+                            let in_select = has_img_sel || has_txt_sel;
+                            let mode_label = if in_select { "Mode: Select" } else { "Mode: Pan" };
+                            ui.label(egui::RichText::new(mode_label).size(12.0).color(if in_select { ColorPalette::GREEN_400 } else { label_col }));
+                            if in_select {
+                                ui.separator();
+                                if ui.button(egui::RichText::new("Deselect").size(12.0)).clicked() {
+                                    self.selected_image_layer = None;
+                                    self.commit_or_discard_active_text();
+                                }
+                            }
+                            if let Some(iid) = self.image_layer_for_active() {
+                                if let Some(ild) = self.image_layer_data.get(&iid) {
+                                    let ow = ild.orig_w(); let oh = ild.orig_h();
+                                    let dw = ild.display_w; let dh = ild.display_h;
+                                    let aspect = ild.native_aspect();
+                                    let gcd = { let mut a = ow; let mut b = oh; while b != 0 { let t = b; b = a % b; a = t; } a.max(1) };
+                                    let (rw, rh) = (ow / gcd, oh / gcd);
+                                    ui.separator();
+                                    ui.label(egui::RichText::new(format!("{}x{}", ow, oh)).size(12.0).color(label_col)).on_hover_text("Native resolution");
+                                    ui.label(egui::RichText::new(format!("{}:{}", rw, rh)).size(12.0).color(label_col)).on_hover_text("Aspect ratio");
+                                    ui.separator();
+                                    let mut dw_edit = dw.round() as i32;
+                                    let mut dh_edit = dh.round() as i32;
+                                    ui.label(egui::RichText::new("W:").size(12.0).color(label_col));
+                                    if ui.add(egui::DragValue::new(&mut dw_edit).range(1..=16000).speed(1.0).suffix("px")).changed() {
+                                        if let Some(ild2) = self.image_layer_data.get_mut(&iid) {
+                                            ild2.display_w = dw_edit as f32;
+                                            if self.image_aspect_lock { ild2.display_h = (dw_edit as f32 / aspect).round().max(1.0); }
+                                            self.composite_dirty = true; self.dirty = true;
+                                        }
+                                    }
+                                    ui.label(egui::RichText::new("H:").size(12.0).color(label_col));
+                                    if ui.add(egui::DragValue::new(&mut dh_edit).range(1..=16000).speed(1.0).suffix("px")).changed() {
+                                        if let Some(ild2) = self.image_layer_data.get_mut(&iid) {
+                                            ild2.display_h = dh_edit as f32;
+                                            if self.image_aspect_lock { ild2.display_w = (dh_edit as f32 * aspect).round().max(1.0); }
+                                            self.composite_dirty = true; self.dirty = true;
+                                        }
+                                    }
+                                    let lock_label = if self.image_aspect_lock { "Lock" } else { "Free" };
+                                    if toolbar_toggle_btn(ui, egui::RichText::new(lock_label).size(12.0), self.image_aspect_lock, theme).on_hover_text("Lock aspect ratio").clicked() {
+                                        self.image_aspect_lock = !self.image_aspect_lock;
+                                    }
+                                    ui.separator();
+                                    let mut rot = self.image_layer_data.get(&iid).map(|d| d.rotation).unwrap_or(0.0);
+                                    ui.label(egui::RichText::new("Rot:").size(12.0).color(label_col));
+                                    if ui.add(egui::DragValue::new(&mut rot).range(-360.0..=360.0).speed(0.5).suffix("°")).changed() {
+                                        if let Some(ild2) = self.image_layer_data.get_mut(&iid) { ild2.rotation = rot; self.composite_dirty = true; self.dirty = true; }
+                                    }
+                                    ui.separator();
+                                    if toolbar_action_btn(ui, egui::RichText::new("Flip H").size(12.0), theme).clicked() { self.push_undo(); self.flip_image_layer_h(); }
+                                    if toolbar_action_btn(ui, egui::RichText::new("Flip V").size(12.0), theme).clicked() { self.push_undo(); self.flip_image_layer_v(); }
+                                    if toolbar_action_btn(ui, egui::RichText::new("Fit").size(12.0), theme).on_hover_text("Fit image layer to canvas").clicked() { self.push_undo(); self.fit_image_layer_to_canvas(); }
+                                    if toolbar_action_btn(ui, egui::RichText::new("1:1").size(12.0), theme).on_hover_text("Reset to native size").clicked() { self.push_undo(); self.reset_image_layer_size(); }
+                                    if toolbar_action_btn(ui, egui::RichText::new("Rasterize").size(12.0), theme).on_hover_text("Merge image layer into a raster layer").clicked() { self.rasterize_image_layer(); }
+                                }
+                            }
+                        }
+                        Tool::Eyedropper | Tool::Fill => {}
                         Tool::Crop => {
                             if self.crop_state.start.is_some() && self.crop_state.end.is_some() {
-                                if ui.button("Apply Crop").clicked() { self.push_undo(); self.apply_crop(); }
+                                let is_img_layer = self.image_layer_for_active().is_some();
+                                if ui.button("Apply Crop").clicked() {
+                                    if is_img_layer { self.apply_crop_to_image_layer(); }
+                                    else { self.push_undo(); self.apply_crop(); }
+                                }
                                 if ui.button("Cancel").clicked() { self.crop_state = CropState::default(); }
+                                if is_img_layer {
+                                    ui.separator();
+                                    ui.label(egui::RichText::new("Cropping image layer").size(11.0).color(label_col));
+                                }
                             }
                         }
                         Tool::Retouch => {
@@ -201,6 +287,16 @@ impl ImageEditor {
                                                     "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
                                                 );
                                             }
+                                            RetouchMode::Saturation => {
+                                                ui.spacing_mut().slider_width = 230.0;
+                                                ui.add_space(4.0);
+                                                ui.label(egui::RichText::new("Amount:").size(12.0).color(label_col));
+                                                ui.add_space(8.0);
+                                                gradient_slider_ui(ui, &mut self.retouch_strength, 0.0, 1.0,
+                                                    egui::Color32::from_rgb(100, 100, 100), egui::Color32::from_rgb(220, 50, 180),
+                                                    "Muted", "Vivid", |v| format!("{:.0}%", v * 100.0), true, 100.0, "%",
+                                                );
+                                            }
                                             RetouchMode::Pixelate => {
                                                 ui.label(egui::RichText::new("Block Size:").size(12.0).color(label_col));
                                                 ui.add(egui::DragValue::new(&mut self.retouch_pixelate_block).range(2..=80).speed(0.5).suffix("px"));
@@ -221,9 +317,7 @@ impl ImageEditor {
                                     });
                             });
                         }
-                        _ => {}
                     }
-
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
                         if self.tool != Tool::Retouch {
                             if ui.add(egui::Button::new("").fill(self.color).min_size(egui::vec2(28.0, 28.0))).clicked() { self.show_color_picker = !self.show_color_picker; }
@@ -312,7 +406,7 @@ impl ImageEditor {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
                                 else {
-                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_snapshot = Some(self.take_undo_snapshot());
                                     self.filter_preview_active = true;
                                     self.processing_is_preview = true;
                                     self.apply_brightness_contrast();
@@ -352,7 +446,7 @@ impl ImageEditor {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
                                 else {
-                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_snapshot = Some(self.take_undo_snapshot());
                                     self.filter_preview_active = true;
                                     self.processing_is_preview = true;
                                     self.apply_hue_saturation();
@@ -379,7 +473,7 @@ impl ImageEditor {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
                                 else {
-                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_snapshot = Some(self.take_undo_snapshot());
                                     self.filter_preview_active = true;
                                     self.processing_is_preview = true;
                                     self.apply_blur();
@@ -403,7 +497,7 @@ impl ImageEditor {
                             FilterAction::Preview => {
                                 if self.filter_preview_active { self.cancel_filter_preview(); }
                                 else {
-                                    self.filter_preview_image = self.image.clone();
+                                    self.filter_preview_snapshot = Some(self.take_undo_snapshot());
                                     self.filter_preview_active = true;
                                     self.processing_is_preview = true;
                                     self.apply_sharpen();
@@ -523,94 +617,103 @@ impl ImageEditor {
         let win_resp = egui::Window::new("Color Picker")
             .collapsible(false).resizable(false)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 60.0))
-            .fixed_size(egui::vec2(340.0, 0.0))
+            .default_size(egui::vec2(330.0, 580.0))
             .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.5, border)).corner_radius(8.0).inner_margin(16.0))
             .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("cp_scroll")
+                    .auto_shrink([false, false])
+                    .min_scrolled_height(540.0)
+                    .max_height(ctx.content_rect().height() - 120.0)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                    .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
 
                 let mut rgb: [f32; 3] = [self.color.r() as f32 / 255.0, self.color.g() as f32 / 255.0, self.color.b() as f32 / 255.0];
-                let (h_current, s, v) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                let hue_id: egui::Id = ui.make_persistent_id("picker_hue_state");
-                let mut h: f32  = ui.data(|d| d.get_temp(hue_id)).unwrap_or(h_current);
-                if s > 0.005 && v > 0.005 { h = h_current; ui.data_mut(|d| d.insert_temp(hue_id, h)); }
+                let (h_curr, s_curr, v_curr) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
+                let hue_id = egui::Id::new("ie_cp_hue");
+                let sv_id  = egui::Id::new("ie_cp_sv");
+                let mut h: f32 = ctx.data(|d| d.get_temp(hue_id)).unwrap_or(h_curr);
+                let (mut s, mut v): (f32, f32) = ctx.data(|d| d.get_temp(sv_id)).unwrap_or((s_curr, v_curr));
 
-                let mut color_changed: bool = false;
-                let picker_size: egui::Vec2 = egui::vec2(280.0, 280.0);
-                let (rect, response) = ui.allocate_exact_size(picker_size, egui::Sense::click_and_drag());
+                let picker_w: f32 = 280.0;
+                let avail_w = ui.available_width();
+                let x_offset = ((avail_w - picker_w) / 2.0).max(0.0);
+                let mut color_changed = false;
+                let mut sq_used = false;
+                let mut hue_used = false;
 
+                let (outer_sq, _) = ui.allocate_exact_size(egui::vec2(avail_w, picker_w), egui::Sense::hover());
+                let rect = egui::Rect::from_min_size(egui::pos2(outer_sq.min.x + x_offset, outer_sq.min.y), egui::vec2(picker_w, picker_w));
+                let response = ui.interact(rect, ui.id().with("cp_sq"), egui::Sense::click_and_drag());
                 if ui.is_rect_visible(rect) {
-                    let painter: egui::Painter = ui.painter_at(rect);
-                    let steps: i32 = 40;
-                    let cell_w: f32 = rect.width() / steps as f32;
-                    let cell_h: f32 = rect.height() / steps as f32;
-                    for y in 0..steps {
-                        for x in 0..steps {
-                            let s_cell: f32 = x as f32 / (steps - 1) as f32;
-                            let v_cell: f32 = 1.0 - (y as f32 / (steps - 1) as f32);
-                            let (r, g, b) = hsv_to_rgb_f32(h, s_cell, v_cell);
-                            let color: egui::Color32 = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+                    let painter = ui.painter_at(rect);
+                    let steps = 40i32;
+                    let (cw, ch) = (rect.width() / steps as f32, rect.height() / steps as f32);
+                    for cy in 0..steps {
+                        for cx in 0..steps {
+                            let (sc, vc) = (cx as f32 / (steps - 1) as f32, 1.0 - cy as f32 / (steps - 1) as f32);
+                            let (r, g, b) = hsv_to_rgb_f32(h, sc, vc);
                             painter.rect_filled(egui::Rect::from_min_size(
-                                egui::pos2(rect.min.x + x as f32 * cell_w, rect.min.y + y as f32 * cell_h),
-                                egui::vec2(cell_w.ceil(), cell_h.ceil()),
-                            ), 0.0, color);
+                                egui::pos2(rect.min.x + cx as f32 * cw, rect.min.y + cy as f32 * ch),
+                                egui::vec2(cw.ceil(), ch.ceil()),
+                            ), 0.0, egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
                         }
                     }
-                    let cursor_pos: egui::Pos2 = egui::pos2(rect.min.x + s * rect.width(), rect.min.y + (1.0 - v) * rect.height());
-                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
-                    painter.circle_stroke(cursor_pos, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
+                    let cur = egui::pos2(rect.min.x + s * rect.width(), rect.min.y + (1.0 - v) * rect.height());
+                    painter.circle_stroke(cur, 6.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+                    painter.circle_stroke(cur, 6.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
                 }
-
-                if response.clicked() || response.dragged() {
+                if response.dragged() || response.clicked() {
                     if let Some(pos) = response.interact_pointer_pos() {
-                        let x: f32 = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
-                        let y: f32 = ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
-                        let (r, g, b) = hsv_to_rgb_f32(h, x, 1.0 - y);
-                        rgb = [r, g, b]; color_changed = true;
+                        let (x, y) = (((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pos.y - rect.min.y) / rect.height()).clamp(0.0, 1.0));
+                        s = x; v = 1.0 - y;
+                        ctx.data_mut(|d| d.insert_temp(sv_id, (s, v)));
+                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        rgb = [r, g, b]; color_changed = true; sq_used = true;
                     }
                 }
 
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Hue:").size(12.0).color(weak_col));
-                    let hue_size: egui::Vec2 = egui::vec2(ui.available_width(), 24.0);
-                    let (hue_rect, hue_response) = ui.allocate_exact_size(hue_size, egui::Sense::click_and_drag());
 
-                    if ui.is_rect_visible(hue_rect) {
-                        let painter: egui::Painter = ui.painter_at(hue_rect);
-                        let steps: i32 = 60;
-                        let step_w: f32 = hue_rect.width() / steps as f32;
-
-                        for i in 0..steps {
-                            let h_step: f32 = (i as f32 / steps as f32) * 360.0;
-                            let (r, g, b) = hsv_to_rgb_f32(h_step, 1.0, 1.0);
-                            let color: egui::Color32 = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
-                            painter.rect_filled(egui::Rect::from_min_size(
-                                egui::pos2(hue_rect.min.x + i as f32 * step_w, hue_rect.min.y),
-                                egui::vec2(step_w.ceil(), hue_rect.height()),
-                            ), 0.0, color);
-                        }
-
-                        painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0,
-                            if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
-                        ), egui::StrokeKind::Outside);
-
-                        let hue_cursor_x: f32 = hue_rect.min.x + (h / 360.0) * hue_rect.width();
-                        let hcr: egui::Rect = egui::Rect::from_center_size(egui::pos2(hue_cursor_x, hue_rect.center().y), egui::vec2(4.0, hue_rect.height() + 2.0));
-                        painter.rect_filled(hcr, 2.0, egui::Color32::WHITE);
-                        painter.rect_stroke(hcr, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
+                let (outer_hue, _) = ui.allocate_exact_size(egui::vec2(avail_w, 24.0), egui::Sense::hover());
+                let hue_rect = egui::Rect::from_min_size(egui::pos2(outer_hue.min.x + x_offset, outer_hue.min.y), egui::vec2(picker_w, 24.0));
+                let hue_resp = ui.interact(hue_rect, ui.id().with("cp_hue"), egui::Sense::click_and_drag());
+                if ui.is_rect_visible(hue_rect) {
+                    let painter = ui.painter_at(hue_rect);
+                    let steps = 60i32;
+                    let sw = hue_rect.width() / steps as f32;
+                    for i in 0..steps {
+                        let (r, g, b) = hsv_to_rgb_f32((i as f32 / steps as f32) * 360.0, 1.0, 1.0);
+                        painter.rect_filled(egui::Rect::from_min_size(
+                            egui::pos2(hue_rect.min.x + i as f32 * sw, hue_rect.min.y),
+                            egui::vec2(sw.ceil(), hue_rect.height()),
+                        ), 0.0, egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
                     }
-
-                    if hue_response.clicked() || hue_response.dragged() {
-                        if let Some(pos) = hue_response.interact_pointer_pos() {
-                            let x: f32 = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0);
-                            h = x * 360.0;
-                            ui.data_mut(|d: &mut egui::util::IdTypeMap| d.insert_temp(hue_id, h));
-                            let (_, s_curr, v_curr) = rgb_to_hsv_f32(rgb[0], rgb[1], rgb[2]);
-                            let (r, g, b) = hsv_to_rgb_f32(h, s_curr, v_curr);
-                            rgb = [r, g, b]; color_changed = true;
-                        }
+                    painter.rect_stroke(hue_rect, 2.0, egui::Stroke::new(1.0,
+                        if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
+                    ), egui::StrokeKind::Outside);
+                    let hx = hue_rect.min.x + (h / 360.0) * hue_rect.width();
+                    let hcr = egui::Rect::from_center_size(egui::pos2(hx, hue_rect.center().y), egui::vec2(4.0, hue_rect.height() + 2.0));
+                    painter.rect_filled(hcr, 2.0, egui::Color32::WHITE);
+                    painter.rect_stroke(hcr, 2.0, egui::Stroke::new(1.0, egui::Color32::BLACK), egui::StrokeKind::Outside);
+                }
+                if hue_resp.dragged() || hue_resp.clicked() {
+                    if let Some(pos) = hue_resp.interact_pointer_pos() {
+                        h = ((pos.x - hue_rect.min.x) / hue_rect.width()).clamp(0.0, 1.0) * 360.0;
+                        ctx.data_mut(|d| d.insert_temp(hue_id, h));
+                        let (r, g, b) = hsv_to_rgb_f32(h, s, v);
+                        rgb = [r, g, b]; color_changed = true; hue_used = true;
                     }
-                });
+                }
+
+                if !sq_used && !hue_used {
+                    let (er, eg, eb) = hsv_to_rgb_f32(h, s, v);
+                    let expected = egui::Color32::from_rgb((er * 255.0) as u8, (eg * 255.0) as u8, (eb * 255.0) as u8);
+                    if expected != self.color {
+                        ctx.data_mut(|d| { d.insert_temp(hue_id, h_curr); d.insert_temp(sv_id, (s_curr, v_curr)); });
+                    }
+                }
 
                 self.color = egui::Color32::from_rgb((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8);
                 if color_changed { self.hex_input = RgbaColor::from_egui(self.color).to_hex(); }
@@ -626,7 +729,7 @@ impl ImageEditor {
 
                 ui.horizontal(|ui: &mut egui::Ui| {
                     ui.label(egui::RichText::new("Hex:").size(12.0).color(weak_col));
-                    let response: egui::Response = ui.text_edit_singleline(&mut self.hex_input);
+                    let response: egui::Response = ui.add(egui::TextEdit::singleline(&mut self.hex_input).desired_width(120.0));
                     if response.changed() {
                         if let Some(mut c) = RgbaColor::from_hex(&self.hex_input) { c.a = 255; self.color = c.to_egui(); }
                     }
@@ -637,17 +740,44 @@ impl ImageEditor {
                 ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
                 ui.horizontal(|ui: &mut egui::Ui| {
                     ui.label(egui::RichText::new("Recent").size(13.0).color(text_col));
-                    if ui.small_button("Clear").clicked() { self.color_history = super::ie_main::ColorHistory::new(); }
+                    if ui.small_button("Clear").clicked() { self.color_history = ColorHistory::default(); }
                 });
-                
-                ui.horizontal_wrapped(|ui: &mut egui::Ui| {
-                    let history: std::collections::VecDeque<RgbaColor> = self.color_history.get_colors().clone();
-                    for color in history.iter() {
-                        if ui.add(egui::Button::new("").fill(color.to_egui()).min_size(egui::vec2(28.0, 28.0))).clicked() {
-                            let mut c: RgbaColor = *color; c.a = 255; self.color = c.to_egui(); self.hex_input = c.to_hex();
+
+                {
+                    let history = self.color_history.get_colors().clone();
+                    let n = history.len();
+                    let (sw, sp) = (28.0f32, 4.0f32);
+                    let avail = ui.available_width();
+                    let per_row = ((avail + sp) / (sw + sp)).floor().max(1.0) as usize;
+                    let rows = if n == 0 { 1 } else { (n + per_row - 1) / per_row };
+                    let total_h = if n == 0 { sw } else { rows as f32 * (sw + sp) - sp };
+                    let origin = ui.cursor().min;
+                    let (rec_rect, _) = ui.allocate_exact_size(egui::vec2(avail, total_h), egui::Sense::hover());
+                    let painter = ui.painter_at(rec_rect);
+                    let ptr = ctx.pointer_latest_pos();
+                    let released = ctx.input(|i| i.pointer.any_released());
+                    for (idx, color) in history.iter().enumerate() {
+                        let (row, col) = (idx / per_row, idx % per_row);
+                        let items_this_row = if (row + 1) * per_row <= n { per_row } else { n - row * per_row };
+                        let row_w = items_this_row as f32 * (sw + sp) - sp;
+                        let lpad = ((avail - row_w) / 2.0).max(0.0);
+                        let sr = egui::Rect::from_min_size(
+                            egui::pos2(origin.x + lpad + col as f32 * (sw + sp), origin.y + row as f32 * (sw + sp)),
+                            egui::vec2(sw, sw),
+                        );
+                        painter.rect_filled(sr, 4.0, color.to_egui());
+                        painter.rect_stroke(sr, 4.0, egui::Stroke::new(1.0,
+                            if matches!(theme, ThemeMode::Dark) { egui::Color32::from_rgba_unmultiplied(255,255,255,40) }
+                            else { egui::Color32::from_rgba_unmultiplied(0,0,0,40) }
+                        ), egui::StrokeKind::Outside);
+                        if let Some(pp) = ptr {
+                            if sr.contains(pp) {
+                                ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                                if released { let mut c = *color; c.a = 255; self.color = c.to_egui(); self.hex_input = c.to_hex(); }
+                            }
                         }
                     }
-                });
+                }
 
                 ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
 
@@ -659,7 +789,7 @@ impl ImageEditor {
                     ui.label(egui::RichText::new(format!("{}/30", fav_count)).size(11.0).color(weak_col));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let add_label = if is_fav { "Remove" } else { "Add Current" };
-                        let add_enabled = is_fav || fav_count < super::ie_main::MAX_COLOR_FAVORITES;
+                        let add_enabled = is_fav || fav_count < MAX_COLOR_FAVORITES;
                         if ui.add_enabled(add_enabled, egui::Button::new(egui::RichText::new(add_label).size(11.0))).clicked() {
                             self.color_favorites.toggle(current_rgba);
                         }
@@ -690,7 +820,10 @@ impl ImageEditor {
                 for idx in 0..n {
                     let row = idx / swatches_per_row.max(1);
                     let col = idx % swatches_per_row.max(1);
-                    let x = grid_start.x + col as f32 * (swatch_size + swatch_spacing);
+                    let items_in_row = if (row + 1) * swatches_per_row <= n { swatches_per_row } else { n - row * swatches_per_row };
+                    let row_w = items_in_row as f32 * (swatch_size + swatch_spacing) - swatch_spacing;
+                    let row_pad = ((available_w - row_w) / 2.0).max(0.0);
+                    let x = grid_start.x + row_pad + col as f32 * (swatch_size + swatch_spacing);
                     let y = grid_start.y + row as f32 * (swatch_size + swatch_spacing);
                     swatch_rects.push(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(swatch_size, swatch_size)));
                 }
@@ -736,7 +869,7 @@ impl ImageEditor {
                     let egui_color = color.to_egui();
                     let is_drag_src = self.color_fav_drag_src == Some(idx);
                     let is_drop_target = hovered_drop_idx == Some(idx) && self.color_fav_drag_src.map_or(false, |s| s != idx);
-                    let is_active_key_slot = idx < super::ie_main::COLOR_FAV_HOTKEYS;
+                    let is_active_key_slot = idx < COLOR_FAV_HOTKEYS;
                     let alpha = if is_drag_src { 80u8 } else { 255u8 };
                     let draw_color = egui::Color32::from_rgba_premultiplied(
                         ((egui_color.r() as u32 * alpha as u32) / 255) as u8,
@@ -808,6 +941,7 @@ impl ImageEditor {
                     if ui.button("Apply").clicked()  { self.add_color_to_history(); self.show_color_picker = false; }
                     if ui.button("Cancel").clicked() { self.show_color_picker = false; }
                 });
+                    });
             });
         self.color_picker_rect = win_resp.map(|r| r.response.rect);
     }
@@ -817,29 +951,16 @@ impl ImageEditor {
         self.canvas_rect = Some(canvas_rect);
         if self.fit_on_next_frame { self.fit_image(); self.fit_on_next_frame = false; }
         self.ensure_texture(ctx);
-
         let (rect, response) = ui.allocate_exact_size(canvas_rect.size(), egui::Sense::click_and_drag());
         let painter: egui::Painter = ui.painter_at(rect);
 
-        let checker_size: f32 = 16.0;
-        let (c1, c2) = if ui.visuals().dark_mode {
-            (egui::Color32::from_rgb(40, 40, 40), egui::Color32::from_rgb(55, 55, 55))
-        } else {
-            (egui::Color32::from_rgb(200, 200, 200), egui::Color32::from_rgb(220, 220, 220))
-        };
-
-        let mut cy: f32 = rect.min.y;
-        while cy < rect.max.y {
-            let mut cx: f32 = rect.min.x;
-            let row: i32 = ((cy - rect.min.y) / checker_size) as i32;
-            while cx < rect.max.x {
-                let col: i32 = ((cx - rect.min.x) / checker_size) as i32;
-                let color: egui::Color32 = if (row + col) % 2 == 0 { c1 } else { c2 };
-                painter.rect_filled(egui::Rect::from_min_size(egui::pos2(cx, cy), egui::vec2(checker_size, checker_size)), 0.0, color);
-                cx += checker_size;
-            }
-            cy += checker_size;
-        }
+        let checker_tid = self.ensure_checker_texture(ctx);
+        let tile = 32.0_f32;
+        let uv = egui::Rect::from_min_max(
+            egui::pos2(0.0, 0.0),
+            egui::pos2(rect.width() / tile, rect.height() / tile),
+        );
+        painter.image(checker_tid, rect, uv, egui::Color32::WHITE);
 
         if let (Some(tex), Some(img)) = (&self.texture, &self.image) {
             let (img_w, img_h) = (img.width() as f32, img.height() as f32);
@@ -850,6 +971,72 @@ impl ImageEditor {
             );
             painter.image(*tex, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
             painter.rect_stroke(img_rect, 0.0, egui::Stroke::new(1.0, ColorPalette::ZINC_500), egui::StrokeKind::Outside);
+        }
+
+        self.ensure_image_layer_textures(ctx);
+        {
+            let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+            let zoom = self.zoom; let pan = self.pan;
+            let selected_iid = self.selected_image_layer;
+            let iids_and_visible: Vec<(u64, u64, bool)> = self.layers.iter()
+                .filter(|l| l.kind == LayerKind::Image && l.visible)
+                .filter(|l| l.linked_image_id.is_some() && l.linked_image_id == selected_iid)
+                .filter_map(|l| l.linked_image_id.map(|iid| (l.id, iid, l.id == self.active_layer_id)))
+                .collect();
+            for (_lid, iid, is_active) in &iids_and_visible {
+                let iid = *iid;
+                if let (Some(tid), Some(ild)) = (self.image_layer_textures.get(&iid), self.image_layer_data.get(&iid)) {
+                    let screen_rect = ild.screen_rect(img_w, img_h, canvas_rect, zoom, pan);
+                    let angle_rad = ild.rotation.to_radians();
+                    let tint = egui::Color32::WHITE;
+                    if angle_rad == 0.0 && !ild.flip_h && !ild.flip_v {
+                        painter.image(*tid, screen_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
+                    } else {
+                        let (u0, v0, u1, v1) = (if ild.flip_h { 1.0 } else { 0.0 }, if ild.flip_v { 1.0 } else { 0.0 }, if ild.flip_h { 0.0 } else { 1.0 }, if ild.flip_v { 0.0 } else { 1.0 });
+                        let center = screen_rect.center();
+                        let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+                        let rot = |p: egui::Pos2| -> egui::Pos2 { let d = p - center; center + egui::vec2(d.x*cos_a - d.y*sin_a, d.x*sin_a + d.y*cos_a) };
+                        let corners = [rot(screen_rect.left_top()), rot(screen_rect.right_top()), rot(screen_rect.right_bottom()), rot(screen_rect.left_bottom())];
+                        let uvs = [egui::pos2(u0,v0), egui::pos2(u1,v0), egui::pos2(u1,v1), egui::pos2(u0,v1)];
+                        painter.add(egui::Shape::mesh({
+                            let mut mesh = egui::Mesh::with_texture(*tid);
+                            mesh.vertices = corners.iter().zip(uvs.iter()).map(|(&pos, &uv)| egui::epaint::Vertex { pos, uv, color: tint }).collect();
+                            mesh.indices = vec![0,1,2, 0,2,3];
+                            mesh
+                        }));
+                    }
+                    if *is_active && selected_iid == Some(iid) {
+                        if let Some(handles) = self.image_layer_transform_handles() {
+                            handles.draw(&painter, ColorPalette::GREEN_400);
+                        }
+                        let gcd = { let mut a = ild.orig_w(); let mut b = ild.orig_h(); while b != 0 { let t = b; b = a % b; a = t; } a.max(1) };
+                        let (rw, rh) = (ild.orig_w()/gcd, ild.orig_h()/gcd);
+                        let aspect_label = format!("{}x{}  {}:{}", ild.orig_w(), ild.orig_h(), rw, rh);
+                        let screen_r = ild.screen_rect(img_w, img_h, canvas_rect, zoom, pan);
+                        let label_pos = egui::pos2(screen_r.min.x, screen_r.min.y - 18.0).max(canvas_rect.min + egui::vec2(2.0, 2.0));
+                        painter.text(label_pos + egui::vec2(1.0, 1.0), egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::from_black_alpha(180));
+                        painter.text(label_pos, egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::WHITE);
+                    }
+                }
+            }
+        }
+
+        let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
+        for dropped in dropped_files {
+            if let Some(path) = &dropped.path {
+                if let Ok(img) = image::open(path) {
+                    self.insert_image_layer(img, true);
+                }
+            } else if let Some(bytes) = &dropped.bytes {
+                if let Ok(img) = image::load_from_memory(bytes) {
+                    self.insert_image_layer(img, true);
+                }
+            }
+        }
+        let dragging_over = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if dragging_over && canvas_rect.contains(ctx.input(|i| i.pointer.hover_pos().unwrap_or(egui::Pos2::ZERO))) {
+            painter.rect_stroke(canvas_rect, 4.0, egui::Stroke::new(3.0, ColorPalette::GREEN_400), egui::StrokeKind::Inside);
+            painter.text(canvas_rect.center(), egui::Align2::CENTER_CENTER, "Drop image to place", egui::FontId::proportional(18.0), egui::Color32::WHITE);
         }
 
         if self.tool == Tool::Crop {
@@ -881,41 +1068,71 @@ impl ImageEditor {
             }
         }
 
-        for layer in &self.text_layers {
-            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
-            let font_size_screen: f32 = layer.font_size * self.zoom;
+        let editing_text = self.editing_text;
+        let selected_text = self.selected_text;
+        let text_cursor = self.text_cursor;
+        let text_sel_anchor = self.text_sel_anchor;
+        let zoom = self.zoom;
+        for i in 0..self.text_layers.len() {
+            let lid = self.text_layers[i].id;
+            let is_editing = editing_text && selected_text == Some(lid);
+            let is_selected = selected_text == Some(lid);
+            if !is_editing && !is_selected { continue; }
+
+            let (img_x, img_y) = (self.text_layers[i].img_x, self.text_layers[i].img_y);
+            let anchor: egui::Pos2 = self.image_to_screen(img_x, img_y);
+            let layer = &self.text_layers[i];
+            let font_size_screen: f32 = layer.font_size * zoom;
             let angle_rad: f32 = layer.rotation.to_radians();
             let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+            let sel_rect: egui::Rect = layer.screen_rect(anchor, zoom);
             let font_family: egui::FontFamily = egui::FontFamily::Name(layer.font_family_name().into());
             let font_id: egui::FontId = egui::FontId::new(font_size_screen, font_family);
-            let box_w_screen: f32 = layer.box_width.map(|w| w * self.zoom).unwrap_or(f32::INFINITY);
+            let box_w_screen: f32 = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
+            let layer_color = layer.color;
+            let layer_underline = layer.underline;
+            let content_snap = layer.content.clone();
+            let layer_font_size = layer.font_size;
 
             let make_job = |text: &str| {
                 let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
                 job.wrap.max_width = box_w_screen;
                 job.append(text, 0.0, egui::TextFormat {
-                    font_id: font_id.clone(), color: layer.color, italics: false,
-                    underline: if layer.underline { egui::Stroke::new((font_size_screen * 0.06).max(1.0), layer.color) } else { egui::Stroke::NONE },
+                    font_id: font_id.clone(), color: layer_color, italics: false,
+                    underline: if layer_underline { egui::Stroke::new((font_size_screen * 0.06).max(1.0), layer_color) } else { egui::Stroke::NONE },
                     ..Default::default()
                 });
                 job
             };
 
-            let sel_rect: egui::Rect = layer.screen_rect(anchor, self.zoom);
             let center: egui::Pos2 = sel_rect.center();
             let d: egui::Vec2 = anchor - center;
             let text_pos: egui::Pos2 = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
-            let galley: std::sync::Arc<egui::Galley> = ui.painter().layout_job(make_job(&layer.content));
-            let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer.color);
+            let galley: std::sync::Arc<egui::Galley> = ui.painter().layout_job(make_job(&content_snap));
+            self.text_layers[i].rendered_height = (galley.rect.height() / zoom).max(layer_font_size);
+            let content_chars: Vec<char> = content_snap.chars().collect();
+            let mut char_ptr = 0usize;
+            let mut new_cached: Vec<String> = Vec::with_capacity(galley.rows.len());
+            for row in &galley.rows {
+                let n = row.glyphs.len();
+                let end = (char_ptr + n).min(content_chars.len());
+                new_cached.push(content_chars[char_ptr..end].iter().collect());
+                char_ptr = end;
+                if char_ptr < content_chars.len() && content_chars[char_ptr] == '\n' { char_ptr += 1; }
+            }
+            self.text_layers[i].cached_lines = new_cached;
+            let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
+            text_shape.angle = angle_rad;
+            let mut text_shape_pan: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
+            text_shape_pan.angle = angle_rad;
             text_shape.angle = angle_rad;
 
-            if self.editing_text && self.selected_text == Some(layer.id) {
-                let cursor_byte: usize = self.text_cursor;
-                let sel_anchor: Option<usize> = self.text_sel_anchor;
-                let content: &String = &layer.content;
+            if is_editing {
+                let cursor_byte: usize = text_cursor;
+                let sel_anchor: Option<usize> = text_sel_anchor;
 
                 let glyph_pos_for = |byte_off: usize| -> egui::Pos2 {
-                    let char_idx: usize = content[..byte_off.min(content.len())].chars().count();
+                    let char_idx: usize = content_snap[..byte_off.min(content_snap.len())].chars().count();
                     let mut ci: usize = 0usize;
                     for row in &galley.rows {
                         for g in &row.glyphs {
@@ -933,8 +1150,8 @@ impl ImageEditor {
 
                 if let Some(anchor_sel) = sel_anchor {
                     let (lo, hi) = (anchor_sel.min(cursor_byte), anchor_sel.max(cursor_byte));
-                    let char_lo: usize = content[..lo.min(content.len())].chars().count();
-                    let char_hi: usize = content[..hi.min(content.len())].chars().count();
+                    let char_lo: usize = content_snap[..lo.min(content_snap.len())].chars().count();
+                    let char_hi: usize = content_snap[..hi.min(content_snap.len())].chars().count();
                     let mut ci: usize = 0usize;
                     for row in &galley.rows {
                         let row_start: usize = ci; let row_end: usize = ci + row.glyphs.len();
@@ -942,7 +1159,7 @@ impl ImageEditor {
                         let sel_end_in_row: usize = char_hi.min(row_end);
                         if sel_start_in_row < sel_end_in_row || (char_lo <= row_start && char_hi >= row_end) {
                             let x0: f32 = if sel_start_in_row <= row_start { row.rect().min.x } else { row.glyphs.get(sel_start_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().min.x) };
-                            let x1: f32 = if sel_end_in_row >= row_end { row.rect().max.x } else { row.glyphs.get(sel_end_in_row   - row_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x) };
+                            let x1: f32 = if sel_end_in_row >= row_end { row.rect().max.x } else { row.glyphs.get(sel_end_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x) };
                             let corners: [egui::Pos2; 4] = [
                                 galley_to_canvas(egui::pos2(x0, row.rect().min.y)),
                                 galley_to_canvas(egui::pos2(x1, row.rect().min.y)),
@@ -959,29 +1176,13 @@ impl ImageEditor {
                 if blink {
                     let lp: egui::Pos2 = glyph_pos_for(cursor_byte);
                     let row_h: f32 = galley.rows.iter().find(|r| r.rect().min.y <= lp.y && lp.y <= r.rect().max.y).map(|r| r.rect().height()).unwrap_or(font_size_screen);
-                    painter.line_segment([galley_to_canvas(lp), galley_to_canvas(egui::pos2(lp.x, lp.y + row_h))], egui::Stroke::new(2.0, layer.color));
+                    painter.line_segment([galley_to_canvas(lp), galley_to_canvas(egui::pos2(lp.x, lp.y + row_h))], egui::Stroke::new(2.0, layer_color));
                 }
-                ctx.request_repaint();
+                ctx.request_repaint_after(std::time::Duration::from_millis(500));
+                painter.add(egui::Shape::Text(text_shape));
             }
-
-            painter.add(egui::Shape::Text(text_shape));
-            if self.selected_text == Some(layer.id) {
-                TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400);
-            }
-        }
-
-        let zoom: f32 = self.zoom;
-        let height_updates: Vec<(u64, f32)> = self.text_layers.iter().map(|layer| {
-            let font_family: egui::FontFamily = egui::FontFamily::Name(layer.font_family_name().into());
-            let font_id: egui::FontId = egui::FontId::new(layer.font_size * zoom, font_family);
-            let box_w_screen: f32 = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
-            let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
-            job.wrap.max_width = box_w_screen;
-            job.append(&layer.content, 0.0, egui::TextFormat { font_id, color: layer.color, ..Default::default() });
-            (layer.id, ui.painter().layout_job(job).rect.height() / zoom)
-        }).collect();
-        for (id, h) in height_updates {
-            if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) { layer.rendered_height = h.max(layer.font_size); }
+            if is_selected && !is_editing { painter.add(egui::Shape::Text(text_shape_pan)); }
+            if is_selected { TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400); }
         }
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
@@ -993,7 +1194,23 @@ impl ImageEditor {
                 match self.tool {
                     Tool::Brush | Tool::Eraser => ctx.set_cursor_icon(egui::CursorIcon::None),
                     Tool::Fill | Tool::Eyedropper | Tool::Crop => ctx.set_cursor_icon(egui::CursorIcon::Crosshair),
-                    Tool::Pan => ctx.set_cursor_icon(if response.dragged_by(egui::PointerButton::Primary) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::AllScroll }),
+                    Tool::Pan => {
+                        let dragging = response.dragged_by(egui::PointerButton::Primary);
+                        if let Some(h) = self.image_layer_transform_handles().and_then(|hs| hs.hit_test(mp)) {
+                            ctx.set_cursor_icon(TransformHandleSet::cursor_for(h));
+                        } else if let Some(h) = self.text_transform_handles().and_then(|hs| hs.hit_test(mp)) {
+                            ctx.set_cursor_icon(TransformHandleSet::cursor_for(h));
+                        } else {
+                            let over_image = self.layers.iter().any(|l| l.kind == LayerKind::Image && l.visible && l.linked_image_id.map_or(false, |iid| {
+                                self.image_layer_data.get(&iid).map_or(false, |ild| {
+                                    let (img_w, img_h) = self.image.as_ref().map(|i|(i.width() as f32,i.height() as f32)).unwrap_or((1.0,1.0));
+                                    ild.hit_test(mp, img_w, img_h, canvas_rect, self.zoom, self.pan)
+                                })
+                            }));
+                            let over_text = self.hit_text_layer(mp).is_some();
+                            ctx.set_cursor_icon(if dragging { egui::CursorIcon::Grabbing } else if over_image || over_text { egui::CursorIcon::PointingHand } else { egui::CursorIcon::AllScroll });
+                        }
+                    }
                     Tool::Text => ctx.set_cursor_icon(egui::CursorIcon::Text),
                     Tool::Retouch => ctx.set_cursor_icon(egui::CursorIcon::None),
                 }
@@ -1034,13 +1251,156 @@ impl ImageEditor {
             }
         }
 
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Retouch {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            if self.image_layer_for_active().is_some() {
+                let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                let canvas = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
+                let ox = canvas.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+                let oy = canvas.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+                let cx = (pos.x - ox) / self.zoom; let cy = (pos.y - oy) / self.zoom;
+                self.init_smudge_sample_image_layer(cx, cy);
+            } else if let Some((ix, iy)) = self.screen_to_image(pos) {
+                self.init_smudge_sample(ix, iy);
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            if let Some(iid) = self.selected_image_layer {
+                let allow_move = self.tool == Tool::Pan;
+                if let Some(handles) = self.image_layer_transform_handles() {
+                    if let Some(h) = handles.hit_test(pos) {
+                        let use_handle = allow_move || h != THandle::Move;
+                        if use_handle {
+                            if let Some(ild) = self.image_layer_data.get(&iid) {
+                                let rot_start = (pos - handles.rect.center()).angle();
+                                self.image_drag = Some(ImageDrag {
+                                    handle: h, start: pos,
+                                    orig_x: ild.canvas_x, orig_y: ild.canvas_y,
+                                    orig_w: ild.display_w, orig_h: ild.display_h,
+                                    orig_rotation: ild.rotation, orig_rot_start_angle: rot_start,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
+            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
+                let p0 = self.image_to_screen(s.0, s.1);
+                let p1 = self.image_to_screen(e.0, e.1);
+                let cr = egui::Rect::from_two_pos(p0, p1);
+                if cr.width() > HANDLE_HIT && cr.height() > HANDLE_HIT { crop_hit_handle(pos, cr) } else { None }
+            } else { None };
+            if let Some(h) = handle_hit {
+                let (s, e) = (self.crop_state.start.unwrap(), self.crop_state.end.unwrap());
+                self.crop_drag = Some(h);
+                self.crop_drag_orig = Some((s.0, s.1, e.0, e.1));
+            } else {
+                self.crop_state = CropState::default();
+                self.crop_drag = None; self.crop_drag_orig = None;
+                if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    self.crop_state.start = Some((ix as f32, iy as f32));
+                }
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) && (self.tool == Tool::Text || self.tool == Tool::Pan) {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            self.text_drag = None;
+            if self.tool == Tool::Pan && self.selected_text.is_none() {
+                if let Some(hit) = self.hit_text_layer(pos) {
+                    if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
+                    self.selected_text = Some(hit);
+                    self.selected_image_layer = None;
+                    self.image_drag = None;
+                    if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
+                        self.active_layer_id = linked_layer.id;
+                    }
+                }
+            }
+
+            if let Some(id) = self.selected_text {
+                if let Some(handles) = self.text_transform_handles() {
+                    if let Some(h) = handles.hit_test(pos) {
+                        if let Some(layer) = self.text_layers.iter().find(|l: &&TextLayer| l.id == id) {
+                            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
+                            let rot_start: f32 = (pos - layer.screen_rect(anchor, self.zoom).center()).angle();
+                            self.text_drag = Some(TextDrag {
+                                handle: h, start: pos,
+                                orig_img_x: layer.img_x, orig_img_y: layer.img_y,
+                                orig_font_size: layer.font_size, orig_box_width: layer.box_width,
+                                orig_box_height: layer.box_height, orig_rotation: layer.rotation,
+                                orig_rot_start_angle: rot_start,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         if response.dragged_by(egui::PointerButton::Primary) {
             let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+
+            if let Some(drag_data) = self.image_drag.as_ref().map(|d| (d.handle, d.start, d.orig_x, d.orig_y, d.orig_w, d.orig_h, d.orig_rotation, d.orig_rot_start_angle)) {
+                let (handle, drag_start, orig_x, orig_y, orig_w, orig_h, orig_rot, orig_rot_start) = drag_data;
+                let zoom = self.zoom;
+                if let Some(iid) = self.selected_image_layer {
+                    if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                        let aspect = ild.native_aspect();
+                        let aspect_lock = self.image_aspect_lock;
+                        let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                        let canvas = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
+                        let ox = canvas.center().x - img_w * zoom / 2.0 + self.pan.x;
+                        let oy = canvas.center().y - img_h * zoom / 2.0 + self.pan.y;
+                        let anchor_screen = egui::pos2(ox + orig_x * zoom, oy + orig_y * zoom);
+                        let orig_w_screen = orig_w * zoom;
+                        let orig_h_screen = orig_h * zoom;
+                        let rot_center = anchor_screen + egui::vec2(orig_w_screen / 2.0, orig_h_screen / 2.0);
+                        let min_sz = 8.0_f32;
+                        match handle {
+                            THandle::Move => { let delta = pos - drag_start; ild.canvas_x = orig_x + delta.x / zoom; ild.canvas_y = orig_y + delta.y / zoom; }
+                            THandle::E => { ild.display_w = ((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0); if aspect_lock { ild.display_h = (ild.display_w / aspect).max(1.0); } }
+                            THandle::W => { let right = anchor_screen.x + orig_w_screen; let nw = (right - pos.x).max(min_sz); ild.display_w = (nw / zoom).max(1.0); ild.canvas_x = (pos.x - ox) / zoom; if aspect_lock { ild.display_h = (ild.display_w / aspect).max(1.0); } }
+                            THandle::S => { ild.display_h = ((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0); if aspect_lock { ild.display_w = (ild.display_h * aspect).max(1.0); } }
+                            THandle::N => { let bottom = anchor_screen.y + orig_h_screen; let nh = (bottom - pos.y).max(min_sz); ild.display_h = (nh / zoom).max(1.0); ild.canvas_y = (pos.y - oy) / zoom; if aspect_lock { ild.display_w = (ild.display_h * aspect).max(1.0); } }
+                            THandle::SE => { ild.display_w = ((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0); ild.display_h = if aspect_lock { (ild.display_w / aspect).max(1.0) } else { ((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0) }; }
+                            THandle::NE => { let bottom = anchor_screen.y + orig_h_screen; let nh = (bottom - pos.y).max(min_sz); ild.display_w = ((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0); ild.display_h = if aspect_lock { (ild.display_w / aspect).max(1.0) } else { (nh / zoom).max(1.0) }; ild.canvas_y = if aspect_lock { orig_y + orig_h - ild.display_h } else { (pos.y - oy) / zoom }; }
+                            THandle::NW => { let right = anchor_screen.x + orig_w_screen; let bottom = anchor_screen.y + orig_h_screen; let nw = (right - pos.x).max(min_sz); let nh = (bottom - pos.y).max(min_sz); ild.display_w = (nw / zoom).max(1.0); ild.display_h = if aspect_lock { (ild.display_w / aspect).max(1.0) } else { (nh / zoom).max(1.0) }; ild.canvas_x = orig_x + orig_w - ild.display_w; ild.canvas_y = if aspect_lock { orig_y + orig_h - ild.display_h } else { ((bottom - nh) - (canvas_rect.center().y - img_h * zoom / 2.0 + self.pan.y)) / zoom }; }
+                            THandle::SW => { let right = anchor_screen.x + orig_w_screen; let nw = (right - pos.x).max(min_sz); ild.display_w = (nw / zoom).max(1.0); ild.canvas_x = orig_x + orig_w - ild.display_w; ild.display_h = if aspect_lock { (ild.display_w / aspect).max(1.0) } else { ((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0) }; }
+                            THandle::Rotate => { let cur_angle = (pos - rot_center).angle(); ild.rotation = orig_rot + (cur_angle - orig_rot_start).to_degrees(); }
+                        }
+                        self.dirty = true;
+                    }
+                }
+            } else {
             match self.tool {
-                Tool::Pan => { self.pan += response.drag_delta(); }
                 Tool::Brush | Tool::Eraser => {
-                    if !self.is_dragging { self.push_undo(); self.is_dragging = true; self.stroke_points.clear(); }
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    if !self.is_dragging {
+                        self.push_undo(); self.is_dragging = true; self.stroke_points.clear();
+                        let aid = self.active_layer_id;
+                        let needs_backdrop = self.tool == Tool::Brush && self.brush.wetness > 0.0
+                            && self.layers.iter().find(|l| l.id == aid).map_or(false, |l| l.kind == LayerKind::Raster);
+                        self.stroke_backdrop = if needs_backdrop {
+                            self.backdrop_cache.lock().unwrap().clone()
+                        } else { None };
+                    }
+                    if self.image_layer_for_active().is_some() {
+                        let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                        let ox = canvas_rect.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+                        let oy = canvas_rect.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+                        let cx = (pos.x - ox) / self.zoom; let cy = (pos.y - oy) / self.zoom;
+                        self.stroke_points.push((cx, cy));
+                        if self.stroke_points.len() >= 2 {
+                            self.apply_brush_stroke();
+                            let last = *self.stroke_points.last().unwrap();
+                            self.stroke_points.clear(); self.stroke_points.push(last);
+                        }
+                    } else if let Some((ix, iy)) = self.screen_to_image(pos) {
                         self.stroke_points.push((ix as f32, iy as f32));
                         if self.stroke_points.len() >= 2 {
                             self.apply_brush_stroke();
@@ -1050,8 +1410,22 @@ impl ImageEditor {
                     }
                 }
                 Tool::Retouch => {
-                    if !self.is_dragging { self.push_undo(); self.is_dragging = true; self.stroke_points.clear(); }
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    if !self.is_dragging {
+                        self.push_undo(); self.is_dragging = true; self.stroke_points.clear();
+                        self.stroke_backdrop = None;
+                    }
+                    if self.image_layer_for_active().is_some() {
+                        let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                        let ox = canvas_rect.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+                        let oy = canvas_rect.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+                        let cx = (pos.x - ox) / self.zoom; let cy = (pos.y - oy) / self.zoom;
+                        self.stroke_points.push((cx, cy));
+                        if self.stroke_points.len() >= 2 {
+                            self.apply_retouch_stroke();
+                            let last = *self.stroke_points.last().unwrap();
+                            self.stroke_points.clear(); self.stroke_points.push(last);
+                        }
+                    } else if let Some((ix, iy)) = self.screen_to_image(pos) {
                         self.stroke_points.push((ix as f32, iy as f32));
                         if self.stroke_points.len() >= 2 {
                             self.apply_retouch_stroke();
@@ -1068,10 +1442,10 @@ impl ImageEditor {
                             if let Some((ix, iy)) = self.screen_to_image(pos).map(|(x,y)|(x as f32, y as f32)) {
                                 let (mut s, mut e) = ((min_ix, min_iy), (max_ix, max_iy));
                                 match handle {
-                                    THandle::N  => s.1 = iy.min(e.1 - 1.0),
-                                    THandle::S  => e.1 = iy.max(s.1 + 1.0),
-                                    THandle::W  => s.0 = ix.min(e.0 - 1.0),
-                                    THandle::E  => e.0 = ix.max(s.0 + 1.0),
+                                    THandle::N => s.1 = iy.min(e.1 - 1.0),
+                                    THandle::S => e.1 = iy.max(s.1 + 1.0),
+                                    THandle::W => s.0 = ix.min(e.0 - 1.0),
+                                    THandle::E => e.0 = ix.max(s.0 + 1.0),
                                     THandle::NW => { s.0 = ix.min(e.0 - 1.0); s.1 = iy.min(e.1 - 1.0); }
                                     THandle::NE => { e.0 = ix.max(s.0 + 1.0); s.1 = iy.min(e.1 - 1.0); }
                                     THandle::SW => { s.0 = ix.min(e.0 - 1.0); e.1 = iy.max(s.1 + 1.0); }
@@ -1099,7 +1473,7 @@ impl ImageEditor {
                         }
                     }
                 }
-                Tool::Text => {
+                Tool::Text | Tool::Pan => {
                     let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> = 
                         self.text_drag.as_ref().map(|d| (d.handle, d.start, d.orig_img_x, d.orig_img_y, d.orig_font_size, d.orig_box_width, d.orig_box_height, d.orig_rotation, d.orig_rot_start_angle));
 
@@ -1122,186 +1496,176 @@ impl ImageEditor {
                         if let Some(layer) = self.text_layers.iter_mut().find(|l| l.id == id) {
                             let min_sz: f32 = orig_fs * 0.5 * zoom;
                             match handle {
-                                THandle::Move => { 
-                                        let delta: egui::Vec2 = pos - drag_start; layer.img_x = orig_ix + delta.x / zoom; 
-                                        layer.img_y = orig_iy + delta.y / zoom; 
-                                    }
-                                THandle::E => { 
-                                        layer.box_width  = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0));
-                                    }
-                                THandle::W => { 
-                                        let orig_right: f32 = anchor_screen.x + orig_w_screen; 
-                                        let new_w: f32 = (orig_right - pos.x).max(min_sz); layer.box_width = Some((new_w / zoom).max(1.0)); 
-                                        layer.img_x = (pos.x - ox) / zoom; 
-                                    }
-                                THandle::S => { 
-                                        layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); 
-                                    }
-                                THandle::N => { 
-                                        let orig_bottom: f32 = anchor_screen.y + orig_h_screen; 
-                                        let new_h: f32 = (orig_bottom - pos.y).max(min_sz); 
-                                        layer.box_height = Some((new_h / zoom).max(1.0)); 
-                                        layer.img_y = ((orig_bottom - new_h) - oy) / zoom; 
-                                    }
-                                THandle::SE => { 
-                                        layer.box_width  = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0)); 
-                                        layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); 
-                                    }
-                                THandle::NE => { 
-                                        let orig_bottom: f32 = anchor_screen.y + orig_h_screen; 
-                                        let new_h: f32 = (orig_bottom - pos.y).max(min_sz); 
-                                        layer.box_width = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0)); 
-                                        layer.box_height = Some((new_h / zoom).max(1.0)); 
-                                        layer.img_y = ((orig_bottom - new_h) - oy) / zoom; 
-                                    }
-                                THandle::NW => { 
-                                        let orig_right: f32 = anchor_screen.x + orig_w_screen; 
-                                        let orig_bottom: f32 = anchor_screen.y + orig_h_screen; 
-                                        let new_w: f32 = (orig_right - pos.x).max(min_sz); 
-                                        let new_h: f32 = (orig_bottom - pos.y).max(min_sz); 
-                                        layer.box_width = Some((new_w / zoom).max(1.0)); 
-                                        layer.box_height = Some((new_h / zoom).max(1.0)); 
-                                        layer.img_x = (pos.x - ox) / zoom; 
-                                        layer.img_y = ((orig_bottom - new_h) - oy) / zoom; 
-                                    }
-                                THandle::SW => { 
-                                        let orig_right: f32 = anchor_screen.x + orig_w_screen; 
-                                        let new_w: f32 = (orig_right - pos.x).max(min_sz); 
-                                        layer.box_width = Some((new_w / zoom).max(1.0)); 
-                                        layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); 
-                                        layer.img_x = (pos.x - ox) / zoom; 
-                                    }
-                                THandle::Rotate => { 
-                                        let cur_angle: f32 = (pos - rot_center).angle(); 
-                                        layer.rotation = orig_rot + (cur_angle - orig_rot_start).to_degrees(); 
-                                    }
+                                THandle::Move => { let delta: egui::Vec2 = pos - drag_start; layer.img_x = orig_ix + delta.x / zoom; layer.img_y = orig_iy + delta.y / zoom; }
+                                THandle::E => { layer.box_width  = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0)); }
+                                THandle::W => { let orig_right: f32 = anchor_screen.x + orig_w_screen; let new_w: f32 = (orig_right - pos.x).max(min_sz); layer.box_width = Some((new_w / zoom).max(1.0)); layer.img_x = (pos.x - ox) / zoom; }
+                                THandle::S => { layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); }
+                                THandle::N => { let orig_bottom: f32 = anchor_screen.y + orig_h_screen; let new_h: f32 = (orig_bottom - pos.y).max(min_sz); layer.box_height = Some((new_h / zoom).max(1.0)); layer.img_y = ((orig_bottom - new_h) - oy) / zoom; }
+                                THandle::SE => { layer.box_width  = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0)); layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); }
+                                THandle::NE => { let orig_bottom: f32 = anchor_screen.y + orig_h_screen; let new_h: f32 = (orig_bottom - pos.y).max(min_sz); layer.box_width = Some(((pos.x - anchor_screen.x).max(min_sz) / zoom).max(1.0)); layer.box_height = Some((new_h / zoom).max(1.0)); layer.img_y = ((orig_bottom - new_h) - oy) / zoom; }
+                                THandle::NW => { let orig_right: f32 = anchor_screen.x + orig_w_screen; let orig_bottom: f32 = anchor_screen.y + orig_h_screen; let new_w: f32 = (orig_right - pos.x).max(min_sz); let new_h: f32 = (orig_bottom - pos.y).max(min_sz); layer.box_width = Some((new_w / zoom).max(1.0)); layer.box_height = Some((new_h / zoom).max(1.0)); layer.img_x = (pos.x - ox) / zoom; layer.img_y = ((orig_bottom - new_h) - oy) / zoom; }
+                                THandle::SW => { let orig_right: f32 = anchor_screen.x + orig_w_screen; let new_w: f32 = (orig_right - pos.x).max(min_sz); layer.box_width = Some((new_w / zoom).max(1.0)); layer.box_height = Some(((pos.y - anchor_screen.y).max(min_sz) / zoom).max(1.0)); layer.img_x = (pos.x - ox) / zoom; }
+                                THandle::Rotate => { let cur_angle: f32 = (pos - rot_center).angle(); layer.rotation = orig_rot + (cur_angle - orig_rot_start).to_degrees(); }
                             }
                         }
                     }
                 }
                 _ => {}
             }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Retouch {
-            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            if let Some((ix, iy)) = self.screen_to_image(pos) {
-                self.init_smudge_sample(ix, iy);
-            }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
-            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
-                let p0 = self.image_to_screen(s.0, s.1);
-                let p1 = self.image_to_screen(e.0, e.1);
-                let cr = egui::Rect::from_two_pos(p0, p1);
-                if cr.width() > HANDLE_HIT && cr.height() > HANDLE_HIT {
-                    crop_hit_handle(pos, cr)
-                } else { None }
-            } else { None };
-
-            if let Some(h) = handle_hit {
-                let (s, e) = (self.crop_state.start.unwrap(), self.crop_state.end.unwrap());
-                self.crop_drag = Some(h);
-                self.crop_drag_orig = Some((s.0, s.1, e.0, e.1));
-            } else {
-                self.crop_state = CropState::default();
-                self.crop_drag = None; self.crop_drag_orig = None;
-                if let Some((ix, iy)) = self.screen_to_image(pos) {
-                    self.crop_state.start = Some((ix as f32, iy as f32));
-                }
-            }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Text {
-            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            self.text_drag = None;
-            if let Some(id) = self.selected_text {
-                if let Some(handles) = self.text_transform_handles() {
-                    if let Some(h) = handles.hit_test(pos) {
-                        if let Some(layer) = self.text_layers.iter().find(|l: &&super::ie_main::TextLayer| l.id == id) {
-                            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
-                            let rot_start: f32 = (pos - layer.screen_rect(anchor, self.zoom).center()).angle();
-                            self.text_drag = Some(TextDrag {
-                                handle: h, start: pos,
-                                orig_img_x: layer.img_x, orig_img_y: layer.img_y,
-                                orig_font_size: layer.font_size, orig_box_width: layer.box_width,
-                                orig_box_height: layer.box_height, orig_rotation: layer.rotation,
-                                orig_rot_start_angle: rot_start,
-                            });
-                        }
-                    }
-                }
             }
         }
 
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
-                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.texture_dirty = true; self.stroke_points.clear(); self.is_dragging = false; }
-                Tool::Text => { self.text_drag = None; }
+                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.composite_dirty = true; self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
+                Tool::Text | Tool::Pan => { if self.text_drag.is_some() { self.composite_dirty = true; } self.text_drag = None; }
                 Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
             }
+            if self.image_drag.is_some() { self.image_drag = None; self.composite_dirty = true; self.dirty = true; }
         }
 
         if response.clicked_by(egui::PointerButton::Primary) {
             let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+            let ox = canvas_rect.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+            let oy = canvas_rect.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+            let canvas_pos = ((pos.x - ox) / self.zoom, (pos.y - oy) / self.zoom);
+
+            let hit_image_iid = self.layers.iter().rev()
+                .filter(|l| l.kind == LayerKind::Image && l.visible)
+                .find_map(|l| {
+                    let iid = l.linked_image_id?;
+                    let ild = self.image_layer_data.get(&iid)?;
+                    if ild.hit_test(pos, img_w, img_h, canvas_rect, self.zoom, self.pan) { Some((l.id, iid)) } else { None }
+                });
+
+            if let Some((lid, iid)) = hit_image_iid {
+                if self.tool != Tool::Text && self.selected_image_layer != Some(iid) {
+                    self.selected_image_layer = Some(iid);
+                    self.active_layer_id = lid;
+                    self.composite_dirty = true;
+                }
+            }
+
             match self.tool {
                 Tool::Brush | Tool::Eraser => {
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    if self.image_layer_for_active().is_some() {
                         self.push_undo();
+                        self.stroke_points.clear();
+                        self.stroke_points.push(canvas_pos);
+                        self.stroke_points.push((canvas_pos.0 + 0.1, canvas_pos.1 + 0.1));
+                        self.apply_brush_stroke();
+                        self.stroke_points.clear();
+                        self.composite_dirty = true;
+                        if self.tool == Tool::Brush { self.add_color_to_history(); }
+                    } else if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.push_undo();
+                        let aid = self.active_layer_id;
+                        let needs_backdrop = self.tool == Tool::Brush && self.brush.wetness > 0.0
+                            && self.layers.iter().find(|l| l.id == aid).map_or(false, |l| l.kind == LayerKind::Raster);
+                        self.stroke_backdrop = if needs_backdrop { self.backdrop_cache.lock().unwrap().clone() } else { None };
                         self.stroke_points.clear();
                         self.stroke_points.push((ix as f32, iy as f32));
                         self.stroke_points.push((ix as f32 + 0.1, iy as f32 + 0.1));
                         self.apply_brush_stroke();
                         self.stroke_points.clear();
+                        self.stroke_backdrop = None;
+                        self.composite_dirty = true;
                         if self.tool == Tool::Brush { self.add_color_to_history(); }
                     }
                 }
                 Tool::Retouch => {
-                    if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    if self.image_layer_for_active().is_some() {
                         self.push_undo();
+                        self.init_smudge_sample_image_layer(canvas_pos.0, canvas_pos.1);
+                        self.stroke_points.clear();
+                        self.stroke_points.push(canvas_pos);
+                        self.stroke_points.push((canvas_pos.0 + 0.1, canvas_pos.1 + 0.1));
+                        self.apply_retouch_stroke();
+                        self.stroke_points.clear();
+                        self.composite_dirty = true;
+                    } else if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.push_undo();
+                        self.stroke_backdrop = None;
                         self.init_smudge_sample(ix, iy);
                         self.stroke_points.clear();
                         self.stroke_points.push((ix as f32, iy as f32));
                         self.stroke_points.push((ix as f32 + 0.1, iy as f32 + 0.1));
                         self.apply_retouch_stroke();
                         self.stroke_points.clear();
+                        self.stroke_backdrop = None;
+                        self.composite_dirty = true;
                     }
                 }
                 Tool::Fill => {
-                    if let Some((ix, iy)) = self.screen_to_image(pos) { self.push_undo(); self.flood_fill(ix, iy); self.add_color_to_history(); }
+                    if self.image_layer_for_active().is_some() {
+                        self.push_undo();
+                        self.flood_fill_image_layer(canvas_pos.0 as u32, canvas_pos.1 as u32);
+                        self.add_color_to_history();
+                        self.composite_dirty = true;
+                    } else if let Some((ix, iy)) = self.screen_to_image(pos) {
+                        self.push_undo(); self.flood_fill(ix, iy); self.add_color_to_history();
+                    }
                 }
                 Tool::Eyedropper => {
                     if let Some((ix, iy)) = self.screen_to_image(pos) { self.sample_color(ix, iy); }
                 }
                 Tool::Text => {
                     if let Some(hit) = self.hit_text_layer(pos) {
+                        if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
                         self.selected_text = Some(hit); self.editing_text = true; self.text_sel_anchor = None;
+                        self.composite_dirty = true;
                         if let Some(layer) = self.text_layers.iter().find(|l| l.id == hit) {
                             self.text_font_size = layer.font_size; self.text_bold = layer.bold;
                             self.text_italic = layer.italic; self.text_underline = layer.underline;
                             self.text_font_name = layer.font_name.clone(); self.text_cursor = layer.content.len();
                         }
+                        if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
+                            self.active_layer_id = linked_layer.id;
+                        }
                     } else {
                         self.commit_or_discard_active_text();
                         if let Some((ix, iy)) = self.screen_to_image(pos) {
                             let id: u64 = self.next_text_id; self.next_text_id += 1;
-                            self.text_layers.push(super::ie_main::TextLayer {
+                            self.text_layers.push(TextLayer {
                                 id, content: String::new(),
                                 img_x: ix as f32, img_y: iy as f32,
                                 font_size: self.text_font_size, box_width: Some(300.0), box_height: None,
                                 rotation: 0.0, color: self.color,
                                 bold: self.text_bold, italic: self.text_italic, underline: self.text_underline,
-                                font_name: self.text_font_name.clone(), rendered_height: 0.0,
+                                font_name: self.text_font_name.clone(), rendered_height: 0.0, cached_lines: Vec::new(),
                             });
+                            self.ensure_layer_entry_for_text(id);
                             self.selected_text = Some(id); self.editing_text = true;
                             self.text_cursor = 0; self.text_sel_anchor = None;
                         }
                     }
                 }
-                _ => {}
+                Tool::Pan => {
+                    if let Some(hit) = self.hit_text_layer(pos) {
+                        if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
+                        self.selected_text = Some(hit);
+                        self.composite_dirty = true;
+                        if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
+                            self.active_layer_id = linked_layer.id;
+                        }
+                    } else if hit_image_iid.is_none() {
+                        let handles_hit = self.image_layer_transform_handles().and_then(|h| h.hit_test(pos)).is_some();
+                        if !handles_hit {
+                            self.selected_image_layer = None;
+                            self.commit_or_discard_active_text();
+                        }
+                    }
+                }
+                _ => {
+                    if hit_image_iid.is_none() && self.selected_image_layer.is_some() {
+                        let handles_hit = self.image_layer_transform_handles()
+                            .and_then(|h| h.hit_test(pos))
+                            .is_some();
+                        if !handles_hit { self.selected_image_layer = None; }
+                    }
+                }
             }
         }
 
@@ -1347,6 +1711,7 @@ impl ImageEditor {
             .show(ctx, |ui: &mut egui::Ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .min_scrolled_height(540.0)
                     .max_height(panel_max_h)
                     .show(ui, |ui: &mut egui::Ui| {
                         ui.set_min_width(420.0);
@@ -1735,6 +2100,369 @@ impl ImageEditor {
             });
         self.filter_panel_rect = win_resp.map(|r| r.response.rect);
     }
+
+    pub(super) fn render_layers_panel(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
+        let is_dark = matches!(theme, ThemeMode::Dark);
+        let bg_deep = if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::from_rgb(245, 245, 248) };
+        let bg_row = if is_dark { egui::Color32::from_rgb(38, 38, 44) } else { egui::Color32::from_rgb(252, 252, 255) };
+        let bg_active = if is_dark { egui::Color32::from_rgb(45, 75, 120) } else { egui::Color32::from_rgb(210, 228, 255) };
+        let border = if is_dark { egui::Color32::from_rgb(55, 55, 65) } else { egui::Color32::from_rgb(210, 210, 220) };
+        let text_prim = if is_dark { egui::Color32::from_rgb(220, 220, 228) } else { egui::Color32::from_rgb(30, 30, 40) };
+        let text_mute = if is_dark { egui::Color32::from_rgb(130, 130, 150) } else { egui::Color32::from_rgb(140, 140, 160) };
+        let accent = ColorPalette::BLUE_500;
+        let danger = egui::Color32::from_rgb(200, 60, 60);
+
+        egui::Frame::new()
+            .fill(if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::from_rgb(235, 235, 242) })
+            .stroke(egui::Stroke::new(0.0, border))
+            .inner_margin(egui::Margin { left: 10, right: 6, top: 8, bottom: 8 })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Layers").size(13.0).strong().color(text_prim));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if layer_icon_btn(ui, "+", "New Raster Layer (Ctrl+Shift+N)", accent, egui::Color32::WHITE, is_dark) {
+                            self.new_raster_layer();
+                        }
+                    });
+                });
+            });
+
+        ui.separator();
+
+        let available_h = ui.available_height() - 120.0;
+        egui::ScrollArea::vertical()
+            .id_salt("layers_scroll")
+            .max_height(available_h.max(80.0))
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+
+                let n = self.layers.len();
+                let mut action: Option<LayerPanelAction> = None;
+                let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+                let pointer_released = ui.input(|i| i.pointer.any_released());
+                let mut drop_indicator: Option<usize> = None;
+
+                for disp_idx in 0..n {
+                    let stack_idx = n - 1 - disp_idx;
+                    let layer = &self.layers[stack_idx];
+                    let is_active = layer.id == self.active_layer_id;
+                    let layer_id = layer.id;
+                    let layer_kind = layer.kind;
+                    let layer_name = layer.name.clone();
+                    let layer_visible = layer.visible;
+                    let layer_locked  = layer.locked;
+                    let _layer_opacity = layer.opacity;
+                    let row_fill = if is_active { bg_active } else { bg_row };
+
+                    let row_resp = egui::Frame::new()
+                        .fill(row_fill)
+                        .stroke(if is_active { egui::Stroke::new(1.0, accent) } else { egui::Stroke::new(0.0, border) })
+                        .corner_radius(4.0)
+                        .inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 4 })
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width() - 4.0);
+                            ui.horizontal(|ui| {
+                                let eye = if layer_visible { "👁" } else { "🚫" };
+                                if ui.add(egui::Button::new(egui::RichText::new(eye).size(13.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
+                                    action = Some(LayerPanelAction::ToggleVisible(stack_idx));
+                                }
+                                let lock_icon = if layer_locked { "🔒" } else { "🔓" };
+                                if ui.add(egui::Button::new(egui::RichText::new(lock_icon).size(12.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
+                                    action = Some(LayerPanelAction::ToggleLocked(stack_idx));
+                                }
+                                let kind_badge = match layer_kind {
+                                    LayerKind::Background => ("BG", egui::Color32::from_rgb(80, 140, 80)),
+                                    LayerKind::Raster => ("R",  egui::Color32::from_rgb(80, 100, 180)),
+                                    LayerKind::Text => ("T",  egui::Color32::from_rgb(180, 100, 60)),
+                                    LayerKind::Image => ("I",  egui::Color32::from_rgb(100, 60, 180)),
+                                };
+                                egui::Frame::new()
+                                    .fill(kind_badge.1.linear_multiply(if is_dark { 0.6 } else { 0.3 }))
+                                    .corner_radius(3.0)
+                                    .inner_margin(egui::Margin { left: 4, right: 4, top: 1, bottom: 1 })
+                                    .show(ui, |ui| {
+                                        ui.label(egui::RichText::new(kind_badge.0).size(9.5).color(if is_dark { egui::Color32::WHITE } else { egui::Color32::from_rgb(20,20,40) }));
+                                    });
+
+                                ui.add_space(2.0);
+
+                                if self.layer_rename_id == Some(layer_id) {
+                                    let rename_resp = ui.add(
+                                        egui::TextEdit::singleline(&mut self.layer_rename_buf)
+                                            .desired_width(ui.available_width() - 28.0)
+                                            .font(egui::TextStyle::Small)
+                                    );
+                                    rename_resp.request_focus();
+                                    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                    if enter || escape || rename_resp.lost_focus() {
+                                        action = Some(LayerPanelAction::CommitRename(stack_idx));
+                                    }
+                                } else {
+                                    let name_resp = ui.add(
+                                        egui::Label::new(egui::RichText::new(&layer_name).size(12.0).color(if is_active { egui::Color32::WHITE } else { text_prim }))
+                                            .truncate()
+                                            .sense(egui::Sense::click())
+                                    );
+                                    if name_resp.clicked() {
+                                        action = Some(LayerPanelAction::Select(stack_idx));
+                                    }
+                                    if name_resp.double_clicked() {
+                                        action = Some(LayerPanelAction::StartRename(stack_idx, layer_name.clone()));
+                                    }
+                                }
+
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if n > 1 {
+                                        if ui.add(egui::Button::new(egui::RichText::new("🗑").size(11.0).color(if is_active { egui::Color32::from_rgb(255, 120, 120) } else { text_mute })).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
+                                            action = Some(LayerPanelAction::Delete(stack_idx));
+                                        }
+                                    }
+                                });
+                            });
+                        });
+
+                    if row_resp.response.clicked() && action.is_none() {
+                        action = Some(LayerPanelAction::Select(stack_idx));
+                    }
+                    if row_resp.response.drag_started() {
+                        self.layer_drag_src = Some(stack_idx);
+                    }
+                    if let (Some(drag_src), Some(pp)) = (self.layer_drag_src, pointer_pos) {
+                        if row_resp.response.rect.contains(pp) && drag_src != stack_idx {
+                            drop_indicator = Some(stack_idx);
+                        }
+                    }
+
+                    row_resp.response.context_menu(|ui| {
+                        if ui.button("Rename").clicked() {
+                            action = Some(LayerPanelAction::StartRename(stack_idx, layer_name.clone()));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("Duplicate").clicked() {
+                            action = Some(LayerPanelAction::Duplicate(stack_idx));
+                            ui.close();
+                        }
+                        if n > 1 {
+                            if ui.add_enabled(stack_idx > 0, egui::Button::new("Merge Down")).clicked() {
+                                action = Some(LayerPanelAction::MergeDown(stack_idx));
+                                ui.close();
+                            }
+                        }
+                        ui.separator();
+                        if ui.add_enabled(n > 1, egui::Button::new(egui::RichText::new("Delete").color(danger))).clicked() {
+                            action = Some(LayerPanelAction::Delete(stack_idx));
+                            ui.close();
+                        }
+                    });
+
+                    ui.add_space(1.0);
+                }
+
+                if let Some(di) = drop_indicator {
+                    let _ = di;
+                }
+
+                if pointer_released {
+                    if let (Some(src), Some(dst)) = (self.layer_drag_src, drop_indicator) {
+                        if src != dst {
+                            action = Some(LayerPanelAction::Reorder(src, dst));
+                        }
+                    }
+                    self.layer_drag_src = None;
+                }
+
+                if let Some(act) = action {
+                    match act {
+                        LayerPanelAction::Select(idx) => {
+                            let prev_editing = self.editing_text;
+                            if prev_editing { self.commit_or_discard_active_text(); }
+                            self.active_layer_id = self.layers[idx].id;
+                            let aid = self.active_layer_id;
+                            self.kick_backdrop_compute(aid);
+                            match self.layers[idx].kind {
+                                LayerKind::Text => {
+                                    if let Some(tid) = self.layers[idx].linked_text_id {
+                                        self.tool = Tool::Text;
+                                        self.selected_text = Some(tid);
+                                        self.editing_text = true;
+                                        self.text_cursor = self.text_layers.iter()
+                                            .find(|t| t.id == tid)
+                                            .map(|t| t.content.len())
+                                            .unwrap_or(0);
+                                        self.text_sel_anchor = None;
+                                        self.composite_dirty = true;
+                                    }
+                                    self.selected_image_layer = None;
+                                }
+                                LayerKind::Image => {
+                                    self.selected_image_layer = self.layers[idx].linked_image_id;
+                                    self.selected_text = None;
+                                    self.editing_text = false;
+                                    self.composite_dirty = true;
+                                }
+                                _ => {
+                                    self.selected_text = None;
+                                    self.editing_text = false;
+                                    self.composite_dirty = true;
+                                    self.selected_image_layer = None;
+                                }
+                            }
+                        }
+                        LayerPanelAction::ToggleVisible(idx) => {
+                            self.layers[idx].visible = !self.layers[idx].visible;
+                            self.composite_dirty = true;
+                            self.dirty = true;
+                            self.backdrop_cache_for = u64::MAX;
+                        }
+                        LayerPanelAction::ToggleLocked(idx) => {
+                            self.layers[idx].locked = !self.layers[idx].locked;
+                        }
+                        LayerPanelAction::Delete(idx) => {
+                            let id = self.layers[idx].id;
+                            if self.active_layer_id == id {
+                                self.active_layer_id = self.layers[if idx > 0 { idx - 1 } else { 1.min(self.layers.len()-1) }].id;
+                            }
+                            self.push_undo();
+                            if let Some(tid) = self.layers[idx].linked_text_id {
+                                self.text_layers.retain(|t| t.id != tid);
+                            }
+                            self.layer_images.remove(&self.layers[idx].id);
+                            self.layers.remove(idx);
+                            self.composite_dirty = true;
+                            self.dirty = true;
+                        }
+                        LayerPanelAction::StartRename(idx, name) => {
+                            self.layer_rename_id  = Some(self.layers[idx].id);
+                            self.layer_rename_buf = name;
+                        }
+                        LayerPanelAction::CommitRename(_idx) => {
+                            if let Some(id) = self.layer_rename_id {
+                                if let Some(l) = self.layers.iter_mut().find(|l| l.id == id) {
+                                    let new_name = self.layer_rename_buf.trim().to_string();
+                                    if !new_name.is_empty() { l.name = new_name; }
+                                }
+                            }
+                            self.layer_rename_id = None;
+                        }
+                        LayerPanelAction::Duplicate(idx) => {
+                            self.active_layer_id = self.layers[idx].id;
+                            self.duplicate_active_layer();
+                        }
+                        LayerPanelAction::MergeDown(idx) => {
+                            self.active_layer_id = self.layers[idx].id;
+                            self.merge_down();
+                        }
+                        LayerPanelAction::Reorder(src, dst) => {
+                            self.push_undo();
+                            self.layers.swap(src, dst);
+                            self.composite_dirty = true;
+                            self.dirty = true;
+                            self.backdrop_cache_for = u64::MAX;
+                        }
+                    }
+                }
+            });
+
+        ui.separator();
+
+        let active_idx = self.layers.iter().position(|l| l.id == self.active_layer_id);
+        if let Some(idx) = active_idx {
+            let panel_w = ui.available_width();
+            egui::Frame::new()
+                .inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 6 })
+                .fill(bg_deep)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Opacity").size(11.0).color(text_mute));
+                    let old_opacity = self.layers[idx].opacity;
+                    let mut opacity_pct = (old_opacity * 100.0).round() as i32;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().slider_width = panel_w - 80.0;
+                        let resp = ui.add(egui::Slider::new(&mut opacity_pct, 0..=100).show_value(false));
+                        if resp.changed() {
+                            self.layers[idx].opacity = opacity_pct as f32 / 100.0;
+                            self.dirty = true;
+                        }
+                        if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
+                            self.composite_dirty = true;
+                        }
+                        ui.label(egui::RichText::new(format!("{}%", opacity_pct)).size(11.0).color(text_prim));
+                    });
+
+                    ui.add_space(4.0);
+
+                    ui.label(egui::RichText::new("Blend Mode").size(11.0).color(text_mute));
+                    let current_blend = self.layers[idx].blend_mode;
+                    egui::ComboBox::from_id_salt("layer_blend_mode")
+                        .selected_text(egui::RichText::new(current_blend.label()).size(12.0))
+                        .width(panel_w - 18.0)
+                        .show_ui(ui, |ui| {
+                            for &mode in BlendMode::all() {
+                                if ui.selectable_label(current_blend == mode, mode.label()).clicked() {
+                                    self.layers[idx].blend_mode = mode;
+                                    self.composite_dirty = true;
+                                    self.dirty = true;
+                                }
+                            }
+                        });
+
+                    ui.add_space(6.0);
+
+                    ui.horizontal_wrapped(|ui| {
+                        let can_up   = idx < self.layers.len() - 1;
+                        let can_down = idx > 0;
+                        let can_merge = idx > 0 && !matches!(self.layers[idx - 1].kind, LayerKind::Text | LayerKind::Image) && !matches!(self.layers[idx].kind, LayerKind::Image);
+
+                        if ui.add_enabled(can_up, egui::Button::new(egui::RichText::new("⬆").size(11.0)).min_size(egui::vec2(28.0, 24.0))).on_hover_text("Move layer up").clicked() {
+                            self.push_undo();
+                            self.move_layer_up();
+                        }
+                        if ui.add_enabled(can_down, egui::Button::new(egui::RichText::new("⬇").size(11.0)).min_size(egui::vec2(28.0, 24.0))).on_hover_text("Move layer down").clicked() {
+                            self.push_undo();
+                            self.move_layer_down();
+                        }
+                        ui.add_space(4.0);
+                        if ui.add(egui::Button::new(egui::RichText::new("Dup").size(11.0)).min_size(egui::vec2(46.0, 24.0))).on_hover_text("Duplicate layer").clicked() {
+                            self.duplicate_active_layer();
+                        }
+                        if ui.add_enabled(can_merge, egui::Button::new(egui::RichText::new("⬇ Merge").size(11.0)).min_size(egui::vec2(60.0, 24.0))).on_hover_text("Merge down").clicked() {
+                            self.merge_down();
+                        }
+                        if ui.add_enabled(self.layers.len() > 1, egui::Button::new(egui::RichText::new("Flat").size(11.0)).min_size(egui::vec2(46.0, 24.0))).on_hover_text("Flatten all layers").clicked() {
+                            self.flatten_all_layers();
+                        }
+                    });
+                });
+        }
+    }
+}
+
+enum LayerPanelAction {
+    Select(usize),
+    ToggleVisible(usize),
+    ToggleLocked(usize),
+    Delete(usize),
+    StartRename(usize, String),
+    CommitRename(usize),
+    Duplicate(usize),
+    MergeDown(usize),
+    Reorder(usize, usize),
+}
+
+fn layer_icon_btn(ui: &mut egui::Ui, text: &str, tooltip: &str, bg: egui::Color32, fg: egui::Color32, _dark: bool) -> bool {
+    ui.scope(|ui| {
+        let s = ui.style_mut();
+        s.visuals.widgets.inactive.bg_fill = bg;
+        s.visuals.widgets.inactive.weak_bg_fill = bg;
+        s.visuals.widgets.hovered.bg_fill = bg.linear_multiply(1.2);
+        s.visuals.widgets.hovered.weak_bg_fill = bg.linear_multiply(1.2);
+        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        ui.add(egui::Button::new(egui::RichText::new(text).size(14.0).strong().color(fg)).min_size(egui::vec2(24.0, 24.0)))
+            .on_hover_text(tooltip)
+    }).inner.clicked()
 }
 
 fn styled_btn(ui: &mut egui::Ui, text: &str, font_size: f32, min_size: egui::Vec2, bg: egui::Color32, hover: egui::Color32, txt: egui::Color32) -> bool {

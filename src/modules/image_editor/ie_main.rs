@@ -1,13 +1,13 @@
 use eframe::egui;
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
 use crate::modules::helpers::image_export::ExportFormat;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::style::{ThemeMode};
+use crate::style::ThemeMode;
 use crate::modules::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use super::ie_helpers::{load_persisted, save_persisted, blend_pixels_u8};
 
 pub(super) const MAX_UNDO: usize = 20;
 pub(super) const MAX_COLOR_HISTORY: usize = 20;
@@ -53,31 +53,14 @@ impl RgbaColor {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct ColorHistory { pub colors: VecDeque<RgbaColor> }
 
 impl ColorHistory {
-    pub(super) fn new() -> Self { Self { colors: VecDeque::new() } }
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("color_history.json");
-        p
-    }
-    
+    pub(super) fn load() -> Self { load_persisted("color_history.json") }
+    pub(super) fn save(&self) { save_persisted("color_history.json", self); }
     pub(super) fn add_color(&mut self, color: RgbaColor) {
-        if let Some(pos) = self.colors.iter().position(|c: &RgbaColor| *c == color) { self.colors.remove(pos); }
+        if let Some(pos) = self.colors.iter().position(|c| *c == color) { self.colors.remove(pos); }
         self.colors.push_front(color);
         if self.colors.len() > MAX_COLOR_HISTORY { self.colors.pop_back(); }
         self.save();
@@ -85,31 +68,12 @@ impl ColorHistory {
     pub(super) fn get_colors(&self) -> &VecDeque<RgbaColor> { &self.colors }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct ColorFavorites { pub colors: Vec<RgbaColor> }
 
 impl ColorFavorites {
-    pub(super) fn new() -> Self { Self { colors: Vec::new() } }
-
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("color_favorites.json");
-        p
-    }
+    pub(super) fn load() -> Self { load_persisted("color_favorites.json") }
+    pub(super) fn save(&self) { save_persisted("color_favorites.json", self); }
 
     pub(super) fn toggle(&mut self, color: RgbaColor) -> bool {
         if let Some(pos) = self.colors.iter().position(|c| *c == color) {
@@ -257,64 +221,63 @@ impl BrushPreset {
     }
 
     pub(super) fn settings(&self, current_size: f32) -> BrushSettings {
-        let sz = current_size;
         match self {
             Self::Regular => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.7, step: 0.25, flow: 1.0,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Pencil => BrushSettings {
-                size: sz, opacity: 0.85, softness: 0.0, step: 0.35, flow: 0.75,
-                shape: BrushShape::Circle, scatter: sz * 0.08, angle: 0.0, angle_jitter: 0.0,
+                size: current_size, opacity: 0.85, softness: 0.0, step: 0.35, flow: 0.75,
+                shape: BrushShape::Circle, scatter: current_size * 0.08, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.45,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Pen => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.0, step: 0.12, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.0, step: 0.12, flow: 1.0,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Crayon => BrushSettings {
-                size: sz, opacity: 0.75, softness: 0.05, step: 0.20, flow: 0.65,
-                shape: BrushShape::Square, scatter: sz * 0.18, angle: 15.0, angle_jitter: 12.0,
+                size: current_size, opacity: 0.75, softness: 0.05, step: 0.20, flow: 0.65,
+                shape: BrushShape::Square, scatter: current_size * 0.18, angle: 15.0, angle_jitter: 12.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Rough, texture_strength: 0.55,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Marker => BrushSettings {
-                size: sz, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.90,
+                size: current_size, opacity: 0.90, softness: 0.0, step: 0.18, flow: 0.85,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
-                spray_mode: false, spray_particles: 40, wetness: 0.0,
+                spray_mode: false, spray_particles: 40, wetness: 0.4,
             },
             Self::Calligraphy => BrushSettings {
-                size: sz, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,
+                size: current_size, opacity: 1.0, softness: 0.10, step: 0.18, flow: 1.0,
                 shape: BrushShape::CalligraphyFlat, scatter: 0.0, angle: 45.0, angle_jitter: 0.0,
                 aspect_ratio: 0.18, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::SprayPaint => BrushSettings {
-                size: sz.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.06,
-                shape: BrushShape::Circle, scatter: sz * 0.6, angle: 0.0, angle_jitter: 0.0,
+                size: current_size.max(20.0), opacity: 0.85, softness: 1.0, step: 0.50, flow: 0.12,
+                shape: BrushShape::Circle, scatter: current_size * 0.6, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: true, spray_particles: 60, wetness: 0.0,
             },
             Self::Watercolor => BrushSettings {
-                size: sz, opacity: 0.70, softness: 0.90, step: 0.15, flow: 0.25,
-                shape: BrushShape::Circle, scatter: sz * 0.12, angle: 0.0, angle_jitter: 0.0,
+                size: current_size, opacity: 0.70, softness: 0.90, step: 0.15, flow: 0.25,
+                shape: BrushShape::Circle, scatter: current_size * 0.12, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Paper, texture_strength: 0.30,
                 spray_mode: false, spray_particles: 40, wetness: 0.40,
             },
             Self::Charcoal => BrushSettings {
-                size: sz, opacity: 0.80, softness: 0.08, step: 0.28, flow: 0.55,
-                shape: BrushShape::Diamond, scatter: sz * 0.14, angle: 30.0, angle_jitter: 18.0,
+                size: current_size, opacity: 0.80, softness: 0.08, step: 0.28, flow: 0.55,
+                shape: BrushShape::Diamond, scatter: current_size * 0.14, angle: 30.0, angle_jitter: 18.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::Canvas, texture_strength: 0.50,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
             },
             Self::Airbrush => BrushSettings {
-                size: sz, opacity: 0.80, softness: 1.0, step: 0.12, flow: 0.12,
+                size: current_size, opacity: 0.80, softness: 1.0, step: 0.12, flow: 0.12,
                 shape: BrushShape::Circle, scatter: 0.0, angle: 0.0, angle_jitter: 0.0,
                 aspect_ratio: 1.0, texture_mode: BrushTextureMode::None, texture_strength: 0.0,
                 spray_mode: false, spray_particles: 40, wetness: 0.0,
@@ -326,31 +289,12 @@ impl BrushPreset {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct SavedBrush { pub name: String, pub settings: BrushSettings, }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub(super) struct BrushFavorites { pub brushes: Vec<SavedBrush>, }
 
 impl BrushFavorites {
-    pub(super) fn new() -> Self { Self { brushes: Vec::new() } }
-
-    pub(super) fn load() -> Self {
-        if let Ok(s) = fs::read_to_string(Self::get_config_path()) {
-            if let Ok(h) = serde_json::from_str(&s) { return h; }
-        }
-        Self::new()
-    }
-
-    pub(super) fn save(&self) {
-        let path: PathBuf = Self::get_config_path();
-        if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
-        if let Ok(j) = serde_json::to_string(self) { let _ = fs::write(path, j); }
-    }
-
-    fn get_config_path() -> PathBuf {
-        let mut p: PathBuf = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("universal_editor");
-        p.push("brush_favorites.json");
-        p
-    }
+    pub(super) fn load() -> Self { load_persisted("brush_favorites.json") }
+    pub(super) fn save(&self) { save_persisted("brush_favorites.json", self); }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -455,6 +399,7 @@ pub(super) struct TextLayer {
     pub underline: bool,
     pub font_name: String,
     pub rendered_height: f32,
+    pub cached_lines: Vec<String>,
 }
 
 impl TextLayer {
@@ -501,10 +446,155 @@ pub(super) struct TextDrag {
     pub orig_rot_start_angle: f32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ImageLayerData {
+    pub id: u64,
+    pub image: DynamicImage,
+    pub canvas_x: f32,
+    pub canvas_y: f32,
+    pub display_w: f32,
+    pub display_h: f32,
+    pub rotation: f32,
+    pub flip_h: bool,
+    pub flip_v: bool,
+}
+
+impl ImageLayerData {
+    pub(super) fn orig_w(&self) -> u32 { self.image.width() }
+    pub(super) fn orig_h(&self) -> u32 { self.image.height() }
+    pub(super) fn native_aspect(&self) -> f32 { if self.image.height() > 0 { self.image.width() as f32 / self.image.height() as f32 } else { 1.0 } }
+    pub(super) fn center_canvas(&self) -> (f32, f32) { (self.canvas_x + self.display_w / 2.0, self.canvas_y + self.display_h / 2.0) }
+    pub(super) fn screen_rect(&self, editor_img_w: f32, editor_img_h: f32, canvas: egui::Rect, zoom: f32, pan: egui::Vec2) -> egui::Rect {
+        let ox = canvas.center().x - editor_img_w * zoom / 2.0 + pan.x;
+        let oy = canvas.center().y - editor_img_h * zoom / 2.0 + pan.y;
+        egui::Rect::from_min_size(egui::pos2(ox + self.canvas_x * zoom, oy + self.canvas_y * zoom), egui::vec2(self.display_w * zoom, self.display_h * zoom))
+    }
+    pub(super) fn canvas_to_local_f32(&self, cx: f32, cy: f32) -> (f32, f32) {
+        let (ctr_x, ctr_y) = self.center_canvas();
+        let (dx, dy) = (cx - ctr_x, cy - ctr_y);
+        let angle = -self.rotation.to_radians();
+        let (cos_a, sin_a) = (angle.cos(), angle.sin());
+        let lx = dx * cos_a - dy * sin_a + self.display_w / 2.0;
+        let ly = dx * sin_a + dy * cos_a + self.display_h / 2.0;
+        let mut px = (lx / self.display_w.max(1.0)) * self.orig_w() as f32;
+        let mut py = (ly / self.display_h.max(1.0)) * self.orig_h() as f32;
+        if self.flip_h { px = self.orig_w() as f32 - 1.0 - px; }
+        if self.flip_v { py = self.orig_h() as f32 - 1.0 - py; }
+        (px, py)
+    }
+    pub(super) fn canvas_to_local(&self, cx: f32, cy: f32) -> Option<(u32, u32)> {
+        let (px, py) = self.canvas_to_local_f32(cx, cy);
+        if px >= 0.0 && py >= 0.0 && (px as u32) < self.orig_w() && (py as u32) < self.orig_h() {
+            Some((px as u32, py as u32))
+        } else { None }
+    }
+    pub(super) fn pixel_scale(&self) -> f32 {
+        let sx = self.orig_w() as f32 / self.display_w.max(1.0);
+        let sy = self.orig_h() as f32 / self.display_h.max(1.0);
+        (sx + sy) * 0.5
+    }
+    pub(super) fn hit_test(&self, pos: egui::Pos2, editor_img_w: f32, editor_img_h: f32, canvas: egui::Rect, zoom: f32, pan: egui::Vec2) -> bool {
+        let rect = self.screen_rect(editor_img_w, editor_img_h, canvas, zoom, pan);
+        let center = rect.center();
+        let d = pos - center;
+        let a = -self.rotation.to_radians();
+        let (cos_a, sin_a) = (a.cos(), a.sin());
+        let local = egui::pos2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
+        egui::Rect::from_center_size(egui::pos2(0.0, 0.0), rect.size()).contains(local)
+    }
+}
+
+pub(super) struct ImageDrag {
+    pub handle: THandle,
+    pub start: egui::Pos2,
+    pub orig_x: f32,
+    pub orig_y: f32,
+    pub orig_w: f32,
+    pub orig_h: f32,
+    pub orig_rotation: f32,
+    pub orig_rot_start_angle: f32,
+}
+
+#[derive(Default)]
 pub(super) struct CropState { pub start: Option<(f32, f32)>, pub end: Option<(f32, f32)> }
 
-impl Default for CropState {
-    fn default() -> Self { Self { start: None, end: None } }
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum BlendMode {
+    Normal, Multiply, Screen, Overlay, SoftLight,
+    HardLight, Darken, Lighten, Difference, Exclusion,
+}
+
+impl BlendMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "Normal",
+            Self::Multiply => "Multiply",
+            Self::Screen => "Screen",
+            Self::Overlay => "Overlay",
+            Self::SoftLight => "Soft Light",
+            Self::HardLight => "Hard Light",
+            Self::Darken => "Darken",
+            Self::Lighten => "Lighten",
+            Self::Difference => "Difference",
+            Self::Exclusion => "Exclusion",
+        }
+    }
+    pub fn all() -> &'static [BlendMode] {
+        &[
+            Self::Normal, Self::Multiply, Self::Screen, Self::Overlay,
+            Self::SoftLight, Self::HardLight, Self::Darken, Self::Lighten,
+            Self::Difference, Self::Exclusion,
+        ]
+    }
+
+    pub fn blend_channel(self, bot: f32, top: f32) -> f32 {
+        match self {
+            Self::Normal => top,
+            Self::Multiply => bot * top,
+            Self::Screen => 1.0 - (1.0 - bot) * (1.0 - top),
+            Self::Overlay => if bot < 0.5 { 2.0 * bot * top } else { 1.0 - 2.0 * (1.0 - bot) * (1.0 - top) },
+            Self::SoftLight => {
+                if top < 0.5 { bot - (1.0 - 2.0 * top) * bot * (1.0 - bot) }
+                else {
+                    let d = if bot < 0.25 { ((16.0 * bot - 12.0) * bot + 4.0) * bot } else { bot.sqrt() };
+                    bot + (2.0 * top - 1.0) * (d - bot)
+                }
+            }
+            Self::HardLight => if top < 0.5 { 2.0 * bot * top } else { 1.0 - 2.0 * (1.0 - bot) * (1.0 - top) },
+            Self::Darken => bot.min(top),
+            Self::Lighten => bot.max(top),
+            Self::Difference => (bot - top).abs(),
+            Self::Exclusion => bot + top - 2.0 * bot * top,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LayerKind { Background, Raster, Text, Image }
+
+#[derive(Debug, Clone)]
+pub struct ImageLayer {
+    pub id: u64,
+    pub name: String,
+    pub opacity: f32,
+    pub visible: bool,
+    pub locked: bool,
+    pub blend_mode: BlendMode,
+    pub kind: LayerKind,
+    pub linked_text_id: Option<u64>,
+    pub linked_image_id: Option<u64>,
+}
+
+pub(super) struct LayerUndoEntry {
+    pub image: Option<DynamicImage>,
+    pub layer_images: std::collections::HashMap<u64, DynamicImage>,
+    pub layers: Vec<ImageLayer>,
+    pub text_layers: Vec<TextLayer>,
+    pub active_layer_id: u64,
+    pub next_layer_id: u64,
+    pub next_text_id: u64,
+    pub image_layer_data: std::collections::HashMap<u64, ImageLayerData>,
+    pub next_image_layer_id: u64,
 }
 
 pub struct ImageEditor {
@@ -515,8 +605,8 @@ pub struct ImageEditor {
     pub(super) file_path: Option<PathBuf>,
     pub(super) dirty: bool,
 
-    pub(super) undo_stack: VecDeque<DynamicImage>,
-    pub(super) redo_stack: VecDeque<DynamicImage>,
+    pub(super) undo_stack: VecDeque<LayerUndoEntry>,
+    pub(super) redo_stack: VecDeque<LayerUndoEntry>,
 
     pub(super) zoom: f32,
     pub(super) pan: egui::Vec2,
@@ -591,7 +681,34 @@ pub struct ImageEditor {
     pub(super) retouch_pixelate_block: u32,
 
     pub(super) filter_preview_active: bool,
-    pub(super) filter_preview_image: Option<DynamicImage>,
+    pub(super) filter_preview_snapshot: Option<LayerUndoEntry>,
+
+    pub(super) layers: Vec<ImageLayer>,
+    pub(super) active_layer_id: u64,
+    pub(super) next_layer_id: u64,
+    pub(super) layer_images: std::collections::HashMap<u64, DynamicImage>,
+    pub(super) composite_dirty: bool,
+    pub(super) composite_dirty_rect: Option<[u32; 4]>,
+    pub(super) stroke_backdrop: Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+    pub(super) backdrop_cache: Arc<Mutex<Option<ImageBuffer<Rgba<u8>, Vec<u8>>>>>,
+    pub(super) backdrop_cache_for: u64,
+    pub(super) show_layers_panel: bool,
+    pub(super) layer_panel_width: f32,
+    pub(super) layer_drag_src: Option<usize>,
+    pub(super) layer_rename_id: Option<u64>,
+    pub(super) layer_rename_buf: String,
+    pub(super) filter_target_layer_id: u64,
+    pub(super) checker_texture: Option<egui::TextureId>,
+    pub(super) checker_texture_dark: bool,
+
+    pub(super) image_layer_data: std::collections::HashMap<u64, ImageLayerData>,
+    pub(super) image_layer_textures: std::collections::HashMap<u64, egui::TextureId>,
+    pub(super) image_layer_texture_dirty: std::collections::HashSet<u64>,
+    pub(super) image_layer_stroke_rects: std::collections::HashMap<u64, [u32; 4]>,
+    pub(super) selected_image_layer: Option<u64>,
+    pub(super) image_drag: Option<ImageDrag>,
+    pub(super) next_image_layer_id: u64,
+    pub(super) image_aspect_lock: bool,
 }
 
 impl ImageEditor {
@@ -635,7 +752,37 @@ impl ImageEditor {
             retouch_smudge_sample: [0.0; 4],
             retouch_pixelate_block: 12,
             filter_preview_active: false,
-            filter_preview_image: None,
+            filter_preview_snapshot: None,
+            layers: vec![ImageLayer {
+                id: 0, name: "Background".to_string(),
+                opacity: 1.0, visible: true, locked: false,
+                blend_mode: BlendMode::Normal,
+                kind: LayerKind::Background, linked_text_id: None, linked_image_id: None,
+            }],
+            active_layer_id: 0,
+            next_layer_id: 1,
+            layer_images: std::collections::HashMap::new(),
+            composite_dirty: false,
+            composite_dirty_rect: None,
+            stroke_backdrop: None,
+            backdrop_cache: Arc::new(Mutex::new(None)),
+            backdrop_cache_for: u64::MAX,
+            show_layers_panel: true,
+            layer_panel_width: 240.0,
+            layer_drag_src: None,
+            layer_rename_id: None,
+            layer_rename_buf: String::new(),
+            filter_target_layer_id: 0,
+            checker_texture: None,
+            checker_texture_dark: false,
+            image_layer_data: std::collections::HashMap::new(),
+            image_layer_textures: std::collections::HashMap::new(),
+            image_layer_texture_dirty: std::collections::HashSet::new(),
+            image_layer_stroke_rects: std::collections::HashMap::new(),
+            selected_image_layer: None,
+            image_drag: None,
+            next_image_layer_id: 0,
+            image_aspect_lock: true,
         }
     }
 
@@ -646,6 +793,7 @@ impl ImageEditor {
             editor.resize_h = img.height();
             editor.image = Some(img);
             editor.texture_dirty = true;
+            editor.composite_dirty = true;
             editor.file_path = Some(path);
         }
         editor
@@ -655,48 +803,633 @@ impl ImageEditor {
     pub fn set_file_callback(&mut self, callback: Box<dyn Fn(PathBuf) + Send + Sync>) { self.export_callback = Some(callback);}
     pub(super) fn add_color_to_history(&mut self) { self.color_history.add_color(RgbaColor::from_egui(self.color)); }
 
-    pub(super) fn push_undo(&mut self) {
-        if let Some(img) = &self.image {
-            self.undo_stack.push_back(img.clone());
-            if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
-            self.redo_stack.clear();
+    pub(super) fn take_undo_snapshot(&self) -> LayerUndoEntry {
+        LayerUndoEntry {
+            image: self.image.clone(),
+            layer_images: self.layer_images.clone(),
+            layers: self.layers.clone(),
+            text_layers: self.text_layers.clone(),
+            active_layer_id: self.active_layer_id,
+            next_layer_id: self.next_layer_id,
+            next_text_id: self.next_text_id,
+            image_layer_data: self.image_layer_data.clone(),
+            next_image_layer_id: self.next_image_layer_id,
         }
     }
 
-    pub(super) fn push_undo_from(&mut self, img: DynamicImage) {
-        self.undo_stack.push_back(img);
+    pub(super) fn restore_undo_snapshot(&mut self, entry: LayerUndoEntry) {
+        self.image = entry.image;
+        self.layer_images = entry.layer_images;
+        self.layers = entry.layers;
+        self.text_layers = entry.text_layers;
+        self.active_layer_id = entry.active_layer_id;
+        self.next_layer_id = entry.next_layer_id;
+        self.next_text_id = entry.next_text_id;
+        let old_keys: std::collections::HashSet<u64> = self.image_layer_data.keys().cloned().collect();
+        let new_keys: std::collections::HashSet<u64> = entry.image_layer_data.keys().cloned().collect();
+        for removed_id in old_keys.difference(&new_keys) { self.image_layer_texture_dirty.remove(removed_id); }
+        for changed_id in new_keys.iter() { self.image_layer_texture_dirty.insert(*changed_id); }
+        self.image_layer_data = entry.image_layer_data;
+        self.next_image_layer_id = entry.next_image_layer_id;
+        if let Some(img) = &self.image {
+            self.resize_w = img.width();
+            self.resize_h = img.height();
+        }
+        self.texture_dirty = true;
+        self.composite_dirty = true;
+        self.dirty = true;
+        self.backdrop_cache_for = u64::MAX;
+    }
+
+    pub(super) fn push_undo(&mut self) {
+        let entry = self.take_undo_snapshot();
+        self.undo_stack.push_back(entry);
         if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
         self.redo_stack.clear();
     }
 
     pub(super) fn cancel_filter_preview(&mut self) {
-        if let Some(original) = self.filter_preview_image.take() {
-            self.image = Some(original);
-            self.texture_dirty = true;
-            self.dirty = true;
+        if let Some(snapshot) = self.filter_preview_snapshot.take() {
+            self.restore_undo_snapshot(snapshot);
         }
         self.filter_preview_active = false;
         self.processing_is_preview = false;
     }
 
     pub(super) fn accept_filter_preview(&mut self) {
-        if let Some(pre_preview) = self.filter_preview_image.take() {
-            self.push_undo_from(pre_preview);
+        if let Some(snapshot) = self.filter_preview_snapshot.take() {
+            self.undo_stack.push_back(snapshot);
+            if self.undo_stack.len() > MAX_UNDO { self.undo_stack.pop_front(); }
+            self.redo_stack.clear();
         }
         self.filter_preview_active = false;
     }
+
     pub(super) fn undo(&mut self) {
-        if let Some(prev) = self.undo_stack.pop_back() {
-            if let Some(cur) = self.image.take() { self.redo_stack.push_back(cur); }
-            self.resize_w = prev.width(); self.resize_h = prev.height();
-            self.image = Some(prev); self.texture_dirty = true; self.dirty = true;
+        if let Some(entry) = self.undo_stack.pop_back() {
+            let current = self.take_undo_snapshot();
+            self.redo_stack.push_back(current);
+            self.restore_undo_snapshot(entry);
         }
     }
+
     pub(super) fn redo(&mut self) {
-        if let Some(next) = self.redo_stack.pop_back() {
-            if let Some(cur) = self.image.take() { self.undo_stack.push_back(cur); }
-            self.resize_w = next.width(); self.resize_h = next.height();
-            self.image = Some(next); self.texture_dirty = true; self.dirty = true;
+        if let Some(entry) = self.redo_stack.pop_back() {
+            let current = self.take_undo_snapshot();
+            self.undo_stack.push_back(current);
+            self.restore_undo_snapshot(entry);
+        }
+    }
+
+    pub(super) fn active_raster_image(&self) -> Option<&DynamicImage> {
+        match self.layers.iter().find(|l| l.id == self.active_layer_id)?.kind {
+            LayerKind::Background => self.image.as_ref(),
+            LayerKind::Raster => self.layer_images.get(&self.active_layer_id),
+            LayerKind::Text | LayerKind::Image => None,
+        }
+    }
+
+    pub(super) fn composite_for_display(&self) -> Option<DynamicImage> {
+        let bg = self.image.as_ref()?;
+        let (w, h) = (bg.width(), bg.height());
+        let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
+        let editing_tid = self.selected_text;
+        let mut linked: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        for layer in &self.layers {
+            if !layer.visible { continue; }
+            match layer.kind {
+                LayerKind::Image => {
+                    if let Some(iid) = layer.linked_image_id {
+                        if Some(iid) != self.selected_image_layer {
+                            if let Some(ild) = self.image_layer_data.get(&iid) {
+                                Self::stamp_image_layer(&mut result, ild, layer.opacity, layer.blend_mode);
+                            }
+                        }
+                    }
+                }
+                LayerKind::Text => {
+                    if let Some(tid) = layer.linked_text_id {
+                        linked.insert(tid);
+                        if editing_tid == Some(tid) { continue; }
+                        if let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() {
+                            let base = DynamicImage::ImageRgba8(result.clone());
+                            result = self.stamp_single_text_layer(&base, &tl, layer.opacity).to_rgba8();
+                        }
+                    }
+                }
+                LayerKind::Background | LayerKind::Raster => {
+                    let src = match layer.kind {
+                        LayerKind::Background => Some(bg),
+                        LayerKind::Raster => self.layer_images.get(&layer.id),
+                        _ => unreachable!(),
+                    };
+                    let Some(src) = src else { continue };
+                    let src_rgba = src.to_rgba8();
+                    let opacity = layer.opacity.clamp(0.0, 1.0);
+                    let mode = layer.blend_mode;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let out = blend_pixels_u8(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
+                            result.put_pixel(x, y, Rgba(out));
+                        }
+                    }
+                }
+            }
+        }
+        for tl in self.text_layers.iter().filter(|t| !linked.contains(&t.id) && editing_tid != Some(t.id)) {
+            let base = DynamicImage::ImageRgba8(result.clone());
+            result = self.stamp_single_text_layer(&base, tl, 1.0).to_rgba8();
+        }
+        Some(DynamicImage::ImageRgba8(result))
+    }
+
+    pub(super) fn composite_all_layers(&self) -> Option<DynamicImage> {
+        let bg = self.image.as_ref()?;
+        let (w, h) = (bg.width(), bg.height());
+        let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
+        let editing_tid = if self.editing_text { self.selected_text } else { None };
+        let mut linked: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        for layer in &self.layers {
+            if !layer.visible { continue; }
+            match layer.kind {
+                LayerKind::Text => {
+                    if let Some(tid) = layer.linked_text_id {
+                        linked.insert(tid);
+                        if editing_tid == Some(tid) { continue; }
+                        if let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() {
+                            let base = DynamicImage::ImageRgba8(result.clone());
+                            result = self.stamp_single_text_layer(&base, &tl, layer.opacity).to_rgba8();
+                        }
+                    }
+                }
+                LayerKind::Image => {
+                    if let Some(iid) = layer.linked_image_id {
+                        if let Some(ild) = self.image_layer_data.get(&iid) {
+                            Self::stamp_image_layer(&mut result, ild, layer.opacity, layer.blend_mode);
+                        }
+                    }
+                }
+                LayerKind::Background | LayerKind::Raster => {
+                    let src = match layer.kind {
+                        LayerKind::Background => Some(bg),
+                        LayerKind::Raster => self.layer_images.get(&layer.id),
+                        _ => unreachable!(),
+                    };
+                    let Some(src) = src else { continue };
+                    let src_rgba = src.to_rgba8();
+                    let opacity = layer.opacity.clamp(0.0, 1.0);
+                    let mode = layer.blend_mode;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let out = blend_pixels_u8(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
+                            result.put_pixel(x, y, Rgba(out));
+                        }
+                    }
+                }
+            }
+        }
+        for tl in self.text_layers.iter().filter(|t| !linked.contains(&t.id) && editing_tid != Some(t.id)) {
+            let base = DynamicImage::ImageRgba8(result.clone());
+            result = self.stamp_single_text_layer(&base, tl, 1.0).to_rgba8();
+        }
+        Some(DynamicImage::ImageRgba8(result))
+    }
+
+    pub(super) fn stamp_image_layer(composite: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, ild: &ImageLayerData, layer_opacity: f32, blend_mode: BlendMode) {
+        let (cw, ch) = (composite.width(), composite.height());
+        let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
+        if orig_w == 0 || orig_h == 0 || ild.display_w <= 0.0 || ild.display_h <= 0.0 { return; }
+        let src = ild.image.to_rgba8();
+        let (cx, cy) = ild.center_canvas();
+        let angle_rad = ild.rotation.to_radians();
+        let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+        let corners = [(ild.canvas_x, ild.canvas_y), (ild.canvas_x + ild.display_w, ild.canvas_y),
+                       (ild.canvas_x + ild.display_w, ild.canvas_y + ild.display_h), (ild.canvas_x, ild.canvas_y + ild.display_h)];
+        let rc: Vec<(f32, f32)> = corners.iter().map(|&(px, py)| {
+            let (dx, dy) = (px - cx, py - cy);
+            (cx + dx * cos_a - dy * sin_a, cy + dx * sin_a + dy * cos_a)
+        }).collect();
+        let min_x = rc.iter().map(|p| p.0).fold(f32::MAX, f32::min).max(0.0) as u32;
+        let max_x = (rc.iter().map(|p| p.0).fold(f32::MIN, f32::max).ceil() as u32).min(cw);
+        let min_y = rc.iter().map(|p| p.1).fold(f32::MAX, f32::min).max(0.0) as u32;
+        let max_y = (rc.iter().map(|p| p.1).fold(f32::MIN, f32::max).ceil() as u32).min(ch);
+        let opacity = layer_opacity.clamp(0.0, 1.0);
+        for py in min_y..max_y {
+            for px in min_x..max_x {
+                let (dx, dy) = (px as f32 - cx, py as f32 - cy);
+                let lx = dx * cos_a + dy * sin_a + ild.display_w / 2.0;
+                let ly = -dx * sin_a + dy * cos_a + ild.display_h / 2.0;
+                if lx < 0.0 || ly < 0.0 || lx >= ild.display_w || ly >= ild.display_h { continue; }
+                let mut sx = lx / ild.display_w * orig_w as f32;
+                let mut sy = ly / ild.display_h * orig_h as f32;
+                if ild.flip_h { sx = orig_w as f32 - 1.0 - sx; }
+                if ild.flip_v { sy = orig_h as f32 - 1.0 - sy; }
+                let sp = Self::bilinear_sample_rgba(&src, sx.clamp(0.0, orig_w as f32 - 1.0001), sy.clamp(0.0, orig_h as f32 - 1.0001), orig_w, orig_h);
+                let dst = composite.get_pixel(px, py).0;
+                composite.put_pixel(px, py, Rgba(blend_pixels_u8(dst, sp, opacity, blend_mode)));
+            }
+        }
+    }
+
+    #[inline]
+    pub(super) fn bilinear_sample_rgba(src: &ImageBuffer<Rgba<u8>, Vec<u8>>, sx: f32, sy: f32, w: u32, h: u32) -> [u8; 4] {
+        let x0 = sx as u32; let y0 = sy as u32;
+        let x1 = (x0 + 1).min(w.saturating_sub(1));
+        let y1 = (y0 + 1).min(h.saturating_sub(1));
+        let (fx, fy) = (sx - x0 as f32, sy - y0 as f32);
+        let p00 = src.get_pixel(x0, y0).0; let p10 = src.get_pixel(x1, y0).0;
+        let p01 = src.get_pixel(x0, y1).0; let p11 = src.get_pixel(x1, y1).0;
+        let lerp = |a: u8, b: u8, t: f32| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+        [lerp(lerp(p00[0],p10[0],fx),lerp(p01[0],p11[0],fx),fy), lerp(lerp(p00[1],p10[1],fx),lerp(p01[1],p11[1],fx),fy),
+         lerp(lerp(p00[2],p10[2],fx),lerp(p01[2],p11[2],fx),fy), lerp(lerp(p00[3],p10[3],fx),lerp(p01[3],p11[3],fx),fy)]
+    }
+
+
+    fn insert_above_active(&self) -> usize {
+        self.layers.iter().rposition(|l| l.id == self.active_layer_id).map(|pos| pos + 1).unwrap_or(self.layers.len())
+    }
+
+    pub(super) fn new_raster_layer(&mut self) {
+        let (w, h) = match &self.image { Some(img) => (img.width(), img.height()), None => return, };
+        self.push_undo();
+        let id = self.next_layer_id; self.next_layer_id += 1;
+        let layer = ImageLayer {
+            id, name: format!("Layer {}", id),
+            opacity: 1.0, visible: true, locked: false,
+            blend_mode: BlendMode::Normal,
+            kind: LayerKind::Raster, linked_text_id: None, linked_image_id: None,
+        };
+        let pos = self.insert_above_active();
+        self.layers.insert(pos, layer);
+        self.layer_images.insert(id, DynamicImage::ImageRgba8(ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0])),));
+        self.active_layer_id = id;
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn duplicate_active_layer(&mut self) {
+        let (src_kind, src_opacity, src_blend, src_name, src_text_id, src_image_id, src_locked) =
+            match self.layers.iter().find(|l| l.id == self.active_layer_id) {
+                Some(l) => (l.kind, l.opacity, l.blend_mode, l.name.clone(), l.linked_text_id, l.linked_image_id, l.locked),
+                None => return,
+            };
+        self.push_undo();
+        let new_id = self.next_layer_id; self.next_layer_id += 1;
+        let src_img = match src_kind {
+            LayerKind::Background => self.image.clone(),
+            LayerKind::Raster => self.layer_images.get(&self.active_layer_id).cloned(),
+            LayerKind::Text | LayerKind::Image => None,
+        };
+
+        let mut new_text_id = None;
+        if src_kind == LayerKind::Text {
+            if let Some(tid) = src_text_id {
+                if let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() {
+                    let ntid = self.next_text_id; self.next_text_id += 1;
+                    let mut new_tl = tl; new_tl.id = ntid;
+                    self.text_layers.push(new_tl);
+                    new_text_id = Some(ntid);
+                }
+            }
+        }
+
+        let mut new_image_id = None;
+        if src_kind == LayerKind::Image {
+            if let Some(iid) = src_image_id {
+                if let Some(ild) = self.image_layer_data.get(&iid).cloned() {
+                    let niid = self.next_image_layer_id; self.next_image_layer_id += 1;
+                    let mut new_ild = ild; new_ild.id = niid;
+                    self.image_layer_texture_dirty.insert(niid);
+                    self.image_layer_data.insert(niid, new_ild);
+                    new_image_id = Some(niid);
+                }
+            }
+        }
+
+        let new_layer = ImageLayer {
+            id: new_id, name: format!("{} copy", src_name),
+            opacity: src_opacity, visible: true, locked: src_locked,
+            blend_mode: src_blend,
+            kind: src_kind, linked_text_id: new_text_id, linked_image_id: new_image_id,
+        };
+        let pos = self.insert_above_active();
+        self.layers.insert(pos, new_layer);
+        if let Some(img) = src_img { self.layer_images.insert(new_id, img); }
+        self.active_layer_id = new_id;
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn delete_active_layer(&mut self) {
+        if self.layers.len() <= 1 { return; }
+        let idx = match self.layers.iter().position(|l| l.id == self.active_layer_id) {
+            Some(i) => i, None => return,
+        };
+        self.push_undo();
+        let removed = self.layers.remove(idx);
+        self.layer_images.remove(&removed.id);
+        if removed.kind == LayerKind::Text {
+            if let Some(tid) = removed.linked_text_id {
+                self.text_layers.retain(|t| t.id != tid);
+            }
+        }
+        if removed.kind == LayerKind::Image {
+            if let Some(iid) = removed.linked_image_id {
+                self.image_layer_data.remove(&iid);
+                if let Some(tid) = self.image_layer_textures.remove(&iid) {
+                    let _ = tid;
+                }
+                self.image_layer_texture_dirty.remove(&iid);
+                if self.selected_image_layer == Some(iid) { self.selected_image_layer = None; }
+            }
+        }
+        let new_idx = if idx > 0 { idx - 1 } else { 0 };
+        self.active_layer_id = self.layers.get(new_idx).map(|l| l.id).unwrap_or(0);
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn merge_down(&mut self) {
+        let idx = match self.layers.iter().position(|l| l.id == self.active_layer_id) {
+            Some(i) if i > 0 => i,
+            _ => return,
+        };
+        let below_kind = self.layers[idx - 1].kind;
+        if matches!(below_kind, LayerKind::Text | LayerKind::Image) { return; }
+
+        self.push_undo();
+
+        let top_id = self.layers[idx].id;
+        let below_id = self.layers[idx - 1].id;
+        let top_img: Option<DynamicImage> = match self.layers[idx].kind {
+            LayerKind::Background => self.image.clone(),
+            LayerKind::Raster => self.layer_images.get(&top_id).cloned(),
+            LayerKind::Text | LayerKind::Image => None,
+        };
+        let bot_img: Option<DynamicImage> = match below_kind {
+            LayerKind::Background => self.image.clone(),
+            LayerKind::Raster => self.layer_images.get(&below_id).cloned(),
+            _ => None,
+        };
+
+        if let (Some(top), Some(bot)) = (top_img, bot_img) {
+            let top_opacity = self.layers[idx].opacity;
+            let top_mode = self.layers[idx].blend_mode;
+            let (w, h) = (bot.width(), bot.height());
+            let mut result = bot.to_rgba8();
+            let top_rgba = top.to_rgba8();
+
+            for y in 0..h {
+                for x in 0..w {
+                    let out = blend_pixels_u8(result.get_pixel(x, y).0, top_rgba.get_pixel(x, y).0, top_opacity, top_mode);
+                    result.put_pixel(x, y, Rgba(out));
+                }
+            }
+
+            let merged = DynamicImage::ImageRgba8(result);
+            match below_kind {
+                LayerKind::Background => { self.image = Some(merged); }
+                LayerKind::Raster => { self.layer_images.insert(below_id, merged); }
+                _ => {}
+            }
+        }
+
+        self.layers.remove(idx);
+        self.active_layer_id = below_id;
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn flatten_all_layers(&mut self) {
+        if let Some(composite) = self.composite_all_layers() {
+            self.push_undo();
+            self.image = Some(composite);
+            self.layer_images.clear();
+            self.text_layers.clear();
+            self.image_layer_data.clear();
+            self.image_layer_texture_dirty.clear();
+            self.selected_image_layer = None;
+            self.layers = vec![ImageLayer {
+                id: 0, name: "Background".to_string(),
+                opacity: 1.0, visible: true, locked: false,
+                blend_mode: BlendMode::Normal,
+                kind: LayerKind::Background, linked_text_id: None, linked_image_id: None,
+            }];
+            self.active_layer_id = 0;
+            self.texture_dirty = true;
+            self.composite_dirty = false;
+            self.dirty = true;
+        }
+    }
+
+    pub(super) fn ensure_layer_entry_for_text(&mut self, text_id: u64) {
+        if !self.layers.iter().any(|l| l.linked_text_id == Some(text_id)) {
+            let id = self.next_layer_id; self.next_layer_id += 1;
+            let layer = ImageLayer {
+                id, name: format!("Text {}", text_id + 1),
+                opacity: 1.0, visible: true, locked: false,
+                blend_mode: BlendMode::Normal,
+                kind: LayerKind::Text, linked_text_id: Some(text_id), linked_image_id: None,
+            };
+            let pos = self.insert_above_active();
+            self.layers.insert(pos, layer);
+            self.active_layer_id = id;
+        }
+    }
+
+    pub(super) fn insert_image_layer(&mut self, img: DynamicImage, center_on_canvas: bool) {
+        let Some(bg) = &self.image else { return };
+        let (cw, ch) = (bg.width() as f32, bg.height() as f32);
+        let (iw, ih) = (img.width() as f32, img.height() as f32);
+        let (display_w, display_h) = {
+            let scale = (cw / iw).min(ch / ih).min(1.0);
+            (iw * scale, ih * scale)
+        };
+        let (cx, cy) = if center_on_canvas {
+            ((cw - display_w) / 2.0, (ch - display_h) / 2.0)
+        } else { (0.0, 0.0) };
+        self.push_undo();
+        let iid = self.next_image_layer_id; self.next_image_layer_id += 1;
+        let lid = self.next_layer_id; self.next_layer_id += 1;
+        let img = DynamicImage::ImageRgba8(img.to_rgba8());
+        let ild = ImageLayerData { id: iid, image: img, canvas_x: cx, canvas_y: cy, display_w, display_h, rotation: 0.0, flip_h: false, flip_v: false };
+        self.image_layer_data.insert(iid, ild);
+        self.image_layer_texture_dirty.insert(iid);
+        let layer = ImageLayer { id: lid, name: format!("Image {}", iid + 1), opacity: 1.0, visible: true, locked: false, blend_mode: BlendMode::Normal, kind: LayerKind::Image, linked_text_id: None, linked_image_id: Some(iid) };
+        let pos = self.insert_above_active();
+        self.layers.insert(pos, layer);
+        self.active_layer_id = lid;
+        self.selected_image_layer = Some(iid);
+        self.selected_text = None;
+        self.editing_text = false;
+        self.text_drag = None;
+        self.tool = Tool::Pan;
+        self.composite_dirty = true;
+        self.dirty = true;
+    }
+
+    pub(super) fn image_layer_for_active(&self) -> Option<u64> {
+        let layer = self.layers.iter().find(|l| l.id == self.active_layer_id)?;
+        if layer.kind == LayerKind::Image { layer.linked_image_id } else { None }
+    }
+
+    pub(super) fn ensure_image_layer_textures(&mut self, ctx: &egui::Context) {
+        const MAX_TEX_DIM: u32 = 2048;
+        let dirty_ids: Vec<u64> = self.image_layer_texture_dirty.drain().collect();
+        for iid in dirty_ids {
+            let stroke_rect = self.image_layer_stroke_rects.remove(&iid);
+            if let Some(ild) = self.image_layer_data.get(&iid) {
+                let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
+                let scale = (MAX_TEX_DIM as f32 / orig_w as f32).min(MAX_TEX_DIM as f32 / orig_h as f32).min(1.0);
+                let opts = egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, ..Default::default() };
+                
+                let orig_tex_w = (orig_w as f32 * scale) as usize;
+                let orig_tex_h = (orig_h as f32 * scale) as usize;
+
+                if let (Some([dr_x0, dr_y0, dr_x1, dr_y1]), Some(&existing)) = (stroke_rect, self.image_layer_textures.get(&iid)) {
+                    let nx0 = dr_x0.min(orig_w); let ny0 = dr_y0.min(orig_h);
+                    let nx1 = dr_x1.min(orig_w); let ny1 = dr_y1.min(orig_h);
+                    if nx1 > nx0 && ny1 > ny0 {
+                        let tx0 = ((nx0 as f32 * scale) as usize).min(orig_tex_w.saturating_sub(1));
+                        let ty0 = ((ny0 as f32 * scale) as usize).min(orig_tex_h.saturating_sub(1));
+                        let mut tw = ((nx1 - nx0) as f32 * scale).ceil() as usize + 1;
+                        let mut th = ((ny1 - ny0) as f32 * scale).ceil() as usize + 1;
+                        tw = tw.min(orig_tex_w - tx0).min(MAX_TEX_DIM as usize);
+                        th = th.min(orig_tex_h - ty0).min(MAX_TEX_DIM as usize);
+
+                        if tw > 0 && th > 0 {
+                            let sub = ild.image.crop_imm(nx0, ny0, nx1 - nx0, ny1 - ny0);
+                            let sub_rgba = if scale < 1.0 {
+                                sub.resize_exact(tw as u32, th as u32, image::imageops::FilterType::Nearest).to_rgba8()
+                            } else { sub.to_rgba8() };
+                            
+                            let (sw, sh) = (sub_rgba.width() as usize, sub_rgba.height() as usize);
+                            if sw > 0 && sh > 0 {
+                                let safe_sw = sw.min(orig_tex_w - tx0);
+                                let safe_sh = sh.min(orig_tex_h - ty0);
+                                let final_rgba = if safe_sw != sw || safe_sh != sh {
+                                    let cropped = image::DynamicImage::ImageRgba8(sub_rgba).crop_imm(0, 0, safe_sw as u32, safe_sh as u32);
+                                    cropped.to_rgba8()
+                                } else {
+                                    sub_rgba
+                                };
+                                let img = egui::ColorImage::from_rgba_unmultiplied([safe_sw, safe_sh], final_rgba.as_raw());
+                                ctx.tex_manager().write().set(existing, egui::epaint::ImageDelta::partial([tx0, ty0], img, opts));
+                                continue;
+                            }
+                        }
+                    }
+                }
+                
+                let tw = orig_tex_w as u32;
+                let th = orig_tex_h as u32;
+                let rgba = if scale < 1.0 {
+                    ild.image.resize_exact(tw, th, image::imageops::FilterType::Triangle).to_rgba8()
+                } else { ild.image.to_rgba8() };
+                
+                let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+                let img = egui::ColorImage::from_rgba_unmultiplied([w, h], rgba.as_raw());
+                if let Some(&existing) = self.image_layer_textures.get(&iid) {
+                    ctx.tex_manager().write().set(existing, egui::epaint::ImageDelta::full(img, opts));
+                } else {
+                    let tid = ctx.tex_manager().write().alloc(format!("img_layer_{}", iid), img.into(), opts);
+                    self.image_layer_textures.insert(iid, tid);
+                }
+            }
+        }
+    }
+
+    pub(super) fn image_layer_transform_handles(&self) -> Option<TransformHandleSet> {
+        let iid = self.selected_image_layer?;
+        let ild = self.image_layer_data.get(&iid)?;
+        let canvas = self.canvas_rect?;
+        let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32))?;
+        let rect = ild.screen_rect(img_w, img_h, canvas, self.zoom, self.pan);
+        Some(TransformHandleSet::with_rotation(rect, ild.rotation.to_radians()))
+    }
+
+    pub(super) fn flip_image_layer_h(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                ild.flip_h = !ild.flip_h;
+                self.composite_dirty = true; self.dirty = true;
+            }
+        }
+    }
+
+    pub(super) fn flip_image_layer_v(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                ild.flip_v = !ild.flip_v;
+                self.composite_dirty = true; self.dirty = true;
+            }
+        }
+    }
+
+    pub(super) fn reset_image_layer_size(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                ild.display_w = ild.image.width() as f32;
+                ild.display_h = ild.image.height() as f32;
+                self.composite_dirty = true; self.dirty = true;
+            }
+        }
+    }
+
+    pub(super) fn fit_image_layer_to_canvas(&mut self) {
+        let bg_size = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+        if let Some(iid) = self.image_layer_for_active() {
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                let scale = (bg_size.0 / ild.orig_w() as f32).min(bg_size.1 / ild.orig_h() as f32);
+                ild.display_w = ild.orig_w() as f32 * scale;
+                ild.display_h = ild.orig_h() as f32 * scale;
+                ild.canvas_x = (bg_size.0 - ild.display_w) / 2.0;
+                ild.canvas_y = (bg_size.1 - ild.display_h) / 2.0;
+                self.composite_dirty = true; self.dirty = true;
+            }
+        }
+    }
+
+    pub(super) fn rasterize_image_layer(&mut self) {
+        let (cw, ch) = match &self.image { Some(i) => (i.width(), i.height()), None => return };
+        let iid = match self.image_layer_for_active() { Some(id) => id, None => return };
+        let layer_idx = match self.layers.iter().position(|l| l.id == self.active_layer_id) { Some(i) => i, None => return };
+        let opacity = self.layers[layer_idx].opacity;
+        let blend = self.layers[layer_idx].blend_mode;
+        let ild_clone = match self.image_layer_data.get(&iid) { Some(d) => d.clone(), None => return };
+        self.push_undo();
+        let mut raster: image::ImageBuffer<Rgba<u8>, Vec<u8>> = image::ImageBuffer::from_pixel(cw, ch, Rgba([0, 0, 0, 0]));
+        Self::stamp_image_layer(&mut raster, &ild_clone, opacity, blend);
+        let new_img = DynamicImage::ImageRgba8(raster);
+        let new_lid = self.next_layer_id; self.next_layer_id += 1;
+        self.layer_images.insert(new_lid, new_img);
+        self.image_layer_data.remove(&iid);
+        self.image_layer_texture_dirty.remove(&iid);
+        if let Some(old_tex) = self.image_layer_textures.remove(&iid) { let _ = old_tex; }
+        if self.selected_image_layer == Some(iid) { self.selected_image_layer = None; }
+        let name = self.layers[layer_idx].name.clone();
+        self.layers[layer_idx] = ImageLayer { id: new_lid, name, opacity: 1.0, visible: true, locked: false, blend_mode: BlendMode::Normal, kind: LayerKind::Raster, linked_text_id: None, linked_image_id: None };
+        self.active_layer_id = new_lid;
+        self.composite_dirty = true; self.dirty = true;
+    }
+
+    pub(super) fn move_layer_up(&mut self) {
+        if let Some(idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) {
+            if idx + 1 < self.layers.len() {
+                self.layers.swap(idx, idx + 1);
+                self.composite_dirty = true;
+                self.dirty = true;
+            }
+        }
+    }
+
+    pub(super) fn move_layer_down(&mut self) {
+        if let Some(idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) {
+            if idx > 0 {
+                self.layers.swap(idx, idx - 1);
+                self.composite_dirty = true;
+                self.dirty = true;
+            }
         }
     }
 
@@ -712,6 +1445,34 @@ impl ImageEditor {
         let ry: f32 = (screen_pos.y - oy) / self.zoom;
         if rx < 0.0 || ry < 0.0 || rx >= img_w || ry >= img_h { return Option::None; }
         Some((rx as u32, ry as u32))
+    }
+
+    pub(super) fn ensure_checker_texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        let is_dark = ctx.style().visuals.dark_mode;
+        if let Some(tid) = self.checker_texture {
+            if self.checker_texture_dark == is_dark { return tid; }
+            ctx.tex_manager().write().free(tid);
+        }
+        let sq: usize = 16;
+        let sz = sq * 2;
+        let (light, dark) = if is_dark {
+            ([55u8, 55, 55, 255], [40u8, 40, 40, 255])
+        } else {
+            ([220u8, 220, 220, 255], [200u8, 200, 200, 255])
+        };
+        let mut pixels: Vec<u8> = Vec::with_capacity(sz * sz * 4);
+        for row in 0..sz {
+            for col in 0..sz {
+                let c = if (row / sq + col / sq) % 2 == 0 { light } else { dark };
+                pixels.extend_from_slice(&c);
+            }
+        }
+        let img = egui::ColorImage::from_rgba_unmultiplied([sz, sz], &pixels);
+        let opts = egui::TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..Default::default() };
+        let tid = ctx.tex_manager().write().alloc("checker_bg".into(), img.into(), opts);
+        self.checker_texture = Some(tid);
+        self.checker_texture_dark = is_dark;
+        tid
     }
 
     pub(super) fn image_to_screen(&self, ix: f32, iy: f32) -> egui::Pos2 {
@@ -736,11 +1497,45 @@ impl ImageEditor {
         self.push_undo();
         self.image = Some(DynamicImage::ImageRgba8(ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]))));
         self.resize_w = w; self.resize_h = h;
-        self.texture_dirty = true; self.file_path = None;
+        self.texture_dirty = true;
+        self.composite_dirty = true;
+        self.file_path = None;
         self.dirty = true; self.fit_on_next_frame = true;
     }
 
     pub(super) fn ensure_texture(&mut self, ctx: &egui::Context) {
+        if self.composite_dirty {
+            let partial = self.composite_dirty_rect.take();
+            let tex_opt = self.texture;
+            if let (Some(tex_id), Some([cx0, cy0, cx1, cy1])) = (tex_opt, partial) {
+                let all_rgba8 = self.image.as_ref().map_or(true, |i| matches!(i, DynamicImage::ImageRgba8(_)))
+                    && self.layer_images.values().all(|i| matches!(i, DynamicImage::ImageRgba8(_)));
+                if all_rgba8 && (self.is_dragging || !self.has_visible_text_in_rect(cx0, cy0, cx1, cy1)) {
+                    self.upload_partial_composite(ctx, tex_id, cx0, cy0, cx1, cy1);
+                    self.composite_dirty = false;
+                    self.texture_dirty = false;
+                    self.texture_dirty_rect = None;
+                    return;
+                }
+            }
+            self.composite_dirty_rect = None;
+            if let Some(composite) = self.composite_for_display() {
+                let rgba = composite.to_rgba8();
+                let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+                let pixels: Vec<egui::Color32> = rgba.pixels().map(|p| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect();
+                let color_image = egui::ColorImage { size: [w, h], source_size: egui::vec2(w as f32, h as f32), pixels };
+                if let Some(tid) = self.texture {
+                    ctx.tex_manager().write().set(tid, egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default()));
+                } else {
+                    self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), egui::TextureOptions::default()));
+                }
+            }
+            self.composite_dirty = false;
+            self.texture_dirty = false;
+            self.texture_dirty_rect = None;
+            return;
+        }
+
         if !self.texture_dirty { return; }
 
         let img: &DynamicImage = match &self.image {
@@ -799,6 +1594,136 @@ impl ImageEditor {
         self.texture_dirty_rect = None;
     }
 
+    fn has_visible_text_in_rect(&self, x0: u32, y0: u32, x1: u32, y1: u32) -> bool {
+        self.text_layers.iter().any(|tl| {
+            let bw = tl.box_width.unwrap_or_else(|| tl.auto_width(1.0)).ceil() as u32 + 1;
+            let bh = tl.box_height.unwrap_or_else(|| tl.auto_height(1.0)).ceil() as u32 + 1;
+            let (tx0, ty0) = (tl.img_x.max(0.0) as u32, tl.img_y.max(0.0) as u32);
+            tx0 < x1 && tx0.saturating_add(bw) > x0 && ty0 < y1 && ty0.saturating_add(bh) > y0
+        })
+    }
+
+    fn upload_partial_composite(&self, ctx: &egui::Context, tex_id: egui::TextureId, x0: u32, y0: u32, x1: u32, y1: u32) {
+        let bg = match &self.image { Some(i) => i, None => return };
+        let (iw, ih) = (bg.width(), bg.height());
+        let x0 = x0.min(iw); let y0 = y0.min(ih);
+        let x1 = x1.min(iw); let y1 = y1.min(ih);
+        if x0 >= x1 || y0 >= y1 { return; }
+        let pw = (x1 - x0) as usize; let ph = (y1 - y0) as usize;
+        let mut out: Vec<[f32; 4]> = vec![[0.0f32; 4]; pw * ph];
+        for layer in &self.layers {
+            if !layer.visible { continue; }
+            match layer.kind {
+                LayerKind::Text => continue,
+                LayerKind::Image => {
+                    let Some(iid) = layer.linked_image_id else { continue };
+                    if Some(iid) == self.selected_image_layer { continue; }
+                    let Some(ild) = self.image_layer_data.get(&iid) else { continue };
+                    let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
+                    if orig_w == 0 || orig_h == 0 || ild.display_w <= 0.0 || ild.display_h <= 0.0 { continue; }
+                    let src = match &ild.image { DynamicImage::ImageRgba8(b) => b, _ => continue };
+                    let (cx, cy) = ild.center_canvas();
+                    let angle_rad = ild.rotation.to_radians();
+                    let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+                    let opacity = layer.opacity.clamp(0.0, 1.0);
+                    let mode = layer.blend_mode;
+                    for py in y0..y1 {
+                        for px in x0..x1 {
+                            let (dx, dy) = (px as f32 - cx, py as f32 - cy);
+                            let lx = dx * cos_a + dy * sin_a + ild.display_w / 2.0;
+                            let ly = -dx * sin_a + dy * cos_a + ild.display_h / 2.0;
+                            if lx < 0.0 || ly < 0.0 || lx >= ild.display_w || ly >= ild.display_h { continue; }
+                            let mut sx = lx / ild.display_w * orig_w as f32;
+                            let mut sy = ly / ild.display_h * orig_h as f32;
+                            if ild.flip_h { sx = orig_w as f32 - 1.0 - sx; }
+                            if ild.flip_v { sy = orig_h as f32 - 1.0 - sy; }
+                            let sp = Self::bilinear_sample_rgba(src, sx.clamp(0.0, orig_w as f32 - 1.0001), sy.clamp(0.0, orig_h as f32 - 1.0001), orig_w, orig_h);
+                            if (sp[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
+                            let idx = (py - y0) as usize * pw + (px - x0) as usize;
+                            let d = out[idx];
+                            let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
+                            let r = blend_pixels_u8(d_u8, sp, opacity, mode);
+                            out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
+                        }
+                    }
+                }
+                LayerKind::Background | LayerKind::Raster => {
+                    let src_buf: &ImageBuffer<Rgba<u8>, Vec<u8>> = match layer.kind {
+                        LayerKind::Background => match bg { DynamicImage::ImageRgba8(b) => b, _ => continue },
+                        LayerKind::Raster => match self.layer_images.get(&layer.id) { Some(DynamicImage::ImageRgba8(b)) => b, _ => continue },
+                        _ => unreachable!(),
+                    };
+                    if src_buf.width() < x1 || src_buf.height() < y1 { continue; }
+                    let opacity = layer.opacity; let mode = layer.blend_mode;
+                    for py in y0..y1 {
+                        for px in x0..x1 {
+                            let s = unsafe { src_buf.unsafe_get_pixel(px, py) }.0;
+                            if (s[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
+                            let idx = (py - y0) as usize * pw + (px - x0) as usize;
+                            let d = out[idx];
+                            let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
+                            let r = blend_pixels_u8(d_u8, s, opacity, mode);
+                            out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
+                        }
+                    }
+                }
+            }
+        }
+        let pixels: Vec<egui::Color32> = out.iter().map(|p| egui::Color32::from_rgba_unmultiplied(
+            (p[0]*255.0).clamp(0.0,255.0) as u8, (p[1]*255.0).clamp(0.0,255.0) as u8,
+            (p[2]*255.0).clamp(0.0,255.0) as u8, (p[3]*255.0).clamp(0.0,255.0) as u8,
+        )).collect();
+        ctx.tex_manager().write().set(tex_id, egui::epaint::ImageDelta::partial(
+            [x0 as usize, y0 as usize],
+            egui::ColorImage { size: [pw, ph], source_size: egui::vec2(pw as f32, ph as f32), pixels },
+            egui::TextureOptions::default(),
+        ));
+    }
+
+    pub(super) fn kick_backdrop_compute(&mut self, active_id: u64) {
+        let is_raster = self.layers.iter().find(|l| l.id == active_id)
+            .map_or(false, |l| l.kind == LayerKind::Raster);
+        if !is_raster { self.backdrop_cache_for = u64::MAX; *self.backdrop_cache.lock().unwrap() = None; return; }
+        if self.backdrop_cache_for == active_id { return; }
+        self.backdrop_cache_for = active_id;
+        *self.backdrop_cache.lock().unwrap() = None;
+
+        let mut layers_below: Vec<(u64, LayerKind, BlendMode, f32)> = Vec::new();
+        for layer in &self.layers {
+            if layer.id == active_id { break; }
+            if layer.visible { layers_below.push((layer.id, layer.kind, layer.blend_mode, layer.opacity)); }
+        }
+        let bg_buf: Option<ImageBuffer<Rgba<u8>, Vec<u8>>> = self.image.as_ref().and_then(|i| match i { DynamicImage::ImageRgba8(b) => Some(b.clone()), _ => Some(i.to_rgba8()) });
+        let mut raster_bufs: std::collections::HashMap<u64, ImageBuffer<Rgba<u8>, Vec<u8>>> = std::collections::HashMap::new();
+        for (id, kind, _, _) in &layers_below {
+            if *kind == LayerKind::Raster {
+                if let Some(DynamicImage::ImageRgba8(b)) = self.layer_images.get(id) { raster_bufs.insert(*id, b.clone()); }
+            }
+        }
+        let sink = Arc::clone(&self.backdrop_cache);
+        std::thread::spawn(move || {
+            let bg = match bg_buf { Some(b) => b, None => return };
+            let (w, h) = (bg.width(), bg.height());
+            let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
+            for (id, kind, mode, opacity) in &layers_below {
+                let src: &ImageBuffer<Rgba<u8>, Vec<u8>> = match kind {
+                    LayerKind::Background => &bg,
+                    LayerKind::Raster => match raster_bufs.get(id) { Some(b) => b, None => continue },
+                    LayerKind::Text | LayerKind::Image => continue,
+                };
+                for y in 0..h {
+                    for x in 0..w {
+                        let s = unsafe { src.unsafe_get_pixel(x, y) }.0;
+                        let d = unsafe { result.unsafe_get_pixel(x, y) }.0;
+                        let out = super::ie_helpers::blend_pixels_u8(d, s, *opacity, *mode);
+                        unsafe { result.unsafe_put_pixel(x, y, Rgba(out)); }
+                    }
+                }
+            }
+            *sink.lock().unwrap() = Some(result);
+        });
+    }
+
     #[inline]
     pub(super) fn expand_dirty_rect(&mut self, x0: u32, y0: u32, x1: u32, y1: u32) {
         match self.texture_dirty_rect {
@@ -821,9 +1746,23 @@ impl ImageEditor {
 
         if *self.filter_progress.lock().unwrap() >= 1.0 {
             if let Some(result) = self.pending_filter_result.lock().unwrap().take() {
-                self.resize_w = result.width(); self.resize_h = result.height();
-                self.image = Some(result);
-                self.texture_dirty = true; self.dirty = true; self.is_processing = false;
+                let target_id = self.filter_target_layer_id;
+                let kind = self.layers.iter().find(|l| l.id == target_id)
+                    .map(|l| l.kind).unwrap_or(LayerKind::Background);
+                match kind {
+                    LayerKind::Background => {
+                        self.resize_w = result.width(); self.resize_h = result.height();
+                        self.image = Some(result);
+                    }
+                    LayerKind::Raster => {
+                        self.layer_images.insert(target_id, result);
+                    }
+                    LayerKind::Text | LayerKind::Image => {}
+                }
+                self.texture_dirty = true;
+                self.composite_dirty = true;
+                self.dirty = true;
+                self.is_processing = false;
                 if self.processing_is_preview {
                     self.processing_is_preview = false;
                 } else {
@@ -848,9 +1787,15 @@ impl ImageEditor {
             if i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) {
                 self.commit_or_discard_active_text();
             }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::N) {
+                self.new_raster_layer();
+            }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::E) {
+                self.merge_down();
+            }
         });
 
-        if !self.editing_text {
+        if !self.editing_text && ctx.memory(|m| m.focused().is_none()) {
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::B) { self.commit_or_discard_active_text(); self.tool = Tool::Brush; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::E) { self.commit_or_discard_active_text(); self.tool = Tool::Eraser; }
@@ -862,6 +1807,17 @@ impl ImageEditor {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::R) { self.commit_or_discard_active_text(); self.tool = Tool::Retouch; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Num0) {
                     if let Some(c) = self.color_favorites.colors.get(9) { let mut col = *c; col.a = 255; self.color = col.to_egui(); self.hex_input = col.to_hex(); }
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::Enter) {
+                    if self.tool == Tool::Crop && self.crop_state.start.is_some() && self.crop_state.end.is_some() {
+                        if self.image_layer_for_active().is_some() { self.apply_crop_to_image_layer(); }
+                        else { self.push_undo(); self.apply_crop(); }
+                    }
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::Delete) || i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace) {
+                    if self.selected_image_layer.is_some() && self.image_layer_for_active().is_some() {
+                        self.delete_active_layer();
+                    }
                 }
                 for (key, slot) in [
                     (egui::Key::Num1, 0usize), (egui::Key::Num2, 1), (egui::Key::Num3, 2),
@@ -885,8 +1841,8 @@ impl ImageEditor {
             None => return self.save_as_impl(),
         };
 
-        if let Some(img) = &self.image {
-            let composite: DynamicImage = self.stamp_all_text_layers(img);
+        if self.image.is_some() {
+            let composite = self.composite_all_layers().ok_or("No image to save")?;
             composite.save(&path).map_err(|e| e.to_string())?;
             self.dirty = false;
         }
@@ -898,8 +1854,8 @@ impl ImageEditor {
             .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif"])
             .save_file()
         {
-            if let Some(img) = &self.image {
-                let composite: DynamicImage = self.stamp_all_text_layers(img);
+            if self.image.is_some() {
+                let composite = self.composite_all_layers().ok_or("No image to save")?;
                 composite.save(&path).map_err(|e| e.to_string())?;
                 self.file_path = Some(path);
                 self.dirty = false;
@@ -927,6 +1883,7 @@ impl EditorModule for ImageEditor {
 
     fn get_menu_contributions(&self) -> MenuContribution {
         let has_image: bool = self.image.is_some();
+        let can_merge  = self.layers.iter().position(|l| l.id == self.active_layer_id).map(|i| i > 0).unwrap_or(false);
         MenuContribution {
             file_items: vec![
                 (MenuItem { label: "Export...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Export),
@@ -939,6 +1896,8 @@ impl EditorModule for ImageEditor {
                 (MenuItem { label: "Zoom In".to_string(), shortcut: Some("+".to_string()), enabled: true }, MenuAction::Custom("Zoom In".to_string())),
                 (MenuItem { label: "Zoom Out".to_string(), shortcut: Some("-".to_string()), enabled: true }, MenuAction::Custom("Zoom Out".to_string())),
                 (MenuItem { label: "Fit".to_string(), shortcut: Some("0".to_string()), enabled: true }, MenuAction::Custom("Fit".to_string())),
+                (MenuItem { label: "Separator".to_string(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: if self.show_layers_panel { "Hide Layers Panel".to_string() } else { "Show Layers Panel".to_string() }, shortcut: None, enabled: true }, MenuAction::Custom("Toggle Layers".to_string())),
             ],
             image_items: vec![
                 (MenuItem { label: "Resize Canvas...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Resize Canvas".to_string())),
@@ -958,6 +1917,14 @@ impl EditorModule for ImageEditor {
                 (MenuItem { label: "Invert".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Invert".to_string())),
                 (MenuItem { label: "Sepia".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Sepia".to_string())),
             ],
+            layer_items: vec![
+                (MenuItem { label: "New Layer".to_string(), shortcut: Some("Ctrl+Shift+N".to_string()), enabled: has_image }, MenuAction::Custom("Layer New".to_string())),
+                (MenuItem { label: "Duplicate Layer".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Layer Duplicate".to_string())),
+                (MenuItem { label: "Delete Layer".to_string(), shortcut: None, enabled: self.layers.len() > 1 }, MenuAction::Custom("Layer Delete".to_string())),
+                (MenuItem { label: "Separator".to_string(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Merge Down".to_string(), shortcut: Some("Ctrl+E".to_string()), enabled: can_merge }, MenuAction::Custom("Layer Merge Down".to_string())),
+                (MenuItem { label: "Flatten Image".to_string(), shortcut: None, enabled: self.layers.len() > 1 }, MenuAction::Custom("Layer Flatten".to_string())),
+            ],
         }
     }
 
@@ -969,6 +1936,7 @@ impl EditorModule for ImageEditor {
             MenuAction::Custom(ref val) if val == "Zoom In" => { self.zoom *= 1.25; true }
             MenuAction::Custom(ref val) if val == "Zoom Out" => { self.zoom = (self.zoom / 1.25).max(0.01); true }
             MenuAction::Custom(ref val) if val == "Fit" => { self.fit_image(); true }
+            MenuAction::Custom(ref val) if val == "Toggle Layers" => { self.show_layers_panel = !self.show_layers_panel; true }
             MenuAction::Custom(ref val) if val == "Flip Horizontal" => { self.push_undo(); self.apply_flip_h(); true }
             MenuAction::Custom(ref val) if val == "Flip Vertical" => { self.push_undo(); self.apply_flip_v(); true }
             MenuAction::Custom(ref val) if val == "Rotate CCW" => { self.push_undo(); self.apply_rotate_ccw(); true }
@@ -981,6 +1949,11 @@ impl EditorModule for ImageEditor {
             MenuAction::Custom(ref val) if val == "Gray" => { self.push_undo(); self.apply_grayscale(); true }
             MenuAction::Custom(ref val) if val == "Invert" => { self.push_undo(); self.apply_invert(); true }
             MenuAction::Custom(ref val) if val == "Sepia" => { self.push_undo(); self.apply_sepia(); true }
+            MenuAction::Custom(ref val) if val == "Layer New" => { self.new_raster_layer(); true }
+            MenuAction::Custom(ref val) if val == "Layer Duplicate" => { self.duplicate_active_layer(); true }
+            MenuAction::Custom(ref val) if val == "Layer Delete" => { self.delete_active_layer(); true }
+            MenuAction::Custom(ref val) if val == "Layer Merge Down" => { self.merge_down(); true }
+            MenuAction::Custom(ref val) if val == "Layer Flatten" => { self.flatten_all_layers(); true }
             _ => false,
         }
     }
@@ -998,6 +1971,22 @@ impl EditorModule for ImageEditor {
         ui.add_space(4.0);
         self.render_options_bar(ui, theme);
         ui.add_space(4.0);
+
+        if self.show_layers_panel {
+            let panel_width = self.layer_panel_width;
+            egui::SidePanel::right("layers_panel")
+                .resizable(true)
+                .default_width(panel_width)
+                .min_width(180.0)
+                .max_width(360.0)
+                .frame(egui::Frame::new()
+                    .fill(if matches!(theme, ThemeMode::Dark) { egui::Color32::from_rgb(28, 28, 32) } else { egui::Color32::from_rgb(245, 245, 248) })
+                    .stroke(egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { egui::Color32::from_rgb(55, 55, 65) } else { egui::Color32::from_rgb(210, 210, 220) }))
+                )
+                .show_inside(ui, |ui| {
+                    self.render_layers_panel(ui, theme);
+                });
+        }
 
         if self.filter_panel != FilterPanel::None { self.render_filter_panel(ui, ctx, theme); }
         if self.show_color_picker { self.render_color_picker(ui, ctx, theme); }

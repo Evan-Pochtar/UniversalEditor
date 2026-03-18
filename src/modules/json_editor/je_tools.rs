@@ -16,7 +16,7 @@ impl ValType {
         match self {
             ValType::Null => "null".into(),
             ValType::Bool(b) => if *b { "true" } else { "false" }.into(),
-            ValType::Number(n) => n.clone(),
+            ValType::Number(n) => truncate_preview(n, 24),
             ValType::Str(s) => format!("\"{}\"", truncate_preview(s, 80)),
             ValType::Array(n) => format!("[{} item{}]", n, if *n == 1 { "" } else { "s" }),
             ValType::Object(n) => format!("{{{} key{}}}", n, if *n == 1 { "" } else { "s" }),
@@ -51,6 +51,7 @@ pub struct FlatNode {
     pub is_expanded: bool,
     pub path: Vec<String>,
     pub has_children: bool,
+    pub is_array_index: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,7 +62,7 @@ pub enum SearchTarget { Keys, Values, Both, }
 
 pub fn path_key(path: &[String]) -> String { path.join("\x00") }
 
-pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expanded: &HashSet<String>, sort_mode: SortMode, out: &mut Vec<FlatNode>) {
+pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expanded: &HashSet<String>, sort_mode: SortMode, parent_is_array: bool, out: &mut Vec<FlatNode>) {
     let node_key = path_key(path);
     let is_expanded = expanded.contains(&node_key);
     let val_type = value_to_type(value);
@@ -74,6 +75,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
         is_expanded,
         path: path.to_vec(),
         has_children,
+        is_array_index: parent_is_array,
     });
 
     if !is_expanded || !has_children { return; }
@@ -85,7 +87,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
             for (k, v) in entries {
                 let mut child_path = path.to_vec();
                 child_path.push(k.clone());
-                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, out);
+                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, false, out);
             }
         }
         Value::Array(arr) => {
@@ -99,7 +101,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
             for (k, v) in refs {
                 let mut child_path = path.to_vec();
                 child_path.push(k.clone());
-                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, out);
+                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, true, out);
             }
         }
         _ => {}
@@ -111,7 +113,7 @@ pub fn build_flat(root: &Value, scope: &[String], expanded: &HashSet<String>, so
     let root_key = scope.last().map(|s| s.as_str()).unwrap_or("root");
 
     let mut out = Vec::new();
-    flatten_value(scoped, root_key, 0, scope, expanded, sort_mode, &mut out);
+    flatten_value(scoped, root_key, 0, scope, expanded, sort_mode, false, &mut out);
     out
 }
 

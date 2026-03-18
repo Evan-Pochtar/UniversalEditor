@@ -106,7 +106,8 @@ impl TextEditor {
             _ => return false,
         };
         let count = trimmed.chars().filter(|&c| c == first).count();
-        count >= 3 && trimmed.chars().all(|c| c == first || c == ' ')
+        if count < 3 || !trimmed.chars().all(|c| c == first || c == ' ') { return false; }
+        first != '*' || trimmed.contains(' ')
     }
 
     pub(super) fn format_blockquote(&mut self) {

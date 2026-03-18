@@ -5,7 +5,8 @@
 - [ ] Create Main Menu
   - [ ] Add About Page
 - [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
-- [ ] Add right click context menu to change file name and open file location in "recent files" list
+- [ ] Add way to differentiate between same name files in "recent files" list
+- [ ] Improve look of patch notes
 
 ## Screens
 
@@ -45,13 +46,14 @@
 ### Text Editor Bugs
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
+- [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
 
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
-- [ ] Text view very laggy with large JSON files
+- [ ] Undoing all changes does not remove "modified" file information status
 
 ### Other Bugs
 
@@ -65,11 +67,6 @@
 
 ### Image Editor
 
-- [ ] Layer system
-  - [ ] Add
-  - [ ] Reorder
-  - [ ] Merge
-  - [ ] Opacity
 - [ ] Selection tools
   - [ ] Ellipse
   - [ ] Free-hand lasso
@@ -79,9 +76,6 @@
   - [ ] Linear
   - [ ] Radial
 - [ ] Cutout tool
-- [ ] Retouch tool
-  - [ ] Saturation tool should have a custom slider
-  - [ ] Improve performance on bigger sizes
 - [ ] Shape tool
 - [ ] Brush Settings Panel
   - [ ] Improve Presets to be more "realistic"
@@ -91,8 +85,6 @@
   - [ ] Hover tooltips for more information about parameters
   - [ ] Brush preview
   - [ ] Library of custom brushes?
-- [ ] Import Images into Canvas
-  - [ ] Drag-and-drop image open
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
@@ -102,13 +94,10 @@
 
 - [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
-- [ ] Need to add more space for text in very long key values
 - [ ] Search should only show up when clicking ctrl+f
 - [ ] Change cursor when hovering over buttons/navigation
   - [ ] Make navigation bigger and more noticeable
 - [ ] Add true "Table" view, should look like an excel table for example
-- [ ] Option to increase size of each row in the tree view
-- [ ] Add line numbers to text view
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
 - [ ] Add loading screen for sorting and changing views
 

@@ -15,6 +15,8 @@
 - [x] Unified Top Bar Handling
 - [x] Better File System
 - [x] Easier way to add new screens/converters (Code only change)
+- [x] Add right click context menu to change file name and open file location in "recent files" list
+- [x] Allow for right click, open with universal_editor on windows
 
 ## Screens
 
@@ -51,12 +53,15 @@
 
 - [x] Can't just click to color for brush, must drag
 - [x] Retouch tool bar is placed randomly, some things very high, some very low
+- [x] Brushes remove background/text close to the brush while drawing, reapplies after drawing is done
 - [x] Color picker
   - [x] Hex code Does not update properly on color picker
   - [x] Button's aren't quite aligned on the color picker
   - [x] Cant see cursor on color picker
 - [x] Resize does not work if not aspect ratio locked
 - [x] Text tool currently not working
+- [x] Eraser is currently just a white brush, messes up when using layers
+- [x] Opacity Slider in the layer panel is not that visible and also lags on large images
 - [x] Text Corner Resizing delta too fast, hard to select
 - [x] Eraser doesn't erase to white background, completely removes background
 - [x] Crop suddenly jumps when resizing vertically or horizontally
@@ -68,6 +73,18 @@
 - [x] Hover effects of buttons only work in light mode
 - [x] Some buttons within the brush settings in light mode are colored white with white background
 - [x] Sliders are only visible in dark mode
+- [x] Can't scroll down on the color picker
+- [x] Text is slightly smaller when stamped then when actually edited
+- [x] Text get's cut off if textbox isn't big enough
+- [x] Selecting text should auto move to text layer
+- [x] Un-selecting on a text box with no text should auto remove the text box
+- [x] When moving image on image layer, slightly moves background image
+- [x] Text cannot be placed on top of imported images
+- [x] Text cannot be above imported image, even when it's layer is higher
+- [x] Image always acts as highest layer, even when it shouldn't be
+- [x] Can't move the text box using the select tool
+- [x] When selected on the select/pan tool, and then I click on a text box, I can't select a imported image
+- [x] Can sometimes have both a textbox AND an image selected
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -79,8 +96,9 @@
   - [x] Doesn't actually use font's listed in text box
   - [x] Highlighting shows up with Ctrl+A, but doesn't actually select properly.
   - [x] Cursor getting disconnected from where text is actually being written.
-  - [ ] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
-  - [ ] Vertical and Horizontal Rotations do not rotate textbox properly
+  - [x] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
+  - [x] Vertical and Horizontal Rotations do not rotate textbox properly
+
 ### Json Editor Bugs
 
 - [x] Going into Tree view causes "modified" tag to show up
@@ -90,6 +108,13 @@
 - [x] Search not navigating to results properly
 - [x] Does not allow undo for any text changes
 - [x] Json Editor crashes when trying to navigate back at least 2 parents
+- [x] Text view very laggy with large JSON files
+- [x] Scrolling to the bottom of a large JSON file in text view with a small screen sometimes causes "scroll bounce"
+  - Doesn't allow user to scroll all the way to the bottom of the file
+- [x] Does not use the raw data of the JSON file for text view, uses edited version
+- [x] Long numbers turn into scientific value, and save as scientific value instead of staying as the long number
+- [x] Can't ctrl+s save
+- [x] Saving does not update "modified" file information value
 
 ### Other Bugs
 
@@ -129,6 +154,11 @@
 
 ### Image Editor
 
+- [x] Layer system
+  - [x] Add
+  - [x] Reorder
+  - [x] Merge
+  - [x] Opacity
 - [x] Retouch tool
   - [x] Blur
   - [x] Sharpen
@@ -138,6 +168,8 @@
   - [x] Temperature
   - [x] Brightness
   - [x] Pixelate
+  - [x] Saturation tool should have a custom slider
+  - [x] Improve performance on bigger sizes
   - [x] Clearer slider for dark/light amount on brightness
   - [x] Clearer slider for cold/warm amount on temperature
   - [x] Clearer slider for difference between vibrant and non vibrant for vibrance
@@ -171,12 +203,16 @@
 - [x] Make image converter and image editor use the same export function
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
+- [x] Center hue picker and color square within color picker
+- [x] Import Images into Canvas
+  - [x] Drag-and-drop image open
 
 ### Json Editor
 
 - [x] Undo and Redo can be moved to top bar
 - [x] Give the ability to show/hide file information
 - [x] Create JSON styling file, move out of ui file
+- [x] Add line numbers to text view
 
 ### CONVERTER: Img 2 Img
 

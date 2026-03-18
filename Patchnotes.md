@@ -144,3 +144,43 @@
 - **IMG EDITOR**: Text box now rotates correctly on flip vertical and flip horizontal
 - **IMG EDITOR**: Text box now correctly exports with wrapped words
 - **TEXT EDITOR**: Code blocks and Blockquotes no longer desync on font change
+
+## V0.0.6
+
+#### Features
+- **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
+- **GENERAL**: Allow for right click, open with universal_editor on windows
+- **JSON EDITOR**: Added Line numbers to the text view
+- **IMG EDITOR**: Added Layer System to the Image Editor
+- **IMG EDITOR**: Color picker panel information now centered
+- **IMG EDITOR**: Increased size of selection sliders
+- **IMG EDITOR**: Adjusted Spray brush preset to be thicker
+- **IMG EDITOR**: Adjusted Marker to display with higher default wetness
+- **IMG EDITOR**: Improved performance of retouch tool filters
+- **IMG EDITOR**: Custom Slider for Saturation in the retouch tool
+- **IMG EDITOR**: Added Image Imports and Image Layers
+- **IMG EDITOR**: Renamed "Pan" tool to "Select/Pan" tool
+
+#### Debugging
+- **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing
+- **JSON EDITOR**: Fixed lag on large sized files within text view
+- **JSON EDITOR**: Scroll "bounce" issue with large files on small display screens fixed
+- **JSON EDITOR**: No longer pre-formats JSON and uses it's raw data instead
+- **JSON EDITOR**: Ctrl+S save shortcut now works as intended
+- **JSON EDITOR**: "Modified" and "Saved" file information status now shows up correctly
+- **JSON EDITOR**: Long numbers no longer get replaced by scientific numbers
+- **IMG EDITOR**: Eraser now properly erases on layers
+- **IMG EDITOR**: Opacity slider now only loads when you are no longer sliding to prevent lag
+- **IMG EDITOR**: Brush now no longer periodically erases background while drawing
+- **IMG EDITOR**: No longer has jumpy cursor on the bottom of the color picker square
+- **IMG EDITOR**: Hue slider no longer sometimes moves color square cursor
+- **IMG EDITOR**: Can now scroll down on the color picker panel
+- **IMG EDITOR**: Textbox no longer lags on large images
+- **IMG EDITOR**: Textbox no longer allows empty textbox's (deletes layer as well)
+- **IMG EDITOR**: Stamped text now matches the exact size of preview text
+- **IMG EDITOR**: Background layer brush strokes no longer sometimes remove background of layer brush strokes
+- **IMG EDITOR**: Drag value input no longer interferes with color picker favorites
+- **IMG EDITOR**: Imported images now work properly with the layer system
+- **IMG EDITOR**: Text and imported images now can be used with the "Select/pan" tool
+- **IMG EDITOR**: Moving imported image no longer moves background canvas
+- **IMG EDITOR**: No longer allows for both imported image AND textbox to be selected at once
