@@ -78,6 +78,13 @@
 - [x] Text get's cut off if textbox isn't big enough
 - [x] Selecting text should auto move to text layer
 - [x] Un-selecting on a text box with no text should auto remove the text box
+- [x] When moving image on image layer, slightly moves background image
+- [x] Text cannot be placed on top of imported images
+- [x] Text cannot be above imported image, even when it's layer is higher
+- [x] Image always acts as highest layer, even when it shouldn't be
+- [x] Can't move the text box using the select tool
+- [x] When selected on the select/pan tool, and then I click on a text box, I can't select a imported image
+- [x] Can sometimes have both a textbox AND an image selected
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image

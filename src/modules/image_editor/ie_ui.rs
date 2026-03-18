@@ -980,6 +980,7 @@ impl ImageEditor {
             let selected_iid = self.selected_image_layer;
             let iids_and_visible: Vec<(u64, u64, bool)> = self.layers.iter()
                 .filter(|l| l.kind == LayerKind::Image && l.visible)
+                .filter(|l| l.linked_image_id.is_some() && l.linked_image_id == selected_iid)
                 .filter_map(|l| l.linked_image_id.map(|iid| (l.id, iid, l.id == self.active_layer_id)))
                 .collect();
             for (_lid, iid, is_active) in &iids_and_visible {
@@ -1122,6 +1123,9 @@ impl ImageEditor {
             self.text_layers[i].cached_lines = new_cached;
             let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
             text_shape.angle = angle_rad;
+            let mut text_shape_pan: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
+            text_shape_pan.angle = angle_rad;
+            text_shape.angle = angle_rad;
 
             if is_editing {
                 let cursor_byte: usize = text_cursor;
@@ -1177,10 +1181,8 @@ impl ImageEditor {
                 ctx.request_repaint_after(std::time::Duration::from_millis(500));
                 painter.add(egui::Shape::Text(text_shape));
             }
-
-            if is_selected {
-                TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400);
-            }
+            if is_selected && !is_editing { painter.add(egui::Shape::Text(text_shape_pan)); }
+            if is_selected { TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400); }
         }
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
@@ -1249,6 +1251,98 @@ impl ImageEditor {
             }
         }
 
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Retouch {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            if self.image_layer_for_active().is_some() {
+                let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
+                let canvas = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
+                let ox = canvas.center().x - img_w * self.zoom / 2.0 + self.pan.x;
+                let oy = canvas.center().y - img_h * self.zoom / 2.0 + self.pan.y;
+                let cx = (pos.x - ox) / self.zoom; let cy = (pos.y - oy) / self.zoom;
+                self.init_smudge_sample_image_layer(cx, cy);
+            } else if let Some((ix, iy)) = self.screen_to_image(pos) {
+                self.init_smudge_sample(ix, iy);
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            if let Some(iid) = self.selected_image_layer {
+                let allow_move = self.tool == Tool::Pan;
+                if let Some(handles) = self.image_layer_transform_handles() {
+                    if let Some(h) = handles.hit_test(pos) {
+                        let use_handle = allow_move || h != THandle::Move;
+                        if use_handle {
+                            if let Some(ild) = self.image_layer_data.get(&iid) {
+                                let rot_start = (pos - handles.rect.center()).angle();
+                                self.image_drag = Some(ImageDrag {
+                                    handle: h, start: pos,
+                                    orig_x: ild.canvas_x, orig_y: ild.canvas_y,
+                                    orig_w: ild.display_w, orig_h: ild.display_h,
+                                    orig_rotation: ild.rotation, orig_rot_start_angle: rot_start,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
+            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
+                let p0 = self.image_to_screen(s.0, s.1);
+                let p1 = self.image_to_screen(e.0, e.1);
+                let cr = egui::Rect::from_two_pos(p0, p1);
+                if cr.width() > HANDLE_HIT && cr.height() > HANDLE_HIT { crop_hit_handle(pos, cr) } else { None }
+            } else { None };
+            if let Some(h) = handle_hit {
+                let (s, e) = (self.crop_state.start.unwrap(), self.crop_state.end.unwrap());
+                self.crop_drag = Some(h);
+                self.crop_drag_orig = Some((s.0, s.1, e.0, e.1));
+            } else {
+                self.crop_state = CropState::default();
+                self.crop_drag = None; self.crop_drag_orig = None;
+                if let Some((ix, iy)) = self.screen_to_image(pos) {
+                    self.crop_state.start = Some((ix as f32, iy as f32));
+                }
+            }
+        }
+
+        if response.drag_started_by(egui::PointerButton::Primary) && (self.tool == Tool::Text || self.tool == Tool::Pan) {
+            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
+            self.text_drag = None;
+            if self.tool == Tool::Pan && self.selected_text.is_none() {
+                if let Some(hit) = self.hit_text_layer(pos) {
+                    if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
+                    self.selected_text = Some(hit);
+                    self.selected_image_layer = None;
+                    self.image_drag = None;
+                    if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
+                        self.active_layer_id = linked_layer.id;
+                    }
+                }
+            }
+
+            if let Some(id) = self.selected_text {
+                if let Some(handles) = self.text_transform_handles() {
+                    if let Some(h) = handles.hit_test(pos) {
+                        if let Some(layer) = self.text_layers.iter().find(|l: &&TextLayer| l.id == id) {
+                            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
+                            let rot_start: f32 = (pos - layer.screen_rect(anchor, self.zoom).center()).angle();
+                            self.text_drag = Some(TextDrag {
+                                handle: h, start: pos,
+                                orig_img_x: layer.img_x, orig_img_y: layer.img_y,
+                                orig_font_size: layer.font_size, orig_box_width: layer.box_width,
+                                orig_box_height: layer.box_height, orig_rotation: layer.rotation,
+                                orig_rot_start_angle: rot_start,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         if response.dragged_by(egui::PointerButton::Primary) {
             let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
 
@@ -1285,9 +1379,6 @@ impl ImageEditor {
                 }
             } else {
             match self.tool {
-                Tool::Pan => {
-                    self.pan += response.drag_delta();
-                }
                 Tool::Brush | Tool::Eraser => {
                     if !self.is_dragging {
                         self.push_undo(); self.is_dragging = true; self.stroke_points.clear();
@@ -1382,7 +1473,7 @@ impl ImageEditor {
                         }
                     }
                 }
-                Tool::Text => {
+                Tool::Text | Tool::Pan => {
                     let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> = 
                         self.text_drag.as_ref().map(|d| (d.handle, d.start, d.orig_img_x, d.orig_img_y, d.orig_font_size, d.orig_box_width, d.orig_box_height, d.orig_rotation, d.orig_rot_start_angle));
 
@@ -1424,93 +1515,10 @@ impl ImageEditor {
             }
         }
 
-        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Retouch {
-            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            if self.image_layer_for_active().is_some() {
-                let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
-                let canvas = self.canvas_rect.unwrap_or(egui::Rect::NOTHING);
-                let ox = canvas.center().x - img_w * self.zoom / 2.0 + self.pan.x;
-                let oy = canvas.center().y - img_h * self.zoom / 2.0 + self.pan.y;
-                let cx = (pos.x - ox) / self.zoom; let cy = (pos.y - oy) / self.zoom;
-                self.init_smudge_sample_image_layer(cx, cy);
-            } else if let Some((ix, iy)) = self.screen_to_image(pos) {
-                self.init_smudge_sample(ix, iy);
-            }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) {
-            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            if let Some(iid) = self.selected_image_layer {
-                let allow_move = self.tool == Tool::Pan;
-                if let Some(handles) = self.image_layer_transform_handles() {
-                    if let Some(h) = handles.hit_test(pos) {
-                        let use_handle = allow_move || h != THandle::Move;
-                        if use_handle {
-                            if let Some(ild) = self.image_layer_data.get(&iid) {
-                                let rot_start = (pos - handles.rect.center()).angle();
-                                self.image_drag = Some(ImageDrag {
-                                    handle: h, start: pos,
-                                    orig_x: ild.canvas_x, orig_y: ild.canvas_y,
-                                    orig_w: ild.display_w, orig_h: ild.display_h,
-                                    orig_rotation: ild.rotation, orig_rot_start_angle: rot_start,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Crop {
-            let pos = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            let handle_hit = if let (Some(s), Some(e)) = (self.crop_state.start, self.crop_state.end) {
-                let p0 = self.image_to_screen(s.0, s.1);
-                let p1 = self.image_to_screen(e.0, e.1);
-                let cr = egui::Rect::from_two_pos(p0, p1);
-                if cr.width() > HANDLE_HIT && cr.height() > HANDLE_HIT {
-                    crop_hit_handle(pos, cr)
-                } else { None }
-            } else { None };
-
-            if let Some(h) = handle_hit {
-                let (s, e) = (self.crop_state.start.unwrap(), self.crop_state.end.unwrap());
-                self.crop_drag = Some(h);
-                self.crop_drag_orig = Some((s.0, s.1, e.0, e.1));
-            } else {
-                self.crop_state = CropState::default();
-                self.crop_drag = None; self.crop_drag_orig = None;
-                if let Some((ix, iy)) = self.screen_to_image(pos) {
-                    self.crop_state.start = Some((ix as f32, iy as f32));
-                }
-            }
-        }
-
-        if response.drag_started_by(egui::PointerButton::Primary) && (self.tool == Tool::Text || self.tool == Tool::Pan) {
-            let pos: egui::Pos2 = response.interact_pointer_pos().unwrap_or(canvas_rect.center());
-            self.text_drag = None;
-            if let Some(id) = self.selected_text {
-                if let Some(handles) = self.text_transform_handles() {
-                    if let Some(h) = handles.hit_test(pos) {
-                        if let Some(layer) = self.text_layers.iter().find(|l: &&TextLayer| l.id == id) {
-                            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
-                            let rot_start: f32 = (pos - layer.screen_rect(anchor, self.zoom).center()).angle();
-                            self.text_drag = Some(TextDrag {
-                                handle: h, start: pos,
-                                orig_img_x: layer.img_x, orig_img_y: layer.img_y,
-                                orig_font_size: layer.font_size, orig_box_width: layer.box_width,
-                                orig_box_height: layer.box_height, orig_rotation: layer.rotation,
-                                orig_rot_start_angle: rot_start,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
                 Tool::Brush | Tool::Eraser | Tool::Retouch => { self.composite_dirty = true; self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
-                Tool::Text => { if self.text_drag.is_some() { self.composite_dirty = true; } self.text_drag = None; }
+                Tool::Text | Tool::Pan => { if self.text_drag.is_some() { self.composite_dirty = true; } self.text_drag = None; }
                 Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
             }
@@ -1533,9 +1541,10 @@ impl ImageEditor {
                 });
 
             if let Some((lid, iid)) = hit_image_iid {
-                if self.selected_image_layer != Some(iid) {
+                if self.tool != Tool::Text && self.selected_image_layer != Some(iid) {
                     self.selected_image_layer = Some(iid);
                     self.active_layer_id = lid;
+                    self.composite_dirty = true;
                 }
             }
 
@@ -1615,7 +1624,7 @@ impl ImageEditor {
                         if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
                             self.active_layer_id = linked_layer.id;
                         }
-                    } else if hit_image_iid.is_none() {
+                    } else {
                         self.commit_or_discard_active_text();
                         if let Some((ix, iy)) = self.screen_to_image(pos) {
                             let id: u64 = self.next_text_id; self.next_text_id += 1;
@@ -1637,6 +1646,7 @@ impl ImageEditor {
                     if let Some(hit) = self.hit_text_layer(pos) {
                         if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
                         self.selected_text = Some(hit);
+                        self.composite_dirty = true;
                         if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
                             self.active_layer_id = linked_layer.id;
                         }
@@ -2291,10 +2301,12 @@ impl ImageEditor {
                                     self.selected_image_layer = self.layers[idx].linked_image_id;
                                     self.selected_text = None;
                                     self.editing_text = false;
+                                    self.composite_dirty = true;
                                 }
                                 _ => {
                                     self.selected_text = None;
                                     self.editing_text = false;
+                                    self.composite_dirty = true;
                                     self.selected_image_layer = None;
                                 }
                             }

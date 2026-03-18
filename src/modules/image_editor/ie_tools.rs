@@ -275,7 +275,7 @@ impl ImageEditor {
     }
 
     fn promote_dirty_to_composite(&mut self) {
-        if self.layers.iter().any(|l| l.visible && l.kind == LayerKind::Raster) {
+        if self.layers.iter().any(|l| l.visible && (l.kind == LayerKind::Raster || l.kind == LayerKind::Image)) {
             let rect = self.texture_dirty_rect.take();
             self.texture_dirty = false;
             self.composite_dirty = true;

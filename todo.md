@@ -50,12 +50,6 @@
 
 ### Image Editor Bugs
 
-- [ ] Text cannot be placed on top of imported images
-- [ ] Text cannot be above imported image, even when it's layer is higher
-- [ ] Image always acts as highest layer, even when it shouldn't be
-- [ ] When moving image on image layer, slightly moves background image
-- [ ] Can't move the text box using the select tool
-
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view

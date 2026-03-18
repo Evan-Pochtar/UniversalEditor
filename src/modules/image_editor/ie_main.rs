@@ -893,12 +893,20 @@ impl ImageEditor {
         let bg = self.image.as_ref()?;
         let (w, h) = (bg.width(), bg.height());
         let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
-        let editing_tid = if self.editing_text { self.selected_text } else { None };
+        let editing_tid = self.selected_text;
         let mut linked: std::collections::HashSet<u64> = std::collections::HashSet::new();
         for layer in &self.layers {
             if !layer.visible { continue; }
             match layer.kind {
-                LayerKind::Image => continue,
+                LayerKind::Image => {
+                    if let Some(iid) = layer.linked_image_id {
+                        if Some(iid) != self.selected_image_layer {
+                            if let Some(ild) = self.image_layer_data.get(&iid) {
+                                Self::stamp_image_layer(&mut result, ild, layer.opacity, layer.blend_mode);
+                            }
+                        }
+                    }
+                }
                 LayerKind::Text => {
                     if let Some(tid) = layer.linked_text_id {
                         linked.insert(tid);
@@ -1243,6 +1251,7 @@ impl ImageEditor {
         self.push_undo();
         let iid = self.next_image_layer_id; self.next_image_layer_id += 1;
         let lid = self.next_layer_id; self.next_layer_id += 1;
+        let img = DynamicImage::ImageRgba8(img.to_rgba8());
         let ild = ImageLayerData { id: iid, image: img, canvas_x: cx, canvas_y: cy, display_w, display_h, rotation: 0.0, flip_h: false, flip_v: false };
         self.image_layer_data.insert(iid, ild);
         self.image_layer_texture_dirty.insert(iid);
@@ -1251,6 +1260,10 @@ impl ImageEditor {
         self.layers.insert(pos, layer);
         self.active_layer_id = lid;
         self.selected_image_layer = Some(iid);
+        self.selected_text = None;
+        self.editing_text = false;
+        self.text_drag = None;
+        self.tool = Tool::Pan;
         self.composite_dirty = true;
         self.dirty = true;
     }
@@ -1600,22 +1613,59 @@ impl ImageEditor {
         let mut out: Vec<[f32; 4]> = vec![[0.0f32; 4]; pw * ph];
         for layer in &self.layers {
             if !layer.visible { continue; }
-            let src_buf: &ImageBuffer<Rgba<u8>, Vec<u8>> = match layer.kind {
-                LayerKind::Background => match bg { DynamicImage::ImageRgba8(b) => b, _ => continue },
-                LayerKind::Raster => match self.layer_images.get(&layer.id) { Some(DynamicImage::ImageRgba8(b)) => b, _ => continue },
-                LayerKind::Text | LayerKind::Image => continue,
-            };
-            if src_buf.width() < x1 || src_buf.height() < y1 { continue; }
-            let opacity = layer.opacity; let mode = layer.blend_mode;
-            for py in y0..y1 {
-                for px in x0..x1 {
-                    let s = unsafe { src_buf.unsafe_get_pixel(px, py) }.0;
-                    if (s[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
-                    let idx = (py - y0) as usize * pw + (px - x0) as usize;
-                    let d = out[idx];
-                    let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
-                    let r = blend_pixels_u8(d_u8, s, opacity, mode);
-                    out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
+            match layer.kind {
+                LayerKind::Text => continue,
+                LayerKind::Image => {
+                    let Some(iid) = layer.linked_image_id else { continue };
+                    if Some(iid) == self.selected_image_layer { continue; }
+                    let Some(ild) = self.image_layer_data.get(&iid) else { continue };
+                    let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
+                    if orig_w == 0 || orig_h == 0 || ild.display_w <= 0.0 || ild.display_h <= 0.0 { continue; }
+                    let src = match &ild.image { DynamicImage::ImageRgba8(b) => b, _ => continue };
+                    let (cx, cy) = ild.center_canvas();
+                    let angle_rad = ild.rotation.to_radians();
+                    let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+                    let opacity = layer.opacity.clamp(0.0, 1.0);
+                    let mode = layer.blend_mode;
+                    for py in y0..y1 {
+                        for px in x0..x1 {
+                            let (dx, dy) = (px as f32 - cx, py as f32 - cy);
+                            let lx = dx * cos_a + dy * sin_a + ild.display_w / 2.0;
+                            let ly = -dx * sin_a + dy * cos_a + ild.display_h / 2.0;
+                            if lx < 0.0 || ly < 0.0 || lx >= ild.display_w || ly >= ild.display_h { continue; }
+                            let mut sx = lx / ild.display_w * orig_w as f32;
+                            let mut sy = ly / ild.display_h * orig_h as f32;
+                            if ild.flip_h { sx = orig_w as f32 - 1.0 - sx; }
+                            if ild.flip_v { sy = orig_h as f32 - 1.0 - sy; }
+                            let sp = Self::bilinear_sample_rgba(src, sx.clamp(0.0, orig_w as f32 - 1.0001), sy.clamp(0.0, orig_h as f32 - 1.0001), orig_w, orig_h);
+                            if (sp[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
+                            let idx = (py - y0) as usize * pw + (px - x0) as usize;
+                            let d = out[idx];
+                            let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
+                            let r = blend_pixels_u8(d_u8, sp, opacity, mode);
+                            out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
+                        }
+                    }
+                }
+                LayerKind::Background | LayerKind::Raster => {
+                    let src_buf: &ImageBuffer<Rgba<u8>, Vec<u8>> = match layer.kind {
+                        LayerKind::Background => match bg { DynamicImage::ImageRgba8(b) => b, _ => continue },
+                        LayerKind::Raster => match self.layer_images.get(&layer.id) { Some(DynamicImage::ImageRgba8(b)) => b, _ => continue },
+                        _ => unreachable!(),
+                    };
+                    if src_buf.width() < x1 || src_buf.height() < y1 { continue; }
+                    let opacity = layer.opacity; let mode = layer.blend_mode;
+                    for py in y0..y1 {
+                        for px in x0..x1 {
+                            let s = unsafe { src_buf.unsafe_get_pixel(px, py) }.0;
+                            if (s[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
+                            let idx = (py - y0) as usize * pw + (px - x0) as usize;
+                            let d = out[idx];
+                            let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
+                            let r = blend_pixels_u8(d_u8, s, opacity, mode);
+                            out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
+                        }
+                    }
                 }
             }
         }

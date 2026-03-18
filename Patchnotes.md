@@ -159,6 +159,7 @@
 - **IMG EDITOR**: Improved performance of retouch tool filters
 - **IMG EDITOR**: Custom Slider for Saturation in the retouch tool
 - **IMG EDITOR**: Added Image Imports and Image Layers
+- **IMG EDITOR**: Renamed "Pan" tool to "Select/Pan" tool
 
 #### Debugging
 - **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing
@@ -179,3 +180,7 @@
 - **IMG EDITOR**: Stamped text now matches the exact size of preview text
 - **IMG EDITOR**: Background layer brush strokes no longer sometimes remove background of layer brush strokes
 - **IMG EDITOR**: Drag value input no longer interferes with color picker favorites
+- **IMG EDITOR**: Imported images now work properly with the layer system
+- **IMG EDITOR**: Text and imported images now can be used with the "Select/pan" tool
+- **IMG EDITOR**: Moving imported image no longer moves background canvas
+- **IMG EDITOR**: No longer allows for both imported image AND textbox to be selected at once
