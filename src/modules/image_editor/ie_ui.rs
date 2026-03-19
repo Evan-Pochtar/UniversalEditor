@@ -978,17 +978,17 @@ impl ImageEditor {
             let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
             let zoom = self.zoom; let pan = self.pan;
             let selected_iid = self.selected_image_layer;
-            let iids_and_visible: Vec<(u64, u64, bool)> = self.layers.iter()
-                .filter(|l| l.kind == LayerKind::Image && l.visible)
-                .filter(|l| l.linked_image_id.is_some() && l.linked_image_id == selected_iid)
-                .filter_map(|l| l.linked_image_id.map(|iid| (l.id, iid, l.id == self.active_layer_id)))
+            let iids_ordered: Vec<(u64, u64, f32, bool)> = self.layers.iter()
+                .filter(|l| l.kind == LayerKind::Image && l.visible && l.linked_image_id.is_some())
+                .filter_map(|l| l.linked_image_id.map(|iid| (l.id, iid, l.opacity, l.id == self.active_layer_id)))
                 .collect();
-            for (_lid, iid, is_active) in &iids_and_visible {
+            for (_lid, iid, layer_opacity, is_active) in &iids_ordered {
                 let iid = *iid;
                 if let (Some(tid), Some(ild)) = (self.image_layer_textures.get(&iid), self.image_layer_data.get(&iid)) {
                     let screen_rect = ild.screen_rect(img_w, img_h, canvas_rect, zoom, pan);
                     let angle_rad = ild.rotation.to_radians();
-                    let tint = egui::Color32::WHITE;
+                    let alpha = (layer_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
                     if angle_rad == 0.0 && !ild.flip_h && !ild.flip_v {
                         painter.image(*tid, screen_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
                     } else {
@@ -1073,19 +1073,14 @@ impl ImageEditor {
         let text_cursor = self.text_cursor;
         let text_sel_anchor = self.text_sel_anchor;
         let zoom = self.zoom;
+        let text_layer_info: std::collections::HashMap<u64, (f32, bool)> = self.layers.iter().filter(|l| l.kind == LayerKind::Text)
+            .filter_map(|l| l.linked_text_id.map(|tid| (tid, (l.opacity, l.visible)))).collect();
+        let text_z_order: Vec<u64> = self.layers.iter().filter(|l| l.kind == LayerKind::Text && l.visible)
+            .filter_map(|l| l.linked_text_id).collect();
         for i in 0..self.text_layers.len() {
-            let lid = self.text_layers[i].id;
-            let is_editing = editing_text && selected_text == Some(lid);
-            let is_selected = selected_text == Some(lid);
-            if !is_editing && !is_selected { continue; }
-
-            let (img_x, img_y) = (self.text_layers[i].img_x, self.text_layers[i].img_y);
-            let anchor: egui::Pos2 = self.image_to_screen(img_x, img_y);
             let layer = &self.text_layers[i];
+            let anchor: egui::Pos2 = self.image_to_screen(layer.img_x, layer.img_y);
             let font_size_screen: f32 = layer.font_size * zoom;
-            let angle_rad: f32 = layer.rotation.to_radians();
-            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
-            let sel_rect: egui::Rect = layer.screen_rect(anchor, zoom);
             let font_family: egui::FontFamily = egui::FontFamily::Name(layer.font_family_name().into());
             let font_id: egui::FontId = egui::FontId::new(font_size_screen, font_family);
             let box_w_screen: f32 = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
@@ -1093,6 +1088,12 @@ impl ImageEditor {
             let layer_underline = layer.underline;
             let content_snap = layer.content.clone();
             let layer_font_size = layer.font_size;
+            let sel_rect: egui::Rect = layer.screen_rect(anchor, zoom);
+            let angle_rad: f32 = layer.rotation.to_radians();
+            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+            let center: egui::Pos2 = sel_rect.center();
+            let d: egui::Vec2 = anchor - center;
+            let text_pos: egui::Pos2 = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
 
             let make_job = |text: &str| {
                 let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
@@ -1105,9 +1106,6 @@ impl ImageEditor {
                 job
             };
 
-            let center: egui::Pos2 = sel_rect.center();
-            let d: egui::Vec2 = anchor - center;
-            let text_pos: egui::Pos2 = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
             let galley: std::sync::Arc<egui::Galley> = ui.painter().layout_job(make_job(&content_snap));
             self.text_layers[i].rendered_height = (galley.rect.height() / zoom).max(layer_font_size);
             let content_chars: Vec<char> = content_snap.chars().collect();
@@ -1121,10 +1119,15 @@ impl ImageEditor {
                 if char_ptr < content_chars.len() && content_chars[char_ptr] == '\n' { char_ptr += 1; }
             }
             self.text_layers[i].cached_lines = new_cached;
-            let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
-            text_shape.angle = angle_rad;
-            let mut text_shape_pan: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
-            text_shape_pan.angle = angle_rad;
+            let lid = self.text_layers[i].id;
+            let is_editing = editing_text && selected_text == Some(lid);
+            let is_selected = selected_text == Some(lid);
+            let (layer_opacity, layer_visible) = text_layer_info.get(&lid).copied().unwrap_or((1.0, true));
+            if !layer_visible { continue; }
+            let effective_alpha = (layer_color.a() as f32 * layer_opacity).clamp(0.0, 255.0) as u8;
+            let draw_color = egui::Color32::from_rgba_unmultiplied(layer_color.r(), layer_color.g(), layer_color.b(), effective_alpha);
+
+            let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), draw_color);
             text_shape.angle = angle_rad;
 
             if is_editing {
@@ -1180,10 +1183,12 @@ impl ImageEditor {
                 }
                 ctx.request_repaint_after(std::time::Duration::from_millis(500));
                 painter.add(egui::Shape::Text(text_shape));
+            } else {
+                painter.add(egui::Shape::Text(text_shape));
             }
-            if is_selected && !is_editing { painter.add(egui::Shape::Text(text_shape_pan)); }
             if is_selected { TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400); }
         }
+        let _ = text_z_order;
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
         if let Some(mp) = mouse_pos {

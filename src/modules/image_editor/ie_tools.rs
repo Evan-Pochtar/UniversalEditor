@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont, point};
 use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL};
-use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb };
+use super::ie_helpers::{ rgb_to_hsv, hsv_to_rgb, srgb_to_linear };
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, TextLayer, BrushSettings, CropState, TransformHandleSet,
     BrushShape, BrushTextureMode, RetouchMode, LayerKind, RgbaColor,
@@ -472,7 +472,8 @@ impl ImageEditor {
         let scaled = font.as_scaled(scale);
         let ibw = bw.ceil() as usize; let ibh = actual_h.ceil() as usize;
         let mut tbuf: Vec<[f32; 4]> = vec![[0.0; 4]; ibw * ibh];
-        let (cr, cg, cb, ca) = (tl.color.r() as f32/255.0, tl.color.g() as f32/255.0, tl.color.b() as f32/255.0, tl.color.a() as f32/255.0 * opacity);
+        let (cr, cg, cb) = (srgb_to_linear(tl.color.r()), srgb_to_linear(tl.color.g()), srgb_to_linear(tl.color.b()));
+        let ca = tl.color.a() as f32/255.0 * opacity;
         let put = |tbuf: &mut Vec<[f32;4]>, tx: i32, ty: i32, cov: f32| {
             if tx < 0 || ty < 0 || tx >= ibw as i32 || ty >= ibh as i32 { return; }
             let idx = ty as usize * ibw + tx as usize;
@@ -514,9 +515,16 @@ impl ImageEditor {
                 let lx = (px as f32 - rcx)*cos_a + (py as f32 - rcy)*sin_a + hw;
                 let ly = -(px as f32 - rcx)*sin_a + (py as f32 - rcy)*cos_a + hh;
                 if lx < 0.0 || ly < 0.0 || lx >= bw || ly >= actual_h { continue; }
-                let tx = lx as usize; let ty = ly as usize;
-                if tx >= ibw || ty >= ibh { continue; }
-                let texel = tbuf[ty*ibw+tx];
+                let tx0 = lx as usize; let ty0 = ly as usize;
+                let tx1 = (tx0 + 1).min(ibw.saturating_sub(1));
+                let ty1 = (ty0 + 1).min(ibh.saturating_sub(1));
+                let (fx, fy) = (lx - tx0 as f32, ly - ty0 as f32);
+                let lerp4 = |a: [f32;4], b: [f32;4], t: f32| -> [f32;4] {
+                    [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t, a[3]+(b[3]-a[3])*t]
+                };
+                let row0 = lerp4(tbuf[ty0*ibw+tx0], tbuf[ty0*ibw+tx1], fx);
+                let row1 = lerp4(tbuf[ty1*ibw+tx0], tbuf[ty1*ibw+tx1], fx);
+                let texel = lerp4(row0, row1, fy);
                 if texel[3] < 1e-5 { continue; }
                 let e = buf.get_pixel(px as u32, py as u32).0;
                 let ea = e[3] as f32/255.0;

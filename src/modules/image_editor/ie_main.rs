@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use crate::style::ThemeMode;
 use crate::modules::{EditorModule, MenuAction, MenuItem, MenuContribution};
 use serde::{Deserialize, Serialize};
-use super::ie_helpers::{load_persisted, save_persisted, blend_pixels_u8};
+use super::ie_helpers::{load_persisted, save_persisted, blend_pixels_u8, blend_pixels_linear};
 
 pub(super) const MAX_UNDO: usize = 20;
 pub(super) const MAX_COLOR_HISTORY: usize = 20;
@@ -893,30 +893,10 @@ impl ImageEditor {
         let bg = self.image.as_ref()?;
         let (w, h) = (bg.width(), bg.height());
         let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
-        let editing_tid = self.selected_text;
-        let mut linked: std::collections::HashSet<u64> = std::collections::HashSet::new();
         for layer in &self.layers {
             if !layer.visible { continue; }
             match layer.kind {
-                LayerKind::Image => {
-                    if let Some(iid) = layer.linked_image_id {
-                        if Some(iid) != self.selected_image_layer {
-                            if let Some(ild) = self.image_layer_data.get(&iid) {
-                                Self::stamp_image_layer(&mut result, ild, layer.opacity, layer.blend_mode);
-                            }
-                        }
-                    }
-                }
-                LayerKind::Text => {
-                    if let Some(tid) = layer.linked_text_id {
-                        linked.insert(tid);
-                        if editing_tid == Some(tid) { continue; }
-                        if let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() {
-                            let base = DynamicImage::ImageRgba8(result.clone());
-                            result = self.stamp_single_text_layer(&base, &tl, layer.opacity).to_rgba8();
-                        }
-                    }
-                }
+                LayerKind::Image | LayerKind::Text => {}
                 LayerKind::Background | LayerKind::Raster => {
                     let src = match layer.kind {
                         LayerKind::Background => Some(bg),
@@ -936,10 +916,6 @@ impl ImageEditor {
                 }
             }
         }
-        for tl in self.text_layers.iter().filter(|t| !linked.contains(&t.id) && editing_tid != Some(t.id)) {
-            let base = DynamicImage::ImageRgba8(result.clone());
-            result = self.stamp_single_text_layer(&base, tl, 1.0).to_rgba8();
-        }
         Some(DynamicImage::ImageRgba8(result))
     }
 
@@ -947,7 +923,6 @@ impl ImageEditor {
         let bg = self.image.as_ref()?;
         let (w, h) = (bg.width(), bg.height());
         let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
-        let editing_tid = if self.editing_text { self.selected_text } else { None };
         let mut linked: std::collections::HashSet<u64> = std::collections::HashSet::new();
         for layer in &self.layers {
             if !layer.visible { continue; }
@@ -955,7 +930,6 @@ impl ImageEditor {
                 LayerKind::Text => {
                     if let Some(tid) = layer.linked_text_id {
                         linked.insert(tid);
-                        if editing_tid == Some(tid) { continue; }
                         if let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() {
                             let base = DynamicImage::ImageRgba8(result.clone());
                             result = self.stamp_single_text_layer(&base, &tl, layer.opacity).to_rgba8();
@@ -981,14 +955,14 @@ impl ImageEditor {
                     let mode = layer.blend_mode;
                     for y in 0..h {
                         for x in 0..w {
-                            let out = blend_pixels_u8(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
+                            let out = blend_pixels_linear(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
                             result.put_pixel(x, y, Rgba(out));
                         }
                     }
                 }
             }
         }
-        for tl in self.text_layers.iter().filter(|t| !linked.contains(&t.id) && editing_tid != Some(t.id)) {
+        for tl in self.text_layers.iter().filter(|t| !linked.contains(&t.id)) {
             let base = DynamicImage::ImageRgba8(result.clone());
             result = self.stamp_single_text_layer(&base, tl, 1.0).to_rgba8();
         }
@@ -999,7 +973,15 @@ impl ImageEditor {
         let (cw, ch) = (composite.width(), composite.height());
         let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
         if orig_w == 0 || orig_h == 0 || ild.display_w <= 0.0 || ild.display_h <= 0.0 { return; }
-        let src = ild.image.to_rgba8();
+        let disp_w = ild.display_w.round().max(1.0) as u32;
+        let disp_h = ild.display_h.round().max(1.0) as u32;
+        let src = if disp_w < orig_w || disp_h < orig_h {
+            ild.image.resize_exact(disp_w, disp_h, image::imageops::FilterType::Lanczos3).to_rgba8()
+        } else {
+            ild.image.to_rgba8()
+        };
+        let (src_w, src_h) = (src.width(), src.height());
+
         let (cx, cy) = ild.center_canvas();
         let angle_rad = ild.rotation.to_radians();
         let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
@@ -1020,28 +1002,52 @@ impl ImageEditor {
                 let lx = dx * cos_a + dy * sin_a + ild.display_w / 2.0;
                 let ly = -dx * sin_a + dy * cos_a + ild.display_h / 2.0;
                 if lx < 0.0 || ly < 0.0 || lx >= ild.display_w || ly >= ild.display_h { continue; }
-                let mut sx = lx / ild.display_w * orig_w as f32;
-                let mut sy = ly / ild.display_h * orig_h as f32;
-                if ild.flip_h { sx = orig_w as f32 - 1.0 - sx; }
-                if ild.flip_v { sy = orig_h as f32 - 1.0 - sy; }
-                let sp = Self::bilinear_sample_rgba(&src, sx.clamp(0.0, orig_w as f32 - 1.0001), sy.clamp(0.0, orig_h as f32 - 1.0001), orig_w, orig_h);
+                let mut sx = lx / ild.display_w * src_w as f32;
+                let mut sy = ly / ild.display_h * src_h as f32;
+                if ild.flip_h { sx = src_w as f32 - 1.0 - sx; }
+                if ild.flip_v { sy = src_h as f32 - 1.0 - sy; }
+                let sp = Self::bicubic_sample_rgba(&src, sx.clamp(0.0, src_w as f32 - 1.0001), sy.clamp(0.0, src_h as f32 - 1.0001), src_w, src_h);
                 let dst = composite.get_pixel(px, py).0;
-                composite.put_pixel(px, py, Rgba(blend_pixels_u8(dst, sp, opacity, blend_mode)));
+                composite.put_pixel(px, py, Rgba(blend_pixels_linear(dst, sp, opacity, blend_mode)));
             }
         }
     }
 
     #[inline]
-    pub(super) fn bilinear_sample_rgba(src: &ImageBuffer<Rgba<u8>, Vec<u8>>, sx: f32, sy: f32, w: u32, h: u32) -> [u8; 4] {
-        let x0 = sx as u32; let y0 = sy as u32;
-        let x1 = (x0 + 1).min(w.saturating_sub(1));
-        let y1 = (y0 + 1).min(h.saturating_sub(1));
-        let (fx, fy) = (sx - x0 as f32, sy - y0 as f32);
-        let p00 = src.get_pixel(x0, y0).0; let p10 = src.get_pixel(x1, y0).0;
-        let p01 = src.get_pixel(x0, y1).0; let p11 = src.get_pixel(x1, y1).0;
-        let lerp = |a: u8, b: u8, t: f32| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
-        [lerp(lerp(p00[0],p10[0],fx),lerp(p01[0],p11[0],fx),fy), lerp(lerp(p00[1],p10[1],fx),lerp(p01[1],p11[1],fx),fy),
-         lerp(lerp(p00[2],p10[2],fx),lerp(p01[2],p11[2],fx),fy), lerp(lerp(p00[3],p10[3],fx),lerp(p01[3],p11[3],fx),fy)]
+    pub(super) fn bicubic_sample_rgba(src: &ImageBuffer<Rgba<u8>, Vec<u8>>, sx: f32, sy: f32, w: u32, h: u32) -> [u8; 4] {
+        let ix = sx.floor() as i32;
+        let iy = sy.floor() as i32;
+        let fx = sx - ix as f32;
+        let fy = sy - iy as f32;
+        let wt = |t: f32| -> f32 {
+            let t = t.abs();
+            if t < 1.0 { 1.5*t*t*t - 2.5*t*t + 1.0 }
+            else if t < 2.0 { -0.5*t*t*t + 2.5*t*t - 4.0*t + 2.0 }
+            else { 0.0 }
+        };
+
+        let wx = [wt(1.0 + fx), wt(fx), wt(1.0 - fx), wt(2.0 - fx)];
+        let wy = [wt(1.0 + fy), wt(fy), wt(1.0 - fy), wt(2.0 - fy)];
+        let get = |xi: i32, yi: i32| -> [f32; 4] {
+            let xi = xi.clamp(0, w as i32 - 1) as u32;
+            let yi = yi.clamp(0, h as i32 - 1) as u32;
+            let p = src.get_pixel(xi, yi).0;
+            [p[0] as f32/255.0, p[1] as f32/255.0, p[2] as f32/255.0, p[3] as f32/255.0]
+        };
+        let mut out = [0.0f32; 4];
+        for dy in 0..4i32 {
+            for dx in 0..4i32 {
+                let p = get(ix - 1 + dx, iy - 1 + dy);
+                let w = wx[dx as usize] * wy[dy as usize];
+                for c in 0..4 { out[c] += p[c] * w; }
+            }
+        }
+        [
+            (out[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (out[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (out[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (out[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+        ]
     }
 
 
@@ -1274,7 +1280,7 @@ impl ImageEditor {
     }
 
     pub(super) fn ensure_image_layer_textures(&mut self, ctx: &egui::Context) {
-        const MAX_TEX_DIM: u32 = 2048;
+        const MAX_TEX_DIM: u32 = 4096;
         let dirty_ids: Vec<u64> = self.image_layer_texture_dirty.drain().collect();
         for iid in dirty_ids {
             let stroke_rect = self.image_layer_stroke_rects.remove(&iid);
@@ -1300,7 +1306,7 @@ impl ImageEditor {
                         if tw > 0 && th > 0 {
                             let sub = ild.image.crop_imm(nx0, ny0, nx1 - nx0, ny1 - ny0);
                             let sub_rgba = if scale < 1.0 {
-                                sub.resize_exact(tw as u32, th as u32, image::imageops::FilterType::Nearest).to_rgba8()
+                                sub.resize_exact(tw as u32, th as u32, image::imageops::FilterType::Lanczos3).to_rgba8()
                             } else { sub.to_rgba8() };
                             
                             let (sw, sh) = (sub_rgba.width() as usize, sub_rgba.height() as usize);
@@ -1524,10 +1530,11 @@ impl ImageEditor {
                 let (w, h) = (rgba.width() as usize, rgba.height() as usize);
                 let pixels: Vec<egui::Color32> = rgba.pixels().map(|p| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect();
                 let color_image = egui::ColorImage { size: [w, h], source_size: egui::vec2(w as f32, h as f32), pixels };
+                let linear_opts = egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, ..Default::default() };
                 if let Some(tid) = self.texture {
-                    ctx.tex_manager().write().set(tid, egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default()));
+                    ctx.tex_manager().write().set(tid, egui::epaint::ImageDelta::full(color_image, linear_opts));
                 } else {
-                    self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), egui::TextureOptions::default()));
+                    self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), linear_opts));
                 }
             }
             self.composite_dirty = false;
@@ -1570,7 +1577,7 @@ impl ImageEditor {
                 };
                 ctx.tex_manager().write().set(
                     tex_id,
-                    egui::epaint::ImageDelta::partial([x0 as usize, y0 as usize], partial, egui::TextureOptions::default()),
+                    egui::epaint::ImageDelta::partial([x0 as usize, y0 as usize], partial, egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, ..Default::default() }),
                 );
                 self.texture_dirty = false;
                 self.texture_dirty_rect = None;
@@ -1585,10 +1592,11 @@ impl ImageEditor {
             source_size: egui::vec2(w as f32, h as f32),
             pixels: rgba.pixels().map(|p: &Rgba<u8>| egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])).collect(),
         };
+        let linear_opts = egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, ..Default::default() };
         if let Some(texture_id) = self.texture {
-            ctx.tex_manager().write().set(texture_id, egui::epaint::ImageDelta::full(color_image, egui::TextureOptions::default()));
+            ctx.tex_manager().write().set(texture_id, egui::epaint::ImageDelta::full(color_image, linear_opts));
         } else {
-            self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), egui::TextureOptions::default()));
+            self.texture = Some(ctx.tex_manager().write().alloc("image_editor_img".into(), color_image.into(), linear_opts));
         }
         self.texture_dirty = false;
         self.texture_dirty_rect = None;
@@ -1614,39 +1622,7 @@ impl ImageEditor {
         for layer in &self.layers {
             if !layer.visible { continue; }
             match layer.kind {
-                LayerKind::Text => continue,
-                LayerKind::Image => {
-                    let Some(iid) = layer.linked_image_id else { continue };
-                    if Some(iid) == self.selected_image_layer { continue; }
-                    let Some(ild) = self.image_layer_data.get(&iid) else { continue };
-                    let (orig_w, orig_h) = (ild.image.width(), ild.image.height());
-                    if orig_w == 0 || orig_h == 0 || ild.display_w <= 0.0 || ild.display_h <= 0.0 { continue; }
-                    let src = match &ild.image { DynamicImage::ImageRgba8(b) => b, _ => continue };
-                    let (cx, cy) = ild.center_canvas();
-                    let angle_rad = ild.rotation.to_radians();
-                    let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
-                    let opacity = layer.opacity.clamp(0.0, 1.0);
-                    let mode = layer.blend_mode;
-                    for py in y0..y1 {
-                        for px in x0..x1 {
-                            let (dx, dy) = (px as f32 - cx, py as f32 - cy);
-                            let lx = dx * cos_a + dy * sin_a + ild.display_w / 2.0;
-                            let ly = -dx * sin_a + dy * cos_a + ild.display_h / 2.0;
-                            if lx < 0.0 || ly < 0.0 || lx >= ild.display_w || ly >= ild.display_h { continue; }
-                            let mut sx = lx / ild.display_w * orig_w as f32;
-                            let mut sy = ly / ild.display_h * orig_h as f32;
-                            if ild.flip_h { sx = orig_w as f32 - 1.0 - sx; }
-                            if ild.flip_v { sy = orig_h as f32 - 1.0 - sy; }
-                            let sp = Self::bilinear_sample_rgba(src, sx.clamp(0.0, orig_w as f32 - 1.0001), sy.clamp(0.0, orig_h as f32 - 1.0001), orig_w, orig_h);
-                            if (sp[3] as f32 / 255.0) * opacity < 1e-6 { continue; }
-                            let idx = (py - y0) as usize * pw + (px - x0) as usize;
-                            let d = out[idx];
-                            let d_u8 = [(d[0]*255.0) as u8, (d[1]*255.0) as u8, (d[2]*255.0) as u8, (d[3]*255.0) as u8];
-                            let r = blend_pixels_u8(d_u8, sp, opacity, mode);
-                            out[idx] = [r[0] as f32/255.0, r[1] as f32/255.0, r[2] as f32/255.0, r[3] as f32/255.0];
-                        }
-                    }
-                }
+                LayerKind::Text | LayerKind::Image => continue,
                 LayerKind::Background | LayerKind::Raster => {
                     let src_buf: &ImageBuffer<Rgba<u8>, Vec<u8>> = match layer.kind {
                         LayerKind::Background => match bg { DynamicImage::ImageRgba8(b) => b, _ => continue },
@@ -1676,7 +1652,7 @@ impl ImageEditor {
         ctx.tex_manager().write().set(tex_id, egui::epaint::ImageDelta::partial(
             [x0 as usize, y0 as usize],
             egui::ColorImage { size: [pw, ph], source_size: egui::vec2(pw as f32, ph as f32), pixels },
-            egui::TextureOptions::default(),
+            egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, ..Default::default() },
         ));
     }
 

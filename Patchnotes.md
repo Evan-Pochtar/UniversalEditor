@@ -184,3 +184,10 @@
 - **IMG EDITOR**: Text and imported images now can be used with the "Select/pan" tool
 - **IMG EDITOR**: Moving imported image no longer moves background canvas
 - **IMG EDITOR**: No longer allows for both imported image AND textbox to be selected at once
+
+## V0.0.7
+
+#### Features
+- **IMG EDITOR**: Improved quality of edited and exported imported images/text
+
+#### Debugging
