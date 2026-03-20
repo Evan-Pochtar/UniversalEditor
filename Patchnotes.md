@@ -189,5 +189,10 @@
 
 #### Features
 - **IMG EDITOR**: Improved quality of edited and exported imported images/text
+- **GENERAL**: Added "About" modal in the main menu to describe the current state of the project
+- **GENERAL**: Added keyboard shortcut to close sidebar (Ctrl+Backslash)
+- **GENERAL**: Sidebar "Recent Files" list now differentiates similarly named files that are located in different folders
 
 #### Debugging
+- **IMG EDITOR**: Jpeg and JPG's now load the same into the canvas
+- **IMG2IMG CONVERTER**: JPG's now load properly into the input space

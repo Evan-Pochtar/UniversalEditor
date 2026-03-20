@@ -1,5 +1,5 @@
 use eframe::egui;
-use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
+use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Rgba};
 use crate::modules::helpers::image_export::ExportFormat;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -788,7 +788,12 @@ impl ImageEditor {
 
     pub fn load(path: PathBuf) -> Self {
         let mut editor: ImageEditor = Self::new();
-        if let Ok(img) = image::open(&path) {
+        let img_result = ImageReader::open(&path)
+            .ok()
+            .and_then(|r| r.with_guessed_format().ok())
+            .and_then(|r| r.decode().ok())
+            .or_else(|| image::open(&path).ok());
+        if let Some(img) = img_result {
             editor.resize_w = img.width();
             editor.resize_h = img.height();
             editor.image = Some(img);

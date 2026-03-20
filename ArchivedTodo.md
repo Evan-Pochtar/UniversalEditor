@@ -9,6 +9,7 @@
   - [x] Improved Patch Notes Screen
   - [x] Settings per page
   - [x] Way to go back to main menu
+  - [x] Add About Page
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -17,6 +18,8 @@
 - [x] Easier way to add new screens/converters (Code only change)
 - [x] Add right click context menu to change file name and open file location in "recent files" list
 - [x] Allow for right click, open with universal_editor on windows
+- [x] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [x] Add way to differentiate between same name files in "recent files" list
 
 ## Screens
 

@@ -3,10 +3,8 @@
 ## General
 
 - [ ] Create Main Menu
-  - [ ] Add About Page
-- [ ] Keyboard shortcuts to close/open sidebar, toolbar, etc.
-- [ ] Add way to differentiate between same name files in "recent files" list
-- [ ] Improve look of patch notes
+  - [ ] Add way to show more than 3 converters and screen (either scrollbar or list vertically)
+- [ ] Improve look of patch notes and settings modal
 
 ## Screens
 
@@ -64,6 +62,8 @@
 ### Text Editor
 
 - [ ] Latex?
+- [ ] Spell Check
+- [ ] Grammar Check
 
 ### Image Editor
 
@@ -82,13 +82,13 @@
   - [ ] Keyboard shortcuts to change between presets/favorite brushes
   - [ ] Export custom brushes
   - [ ] Improve realism of canvas and paper texture type
-  - [ ] Hover tooltips for more information about parameters
   - [ ] Brush preview
   - [ ] Library of custom brushes?
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
+- [ ] Move "Import Image" to top bar instead of the toolbar
 
 ### Json Editor
 

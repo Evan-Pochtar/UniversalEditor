@@ -37,10 +37,15 @@ impl ImageEditor {
                                 .clicked()
                             {
                                 if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif"])
+                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "gif"])
                                     .pick_file()
                                 {
-                                    if let Ok(img) = image::open(&path) {
+                                    let img_opt = image::ImageReader::open(&path)
+                                        .ok()
+                                        .and_then(|r| r.with_guessed_format().ok())
+                                        .and_then(|r| r.decode().ok())
+                                        .or_else(|| image::open(&path).ok());
+                                    if let Some(img) = img_opt {
                                         self.insert_image_layer(img, true);
                                     }
                                 }
@@ -1024,7 +1029,12 @@ impl ImageEditor {
         let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
         for dropped in dropped_files {
             if let Some(path) = &dropped.path {
-                if let Ok(img) = image::open(path) {
+                let img_opt = image::ImageReader::open(path)
+                    .ok()
+                    .and_then(|r| r.with_guessed_format().ok())
+                    .and_then(|r| r.decode().ok())
+                    .or_else(|| image::open(path).ok());
+                if let Some(img) = img_opt {
                     self.insert_image_layer(img, true);
                 }
             } else if let Some(bytes) = &dropped.bytes {
