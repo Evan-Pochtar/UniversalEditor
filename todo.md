@@ -5,6 +5,7 @@
 - [ ] Create Main Menu
   - [ ] Add way to show more than 3 converters and screen (either scrollbar or list vertically)
 - [ ] Improve look of patch notes and settings modal
+- [ ] Editable keyboard shortcuts per page
 
 ## Screens
 
@@ -89,6 +90,7 @@
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
 - [ ] Move "Import Image" to top bar instead of the toolbar
+- [ ] Add way to save layers and settings per image
 
 ### Json Editor
 

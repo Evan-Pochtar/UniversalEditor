@@ -646,7 +646,7 @@ impl UniversalEditor {
                 let mut open_new = false; let open_file = false;
                 ui.columns(2, |cols| {
                     if style::tool_card(&mut cols[0], "New Text File", "Start with a blank document", ColorPalette::BLUE_500, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { open_new = true; }
-                    if style::tool_card(&mut cols[1], "Open File", "Load an existing text or image file", ColorPalette::TEAL_500, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { open_new = true; }
+                    if style::tool_card(&mut cols[1], "Open File", "Load an existing text or image file", ColorPalette::TEAL_500, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::OpenFile); }
                 });
                 if open_new { action = Some(HomeAction::NewTextFile); }
                 if open_file { action = Some(HomeAction::OpenFile); }

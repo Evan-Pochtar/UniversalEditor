@@ -275,7 +275,7 @@ impl ImageEditor {
     }
 
     fn promote_dirty_to_composite(&mut self) {
-        if self.layers.iter().any(|l| l.visible && (l.kind == LayerKind::Raster || l.kind == LayerKind::Image)) {
+        if self.layers.iter().any(|l| l.visible && l.kind == LayerKind::Image) {
             let rect = self.texture_dirty_rect.take();
             self.texture_dirty = false;
             self.composite_dirty = true;
@@ -294,14 +294,13 @@ impl ImageEditor {
         self.texture_dirty = false;
         if let Some(painted) = self.image.take() { self.layer_images.insert(active_id, painted); }
         self.image = Some(old_bg);
-        self.composite_dirty = true;
         if let Some(r) = rect {
-            match &mut self.composite_dirty_rect {
-                None => self.composite_dirty_rect = Some(r),
+            match self.raster_layer_dirty_rects.get_mut(&active_id) {
+                None => { self.raster_layer_dirty_rects.insert(active_id, r); }
                 Some(cr) => { cr[0]=cr[0].min(r[0]); cr[1]=cr[1].min(r[1]); cr[2]=cr[2].max(r[2]); cr[3]=cr[3].max(r[3]); }
             }
         }
-        self.texture_dirty = true;
+        self.raster_layer_texture_dirty.insert(active_id);
     }
 
     pub(super) fn flood_fill(&mut self, start_x: u32, start_y: u32) {
@@ -830,7 +829,7 @@ impl ImageEditor {
         let kind = self.layers.iter().find(|l| l.id == id).map(|l| l.kind).unwrap_or(LayerKind::Background);
         match kind {
             LayerKind::Background => { if let Some(img) = &self.image { self.image = Some(DynamicImage::ImageRgba8(img.grayscale().to_rgba8())); } }
-            LayerKind::Raster => { if let Some(img) = self.layer_images.get(&id) { let g = img.grayscale().to_rgba8(); self.layer_images.insert(id, DynamicImage::ImageRgba8(g)); } }
+            LayerKind::Raster => { if let Some(img) = self.layer_images.get(&id) { let g = img.grayscale().to_rgba8(); self.layer_images.insert(id, DynamicImage::ImageRgba8(g)); self.raster_layer_texture_dirty.insert(id); self.raster_layer_dirty_rects.remove(&id); } }
             LayerKind::Image => {
                 if let Some(iid) = self.image_layer_for_active() {
                     if let Some(ild) = self.image_layer_data.get_mut(&iid) {
@@ -870,7 +869,7 @@ impl ImageEditor {
             let res = DynamicImage::ImageRgba8(buf);
             match kind {
                 LayerKind::Background => self.image = Some(res),
-                LayerKind::Raster => { self.layer_images.insert(id, res); }
+                LayerKind::Raster => { self.layer_images.insert(id, res); self.raster_layer_texture_dirty.insert(id); self.raster_layer_dirty_rects.remove(&id); }
                 _ => {}
             }
         }
@@ -910,7 +909,7 @@ impl ImageEditor {
             let res = DynamicImage::ImageRgba8(buf);
             match kind {
                 LayerKind::Background => self.image = Some(res),
-                LayerKind::Raster => { self.layer_images.insert(id, res); }
+                LayerKind::Raster => { self.layer_images.insert(id, res); self.raster_layer_texture_dirty.insert(id); self.raster_layer_dirty_rects.remove(&id); }
                 _ => {}
             }
         }

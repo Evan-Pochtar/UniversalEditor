@@ -709,6 +709,10 @@ pub struct ImageEditor {
     pub(super) image_drag: Option<ImageDrag>,
     pub(super) next_image_layer_id: u64,
     pub(super) image_aspect_lock: bool,
+
+    pub(super) raster_layer_textures: std::collections::HashMap<u64, egui::TextureId>,
+    pub(super) raster_layer_texture_dirty: std::collections::HashSet<u64>,
+    pub(super) raster_layer_dirty_rects: std::collections::HashMap<u64, [u32; 4]>,
 }
 
 impl ImageEditor {
@@ -783,6 +787,9 @@ impl ImageEditor {
             image_drag: None,
             next_image_layer_id: 0,
             image_aspect_lock: true,
+            raster_layer_textures: std::collections::HashMap::new(),
+            raster_layer_texture_dirty: std::collections::HashSet::new(),
+            raster_layer_dirty_rects: std::collections::HashMap::new(),
         }
     }
 
@@ -796,7 +803,7 @@ impl ImageEditor {
         if let Some(img) = img_result {
             editor.resize_w = img.width();
             editor.resize_h = img.height();
-            editor.image = Some(img);
+            editor.image = Some(DynamicImage::ImageRgba8(img.into_rgba8()));
             editor.texture_dirty = true;
             editor.composite_dirty = true;
             editor.file_path = Some(path);
@@ -836,6 +843,13 @@ impl ImageEditor {
         for changed_id in new_keys.iter() { self.image_layer_texture_dirty.insert(*changed_id); }
         self.image_layer_data = entry.image_layer_data;
         self.next_image_layer_id = entry.next_image_layer_id;
+        self.raster_layer_texture_dirty.clear();
+        self.raster_layer_dirty_rects.clear();
+        for l in &self.layers {
+            if l.kind == LayerKind::Raster {
+                self.raster_layer_texture_dirty.insert(l.id);
+            }
+        }
         if let Some(img) = &self.image {
             self.resize_w = img.width();
             self.resize_h = img.height();
@@ -894,36 +908,7 @@ impl ImageEditor {
         }
     }
 
-    pub(super) fn composite_for_display(&self) -> Option<DynamicImage> {
-        let bg = self.image.as_ref()?;
-        let (w, h) = (bg.width(), bg.height());
-        let mut result: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0]));
-        for layer in &self.layers {
-            if !layer.visible { continue; }
-            match layer.kind {
-                LayerKind::Image | LayerKind::Text => {}
-                LayerKind::Background | LayerKind::Raster => {
-                    let src = match layer.kind {
-                        LayerKind::Background => Some(bg),
-                        LayerKind::Raster => self.layer_images.get(&layer.id),
-                        _ => unreachable!(),
-                    };
-                    let Some(src) = src else { continue };
-                    let src_rgba = src.to_rgba8();
-                    let opacity = layer.opacity.clamp(0.0, 1.0);
-                    let mode = layer.blend_mode;
-                    for y in 0..h {
-                        for x in 0..w {
-                            let out = blend_pixels_u8(result.get_pixel(x, y).0, src_rgba.get_pixel(x, y).0, opacity, mode);
-                            result.put_pixel(x, y, Rgba(out));
-                        }
-                    }
-                }
-            }
-        }
-        Some(DynamicImage::ImageRgba8(result))
-    }
-
+    pub(super) fn composite_for_display(&self) -> Option<DynamicImage> { self.image.clone() }
     pub(super) fn composite_all_layers(&self) -> Option<DynamicImage> {
         let bg = self.image.as_ref()?;
         let (w, h) = (bg.width(), bg.height());
@@ -1074,6 +1059,7 @@ impl ImageEditor {
         self.layers.insert(pos, layer);
         self.layer_images.insert(id, DynamicImage::ImageRgba8(ImageBuffer::from_pixel(w, h, Rgba([0u8, 0, 0, 0])),));
         self.active_layer_id = id;
+        self.raster_layer_texture_dirty.insert(id);
         self.composite_dirty = true;
         self.dirty = true;
     }
@@ -1117,15 +1103,22 @@ impl ImageEditor {
             }
         }
 
+        let new_kind = if src_kind == LayerKind::Background { LayerKind::Raster } else { src_kind };
+        let new_name = if src_kind == LayerKind::Background { format!("{} (copy)", src_name) } else { format!("{} copy", src_name) };
         let new_layer = ImageLayer {
-            id: new_id, name: format!("{} copy", src_name),
+            id: new_id, name: new_name,
             opacity: src_opacity, visible: true, locked: src_locked,
             blend_mode: src_blend,
-            kind: src_kind, linked_text_id: new_text_id, linked_image_id: new_image_id,
+            kind: new_kind, linked_text_id: new_text_id, linked_image_id: new_image_id,
         };
         let pos = self.insert_above_active();
         self.layers.insert(pos, new_layer);
-        if let Some(img) = src_img { self.layer_images.insert(new_id, img); }
+        if let Some(img) = src_img {
+            self.layer_images.insert(new_id, img);
+            if matches!(new_kind, LayerKind::Raster) {
+                self.raster_layer_texture_dirty.insert(new_id);
+            }
+        }
         self.active_layer_id = new_id;
         self.composite_dirty = true;
         self.dirty = true;
@@ -1139,6 +1132,11 @@ impl ImageEditor {
         self.push_undo();
         let removed = self.layers.remove(idx);
         self.layer_images.remove(&removed.id);
+        if removed.kind == LayerKind::Raster {
+            self.raster_layer_textures.remove(&removed.id);
+            self.raster_layer_texture_dirty.remove(&removed.id);
+            self.raster_layer_dirty_rects.remove(&removed.id);
+        }
         if removed.kind == LayerKind::Text {
             if let Some(tid) = removed.linked_text_id {
                 self.text_layers.retain(|t| t.id != tid);
@@ -1204,9 +1202,15 @@ impl ImageEditor {
                 _ => {}
             }
         }
-
         self.layers.remove(idx);
         self.active_layer_id = below_id;
+        self.raster_layer_textures.remove(&top_id);
+        self.raster_layer_texture_dirty.remove(&top_id);
+        self.raster_layer_dirty_rects.remove(&top_id);
+        if below_kind == LayerKind::Raster {
+            self.raster_layer_texture_dirty.insert(below_id);
+            self.raster_layer_dirty_rects.remove(&below_id);
+        }
         self.composite_dirty = true;
         self.dirty = true;
     }
@@ -1219,6 +1223,9 @@ impl ImageEditor {
             self.text_layers.clear();
             self.image_layer_data.clear();
             self.image_layer_texture_dirty.clear();
+            self.raster_layer_textures.clear();
+            self.raster_layer_texture_dirty.clear();
+            self.raster_layer_dirty_rects.clear();
             self.selected_image_layer = None;
             self.layers = vec![ImageLayer {
                 id: 0, name: "Background".to_string(),
@@ -1350,6 +1357,61 @@ impl ImageEditor {
         }
     }
 
+    pub(super) fn ensure_raster_layer_textures(&mut self, ctx: &egui::Context) {
+        let dirty_ids: Vec<u64> = self.raster_layer_texture_dirty.drain().collect();
+        if dirty_ids.is_empty() { return; }
+        let linear_opts = egui::TextureOptions {
+            magnification: egui::TextureFilter::Linear,
+            minification: egui::TextureFilter::Linear,
+            ..Default::default()
+        };
+        for id in dirty_ids {
+            let img = match self.layer_images.get(&id) { Some(i) => i, None => continue };
+            let dirty_rect = self.raster_layer_dirty_rects.remove(&id);
+            if let (Some(tex_id), Some([rx0, ry0, rx1, ry1])) = (self.raster_layer_textures.get(&id).copied(), dirty_rect) {
+                let rgba_owned;
+                let rgba: &ImageBuffer<Rgba<u8>, Vec<u8>> = match img {
+                    DynamicImage::ImageRgba8(b) => b,
+                    _ => { rgba_owned = img.to_rgba8(); &rgba_owned }
+                };
+                let (iw, ih) = (rgba.width(), rgba.height());
+                let (x0, y0, x1, y1) = (rx0.min(iw), ry0.min(ih), rx1.min(iw), ry1.min(ih));
+                if x0 < x1 && y0 < y1 {
+                    let (pw, ph) = ((x1 - x0) as usize, (y1 - y0) as usize);
+                    let pixels: Vec<egui::Color32> = (y0..y1).flat_map(|y| (x0..x1).map(move |x| {
+                        let p = unsafe { rgba.unsafe_get_pixel(x, y) }.0;
+                        egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3])
+                    })).collect();
+                    ctx.tex_manager().write().set(tex_id, egui::epaint::ImageDelta::partial(
+                        [x0 as usize, y0 as usize],
+                        egui::ColorImage { size: [pw, ph], source_size: egui::vec2(pw as f32, ph as f32), pixels },
+                        linear_opts,
+                    ));
+                    continue;
+                }
+            }
+            let rgba_owned;
+            let rgba: &ImageBuffer<Rgba<u8>, Vec<u8>> = match img {
+                DynamicImage::ImageRgba8(b) => b,
+                _ => { rgba_owned = img.to_rgba8(); &rgba_owned }
+            };
+            let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+            let pixels: Vec<egui::Color32> = rgba.pixels().map(|p| {
+                egui::Color32::from_rgba_unmultiplied(p.0[0], p.0[1], p.0[2], p.0[3])
+            }).collect();
+            let ci = egui::ColorImage { size: [w, h], source_size: egui::vec2(w as f32, h as f32), pixels };
+            if let Some(&existing) = self.raster_layer_textures.get(&id) {
+                ctx.tex_manager().write().set(existing, egui::epaint::ImageDelta::full(ci, linear_opts));
+            } else {
+                let tid = ctx.tex_manager().write().alloc(format!("raster_layer_{id}").into(), ci.into(), linear_opts);
+                self.raster_layer_textures.insert(id, tid);
+            }
+        }
+        let live_ids: std::collections::HashSet<u64> = self.layers.iter().filter(|l| l.kind == LayerKind::Raster)
+            .map(|l| l.id).collect();
+        self.raster_layer_textures.retain(|id, _| live_ids.contains(id));
+    }
+
     pub(super) fn image_layer_transform_handles(&self) -> Option<TransformHandleSet> {
         let iid = self.selected_image_layer?;
         let ild = self.image_layer_data.get(&iid)?;
@@ -1436,7 +1498,7 @@ impl ImageEditor {
 
     pub(super) fn move_layer_down(&mut self) {
         if let Some(idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) {
-            if idx > 0 {
+            if idx > 1 {
                 self.layers.swap(idx, idx - 1);
                 self.composite_dirty = true;
                 self.dirty = true;
@@ -1556,14 +1618,14 @@ impl ImageEditor {
         };
 
         if let (Some(tex_id), Some([rx0, ry0, rx1, ry1])) = (self.texture, self.texture_dirty_rect) {
-            let rgba: ImageBuffer<Rgba<u8>, Vec<u8>> = img.to_rgba8();
-            let iw: u32 = rgba.width();
-            let ih: u32 = rgba.height();
-
-            let x0: u32 = rx0.min(iw);
-            let y0: u32 = ry0.min(ih);
-            let x1: u32 = rx1.min(iw);
-            let y1: u32 = ry1.min(ih);
+            let rgba_owned;
+            let rgba: &ImageBuffer<Rgba<u8>, Vec<u8>> = match img {
+                DynamicImage::ImageRgba8(b) => b,
+                _ => { rgba_owned = img.to_rgba8(); &rgba_owned }
+            };
+            let iw: u32 = rgba.width(); let ih: u32 = rgba.height();
+            let x0: u32 = rx0.min(iw); let y0: u32 = ry0.min(ih);
+            let x1: u32 = rx1.min(iw); let y1: u32 = ry1.min(ih);
 
             if x0 < x1 && y0 < y1 {
                 let pw: usize = (x1 - x0) as usize;
@@ -1589,8 +1651,11 @@ impl ImageEditor {
                 return;
             }
         }
-
-        let rgba: ImageBuffer<Rgba<u8>, Vec<u8>> = img.to_rgba8();
+        let rgba_owned;
+        let rgba: &ImageBuffer<Rgba<u8>, Vec<u8>> = match img {
+            DynamicImage::ImageRgba8(b) => b,
+            _ => { rgba_owned = img.to_rgba8(); &rgba_owned }
+        };
         let (w, h): (usize, usize) = (rgba.width() as usize, rgba.height() as usize);
         let color_image: egui::ColorImage = egui::ColorImage {
             size: [w, h],
@@ -1737,6 +1802,8 @@ impl ImageEditor {
                     }
                     LayerKind::Raster => {
                         self.layer_images.insert(target_id, result);
+                        self.raster_layer_texture_dirty.insert(target_id);
+                        self.raster_layer_dirty_rects.remove(&target_id);
                     }
                     LayerKind::Text | LayerKind::Image => {}
                 }

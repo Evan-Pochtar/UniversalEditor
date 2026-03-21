@@ -195,4 +195,9 @@
 
 #### Debugging
 - **IMG EDITOR**: Jpeg and JPG's now load the same into the canvas
+- **IMG EDITOR**: "Fit" now properly fits the screen to small canvases
+- **IMG EDITOR**: Can now select and see the selection bounds of textbox's even when hiding beneath an image layer
+- **IMG EDITOR**: In a rasterized layer, the brush no longer fades to dark, and fades depending on the background instead
+- **IMG EDITOR**: Brush, eraser, and retouch no longer lag on large images while in rasterized layers
+- **IMG EDITOR**: Can no longer move the background layer
 - **IMG2IMG CONVERTER**: JPG's now load properly into the input space

@@ -87,6 +87,10 @@
 - [x] Image always acts as highest layer, even when it shouldn't be
 - [x] Can't move the text box using the select tool
 - [x] When selected on the select/pan tool, and then I click on a text box, I can't select a imported image
+- [x] Fit does not properly fit the screen on very small canvas sizes
+- [x] Cannot select text when text is "hiding" behind image layer
+- [x] Area around brush strokes in layers fades to dark
+- [x] Brush, Eraser, and Retouch get EXTREMELY laggy in large images when within a layer, background layer brush, eraser, and retouch does not.
 - [x] Can sometimes have both a textbox AND an image selected
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
