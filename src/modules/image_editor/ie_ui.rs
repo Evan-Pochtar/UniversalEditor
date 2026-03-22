@@ -31,25 +31,6 @@ impl ImageEditor {
                             self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
                             self.tool_btn(ui, "Select/Pan", Tool::Pan, Some("P"), theme);
                             self.tool_btn(ui, "Retouch", Tool::Retouch, Some("R"), theme);
-                            ui.separator();
-                            if toolbar_action_btn(ui, egui::RichText::new("Place Image").size(12.0), theme)
-                                .on_hover_text("Import image as new layer (I)")
-                                .clicked()
-                            {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "gif"])
-                                    .pick_file()
-                                {
-                                    let img_opt = image::ImageReader::open(&path)
-                                        .ok()
-                                        .and_then(|r| r.with_guessed_format().ok())
-                                        .and_then(|r| r.decode().ok())
-                                        .or_else(|| image::open(&path).ok());
-                                    if let Some(img) = img_opt {
-                                        self.insert_image_layer(img, true);
-                                    }
-                                }
-                            }
                         });
                     });
             });
@@ -324,7 +305,7 @@ impl ImageEditor {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
-                        if self.tool != Tool::Retouch {
+                        if self.tool != Tool::Retouch || self.tool != Tool::Pan {
                             if ui.add(egui::Button::new("").fill(self.color).min_size(egui::vec2(28.0, 28.0))).clicked() { self.show_color_picker = !self.show_color_picker; }
                             ui.label(egui::RichText::new("Color:").size(12.0).color(label_col));
 
@@ -1757,13 +1738,13 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
         };
-
         let accent: egui::Color32 = ColorPalette::BLUE_500;
         let screen_h = ctx.content_rect().height();
         let panel_max_h = (screen_h - 130.0).max(300.0);
         let canvas_origin: egui::Pos2 = ui.available_rect_before_wrap().min;
         let modal_pos: egui::Pos2 = canvas_origin + egui::vec2(10.0, 10.0);
 
+        self.ensure_brush_preview(ctx);
         let win_resp = egui::Window::new("Brush Settings")
             .collapsible(false)
             .resizable(true)
@@ -1793,6 +1774,47 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new(label).size(10.0).color(label_col).strong());
                                 });
                         };
+
+                        if let Some(preview_tid) = self.brush_preview_texture {
+                            let avail_w = ui.available_width();
+                            let preview_h = 66.0_f32;
+                            let frame_fill = if matches!(theme, ThemeMode::Dark) {
+                                egui::Color32::from_rgb(14, 14, 19)
+                            } else {
+                                egui::Color32::from_rgb(230, 230, 236)
+                            };
+                            egui::Frame::new()
+                                .fill(frame_fill)
+                                .stroke(egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }))
+                                .corner_radius(6.0)
+                                .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 4, bottom: 4 })
+                                .show(ui, |ui: &mut egui::Ui| {
+                                    let (preview_rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(avail_w - pad * 2.0, preview_h),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().image(
+                                        preview_tid,
+                                        preview_rect,
+                                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                        egui::Color32::WHITE,
+                                    );
+                                    let note = format!(
+                                        "{}  ·  {:.0}px  ·  {:.0}% opacity  ·  {:.0}% softness",
+                                        self.brush.shape.label(),
+                                        self.brush.size,
+                                        self.brush.opacity * 100.0,
+                                        self.brush.softness * 100.0,
+                                    );
+                                    ui.painter().text(
+                                        preview_rect.right_bottom() - egui::vec2(4.0, 4.0),
+                                        egui::Align2::RIGHT_BOTTOM,
+                                        &note,
+                                        egui::FontId::proportional(9.5),
+                                        egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200),
+                                    );
+                                });
+                        }
 
                         section_label(ui, "SHAPE");
                         egui::Frame::new()
@@ -1857,7 +1879,10 @@ impl ImageEditor {
                                                 lbl_col,
                                             );
                                         }
-                                        if resp.clicked() { self.brush.shape = *shape; }
+                                        if resp.clicked() {
+                                            self.brush.shape = *shape;
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     }
                                 });
                             });
@@ -1872,35 +1897,45 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new("Size").size(12.0).color(label_col)).on_hover_text("Brush diameter in pixels.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.add(egui::DragValue::new(&mut self.brush.size).range(1.0..=200.0).speed(0.5).suffix("px"));
-                                        ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Opacity").size(12.0).color(label_col)).on_hover_text("Maximum alpha of the overall stroke.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.opacity * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Softness").size(12.0).color(label_col)).on_hover_text("0% = hard pixel-sharp edge.\n100% = fully feathered, airbrushed falloff.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.softness * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.softness, 0.0..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.softness, 0.0..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Flow").size(12.0).color(label_col)).on_hover_text("Per-stamp opacity. Low flow builds color gradually;\nhigh flow paints solidly each stamp.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.flow * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.flow, 0.01..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.flow, 0.01..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Spacing").size(12.0).color(label_col)).on_hover_text("Distance between consecutive stamp positions,\nas a fraction of brush diameter.\nLow = dense/continuous; high = dotted.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.step * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.step, 0.02..=3.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.step, 0.02..=3.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                             });
@@ -1917,14 +1952,18 @@ impl ImageEditor {
                                         ui.label(egui::RichText::new("Angle").size(12.0).color(label_col)).on_hover_text("Rotation of the stamp shape in degrees.");
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("{:.0}°", self.brush.angle)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.angle, -180.0..=180.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.angle, -180.0..=180.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                     ui.horizontal(|ui: &mut egui::Ui| {
                                         ui.label(egui::RichText::new("Angle Jitter").size(12.0).color(label_col)).on_hover_text("Max random rotation added per stamp. Creates organic, hand-drawn variation.");
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("±{:.0}°", self.brush.angle_jitter)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.angle_jitter, 0.0..=180.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.angle_jitter, 0.0..=180.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                     if needs_aspect {
@@ -1932,7 +1971,9 @@ impl ImageEditor {
                                             ui.label(egui::RichText::new("Aspect Ratio").size(12.0).color(label_col)).on_hover_text("Width-to-height ratio of the flat calligraphy nib.\n0.05 = very thin stroke; 1.0 = circular.");
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                 ui.label(egui::RichText::new(format!("{:.2}", self.brush.aspect_ratio)).size(11.0).color(text_col));
-                                                ui.add(egui::Slider::new(&mut self.brush.aspect_ratio, 0.05..=1.0).show_value(false));
+                                                if ui.add(egui::Slider::new(&mut self.brush.aspect_ratio, 0.05..=1.0).show_value(false)).changed() {
+                                                    self.brush_preview_cache_key = None;
+                                                }
                                             });
                                         });
                                     }
@@ -1949,7 +1990,9 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new("Scatter").size(12.0).color(label_col)).on_hover_text("Max random offset (in pixels) added to each stamp position.\nCreates a spray or scattered feel.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.1}px", self.brush.scatter)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.scatter, 0.0..=200.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.scatter, 0.0..=200.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
 
@@ -1970,6 +2013,7 @@ impl ImageEditor {
                                             let (bg_c, txt_c) = if is_active { (accent, egui::Color32::WHITE) } else if matches!(theme, ThemeMode::Dark) { (ColorPalette::ZINC_700, ColorPalette::ZINC_300) } else { (ColorPalette::GRAY_200, ColorPalette::GRAY_700) };
                                             if styled_btn(ui, mode.label(), 11.0, egui::vec2(0.0, 20.0), bg_c, bg_c, txt_c) {
                                                 self.brush.texture_mode = *mode;
+                                                self.brush_preview_cache_key = None;
                                             }
                                         }
                                     });
@@ -1979,7 +2023,9 @@ impl ImageEditor {
                                         ui.label(egui::RichText::new("Texture Strength").size(12.0).color(label_col));
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("{:.0}%", self.brush.texture_strength * 100.0)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.texture_strength, 0.0..=1.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.texture_strength, 0.0..=1.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                 }
@@ -1988,7 +2034,9 @@ impl ImageEditor {
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Spray Mode").size(12.0).color(label_col)).on_hover_text("Replaces solid stamp with randomly-scattered individual dots\nfor an aerosol spray-can effect.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        ui.add(egui::Checkbox::new(&mut self.brush.spray_mode, ""));
+                                        if ui.add(egui::Checkbox::new(&mut self.brush.spray_mode, "")).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 if self.brush.spray_mode {
@@ -2035,6 +2083,7 @@ impl ImageEditor {
                                                 });
                                                 if btn.clicked() {
                                                     self.brush = preset.settings(self.brush.size);
+                                                    self.brush_preview_cache_key = None;
                                                 }
                                             });
                                         }
@@ -2042,16 +2091,16 @@ impl ImageEditor {
                                 }
                             });
 
-                        section_label(ui, "FAVORITES");
+                        section_label(ui, "FAVORITES (CTRL+1-9, 0)");
                         egui::Frame::new()
                             .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 8, bottom: 10 })
                             .show(ui, |ui: &mut egui::Ui| {
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Name:").size(12.0).color(label_col));
                                     ui.add(egui::TextEdit::singleline(&mut self.brush_fav_name)
-                                        .desired_width(200.0)
+                                        .desired_width(160.0)
                                         .font(egui::TextStyle::Body)
-                                        .hint_text("Enter a name for this brush...")
+                                        .hint_text("Name for this brush…")
                                     );
                                     let can_save = !self.brush_fav_name.trim().is_empty();
                                     ui.scope(|ui: &mut egui::Ui| {
@@ -2067,21 +2116,60 @@ impl ImageEditor {
                                         s.visuals.widgets.active.bg_fill = save_hover;
                                         s.visuals.widgets.active.weak_bg_fill = save_hover;
                                         s.visuals.override_text_color = Some(if can_save { egui::Color32::WHITE } else if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_500 });
-                                        if ui.add_enabled(can_save, egui::Button::new(egui::RichText::new("Save").size(12.0)).min_size(egui::vec2(54.0, 24.0))).clicked() {
+                                        if ui.add_enabled(can_save, egui::Button::new(egui::RichText::new("Save").size(12.0)).min_size(egui::vec2(48.0, 24.0))).clicked() {
                                             let name = self.brush_fav_name.trim().to_string();
                                             if let Some(existing) = self.brush_favorites.brushes.iter_mut().find(|b| b.name == name) {
                                                 existing.settings = self.brush.clone();
                                             } else {
-                                                self.brush_favorites.brushes.push(SavedBrush {
-                                                    name,
-                                                    settings: self.brush.clone(),
-                                                });
+                                                self.brush_favorites.brushes.push(SavedBrush { name, settings: self.brush.clone() });
                                             }
                                             self.brush_favorites.save();
                                             self.brush_fav_name.clear();
                                         }
                                     });
                                 });
+
+                                let mut do_export = false; let mut do_import = false;
+                                ui.horizontal(|ui: &mut egui::Ui| {
+                                    let (ebg, ehov, etxt) = theme_btn(theme);
+                                    if styled_btn(ui, "⬆ Export Favorites", 11.0, egui::vec2(150.0, 24.0), ebg, ehov, etxt) {
+                                        do_export = true;
+                                    }
+                                    if styled_btn(ui, "⬇ Import Favorites", 11.0, egui::vec2(150.0, 24.0), ebg, ehov, etxt) {
+                                        do_import = true;
+                                    }
+                                });
+
+                                if do_export {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .set_file_name("brush_favorites.json")
+                                        .add_filter("JSON", &["json"])
+                                        .save_file()
+                                    {
+                                        if let Ok(json) = serde_json::to_string_pretty(&self.brush_favorites.brushes) {
+                                            let _ = std::fs::write(path, json);
+                                        }
+                                    }
+                                }
+                                if do_import {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("JSON", &["json"])
+                                        .pick_file()
+                                    {
+                                        if let Ok(content) = std::fs::read_to_string(&path) {
+                                            if let Ok(imported) = serde_json::from_str::<Vec<SavedBrush>>(&content) {
+                                                for b in imported {
+                                                    if let Some(existing) = self.brush_favorites.brushes.iter_mut().find(|e| e.name == b.name) {
+                                                        existing.settings = b.settings;
+                                                    } else {
+                                                        self.brush_favorites.brushes.push(b);
+                                                    }
+                                                }
+                                                self.brush_favorites.save();
+                                            }
+                                        }
+                                    }
+                                }
 
                                 ui.add_space(6.0);
 
@@ -2090,6 +2178,7 @@ impl ImageEditor {
                                 } else {
                                     let mut to_load: Option<usize> = None;
                                     let mut to_delete: Option<usize> = None;
+                                    const MAX_HOTKEYS: usize = 10;
 
                                     for (idx, saved) in self.brush_favorites.brushes.iter().enumerate() {
                                         let row_fill = if matches!(theme, ThemeMode::Dark) {
@@ -2127,9 +2216,16 @@ impl ImageEditor {
                                                                 }
                                                             }
                                                         }
+                                                        if idx < MAX_HOTKEYS {
+                                                            let key_label = if idx == 9 { "0".to_string() } else { format!("{}", idx + 1) };
+                                                            let badge = egui::Rect::from_min_size(pr.min, egui::vec2(13.0, 13.0));
+                                                            painter.rect_filled(badge, egui::CornerRadius { nw: 4, ne: 0, sw: 0, se: 4 }, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 190));
+                                                            painter.text(badge.center(), egui::Align2::CENTER_CENTER, &key_label, egui::FontId::monospace(8.0), egui::Color32::from_rgba_unmultiplied(200, 220, 255, 240));
+                                                        }
                                                     }
+
                                                     ui.label(egui::RichText::new(&saved.name).size(12.0).color(text_col));
-                                                    let desc = format!("{} / {:.0}px / S{:.0}%", saved.settings.shape.label(), saved.settings.size, saved.settings.softness * 100.0, );
+                                                    let desc = format!("{} / {:.0}px / S{:.0}%", saved.settings.shape.label(), saved.settings.size, saved.settings.softness * 100.0);
                                                     ui.label(egui::RichText::new(desc).size(10.0).color(label_col));
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
                                                         if styled_btn(ui, "Delete", 11.0, egui::vec2(52.0, 22.0), egui::Color32::from_rgb(180, 60, 60), egui::Color32::from_rgb(200, 80, 80), egui::Color32::WHITE) {
@@ -2146,6 +2242,7 @@ impl ImageEditor {
 
                                     if let Some(idx) = to_load {
                                         self.brush = self.brush_favorites.brushes[idx].settings.clone();
+                                        self.brush_preview_cache_key = None;
                                     }
                                     if let Some(idx) = to_delete {
                                         self.brush_favorites.brushes.remove(idx);
@@ -2572,6 +2669,35 @@ impl ImageEditor {
                     });
                 });
         }
+    }
+
+    pub(super) fn ensure_brush_preview(&mut self, ctx: &egui::Context) {
+        let is_dark = ctx.style().visuals.dark_mode;
+        let key = (self.brush.clone(), self.color, is_dark);
+        if let Some(ref cached) = self.brush_preview_cache_key {
+            if *cached == key && self.brush_preview_texture.is_some() { return; }
+        }
+        let pw = 300u32;
+        let ph = 66u32;
+        let pixels = self.render_brush_preview_to_pixels(pw, ph, is_dark);
+        let ci = egui::ColorImage {
+            size: [pw as usize, ph as usize],
+            source_size: egui::vec2(pw as f32, ph as f32),
+            pixels,
+        };
+        let opts = egui::TextureOptions {
+            magnification: egui::TextureFilter::Linear,
+            minification:  egui::TextureFilter::Linear,
+            ..Default::default()
+        };
+        if let Some(tid) = self.brush_preview_texture {
+            ctx.tex_manager().write().set(tid, egui::epaint::ImageDelta::full(ci, opts));
+        } else {
+            self.brush_preview_texture = Some(
+                ctx.tex_manager().write().alloc("brush_preview".into(), ci.into(), opts),
+            );
+        }
+        self.brush_preview_cache_key = Some(key);
     }
 }
 

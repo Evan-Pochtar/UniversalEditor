@@ -616,6 +616,8 @@ pub struct ImageEditor {
     pub(super) brush: BrushSettings,
     pub(super) brush_favorites: BrushFavorites,
     pub(super) brush_fav_name: String,
+    pub(super) brush_preview_texture: Option<egui::TextureId>,
+    pub(super) brush_preview_cache_key: Option<(BrushSettings, egui::Color32, bool)>,
     pub(super) eraser_size: f32,
     pub(super) eraser_transparent: bool,
     pub(super) color: egui::Color32,
@@ -724,6 +726,7 @@ impl ImageEditor {
             zoom: 1.0, pan: egui::Vec2::ZERO, fit_on_next_frame: true,
             tool: Tool::Brush,
             brush: BrushSettings::default(), brush_favorites: BrushFavorites::load(), brush_fav_name: String::new(),
+            brush_preview_texture: None, brush_preview_cache_key: None,
             eraser_size: 20.0, eraser_transparent: false,
             color: egui::Color32::BLACK,
             stroke_points: Vec::new(), is_dragging: false,
@@ -1879,6 +1882,20 @@ impl ImageEditor {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Home) { self.fit_image(); }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Plus)  { self.zoom *= 1.25; }
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Minus) { self.zoom = (self.zoom / 1.25).max(0.01); }
+
+                for (key, slot) in [
+                    (egui::Key::Num1, 0usize), (egui::Key::Num2, 1), (egui::Key::Num3, 2),
+                    (egui::Key::Num4, 3), (egui::Key::Num5, 4), (egui::Key::Num6, 5),
+                    (egui::Key::Num7, 6), (egui::Key::Num8, 7), (egui::Key::Num9, 8),
+                    (egui::Key::Num0, 9),
+                ] {
+                    if i.consume_key(egui::Modifiers::CTRL, key) {
+                        if let Some(b) = self.brush_favorites.brushes.get(slot) {
+                            self.brush = b.settings.clone();
+                            self.brush_preview_cache_key = None;
+                        }
+                    }
+                }
             });
         }
     }
@@ -1935,6 +1952,7 @@ impl EditorModule for ImageEditor {
         MenuContribution {
             file_items: vec![
                 (MenuItem { label: "Export...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Export),
+                (MenuItem { label: "Import to Canvas...".to_string(), shortcut: None, enabled: has_image }, MenuAction::Custom("Place Image".to_string())),
             ],
             edit_items: vec![
                 (MenuItem { label: "Undo".to_string(), shortcut: Some("Ctrl+Z".to_string()), enabled: !self.undo_stack.is_empty() }, MenuAction::Undo),
@@ -2002,6 +2020,22 @@ impl EditorModule for ImageEditor {
             MenuAction::Custom(ref val) if val == "Layer Delete" => { self.delete_active_layer(); true }
             MenuAction::Custom(ref val) if val == "Layer Merge Down" => { self.merge_down(); true }
             MenuAction::Custom(ref val) if val == "Layer Flatten" => { self.flatten_all_layers(); true }
+            MenuAction::Custom(ref val) if val == "Place Image" => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "gif"])
+                    .pick_file()
+                {
+                    let img_opt = image::ImageReader::open(&path)
+                        .ok()
+                        .and_then(|r| r.with_guessed_format().ok())
+                        .and_then(|r| r.decode().ok())
+                        .or_else(|| image::open(&path).ok());
+                    if let Some(img) = img_opt {
+                        self.insert_image_layer(img, true);
+                    }
+                }
+                true
+            }
             _ => false,
         }
     }

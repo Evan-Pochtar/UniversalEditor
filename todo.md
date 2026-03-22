@@ -77,19 +77,12 @@
   - [ ] Linear
   - [ ] Radial
 - [ ] Cutout tool
+- [ ] Improve realism of canvas texture type
 - [ ] Shape tool
-- [ ] Brush Settings Panel
-  - [ ] Improve Presets to be more "realistic"
-  - [ ] Keyboard shortcuts to change between presets/favorite brushes
-  - [ ] Export custom brushes
-  - [ ] Improve realism of canvas and paper texture type
-  - [ ] Brush preview
-  - [ ] Library of custom brushes?
 - [ ] Pattern/texture fill
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
-- [ ] Move "Import Image" to top bar instead of the toolbar
 - [ ] Add way to save layers and settings per image
 
 ### Json Editor

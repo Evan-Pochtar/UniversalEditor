@@ -199,6 +199,10 @@
     - [x] Pencil
     - [x] Crayon
   - [x] Custom brush shapes
+  - [x] Keyboard shortcuts to change between presets/favorite brushes
+  - [x] Export custom brushes
+  - [x] Improve realism of paper texture type
+  - [x] Brush preview
 - [x] Keyboard Shortcuts
 - [x] Canvas size (extend without scaling)
 - [x] Export with metadata
@@ -211,6 +215,7 @@
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
 - [x] Center hue picker and color square within color picker
+- [x] Move "Import Image" to top bar instead of the toolbar
 - [x] Import Images into Canvas
   - [x] Drag-and-drop image open
 

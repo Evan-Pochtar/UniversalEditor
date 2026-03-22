@@ -189,6 +189,11 @@
 
 #### Features
 - **IMG EDITOR**: Improved quality of edited and exported imported images/text
+- **IMG EDITOR**: "Place Image" renamed to "Import to Canvas" and moved to top bar under "File"
+- **IMG EDITOR**: Improved paper and rough texture in the brush settings
+- **IMG EDITOR**: Favorite custom brushes now have keyboard shortcuts similar to favorite color (Ctrl+1-9, Ctrl+0)
+- **IMG EDITOR**: Custom brushes can now be exported and imported
+- **IMG EDITOR**: Added a brush preview to brush settings
 - **GENERAL**: Added "About" modal in the main menu to describe the current state of the project
 - **GENERAL**: Added keyboard shortcut to close sidebar (Ctrl+Backslash)
 - **GENERAL**: Sidebar "Recent Files" list now differentiates similarly named files that are located in different folders

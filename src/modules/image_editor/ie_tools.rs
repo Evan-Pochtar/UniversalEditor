@@ -1667,6 +1667,88 @@ impl ImageEditor {
         self.filter_panel = FilterPanel::None;
         Ok(path)
     }
+
+    pub(super) fn render_brush_preview_to_pixels(&self, w: u32, h: u32, is_dark: bool) -> Vec<egui::Color32> {
+        let bg = if is_dark { [18u8, 18, 23, 255] } else { [238u8, 238, 244, 255] };
+        let mut buf: Vec<[u8; 4]> = vec![bg; (w * h) as usize];
+
+        let (r, g, b_ch, base_a) = (
+            self.color.r(), self.color.g(), self.color.b(),
+            self.color.a().max(180),
+        );
+
+        let max_r = h as f32 * 0.36;
+        let radius = (self.brush.size / 2.0).min(max_r).max(1.5);
+        let step_dist = (radius * 2.0 * self.brush.step).max(0.5);
+        let n_pts = 100usize;
+        let pts: Vec<(f32, f32)> = (0..n_pts).map(|i| {
+            let t = i as f32 / (n_pts - 1) as f32;
+            let x = w as f32 * 0.06 + t * (w as f32 * 0.88);
+            let y = h as f32 * 0.5 + (t * std::f32::consts::TAU * 1.1).sin() * (h as f32 * 0.29);
+            (x, y)
+        }).collect();
+
+        for seg_i in 0..pts.len().saturating_sub(1) {
+            let (x0, y0) = pts[seg_i];
+            let (x1, y1) = pts[seg_i + 1];
+            let (dx, dy) = (x1 - x0, y1 - y0);
+            let seg_len = (dx * dx + dy * dy).sqrt();
+            let steps = ((seg_len / step_dist).ceil() as usize).max(1);
+
+            for s in 0..=steps {
+                let t = if steps == 0 { 0.0 } else { s as f32 / steps as f32 };
+                let seed = (seg_i as u64).wrapping_mul(99991).wrapping_add(s as u64 * 7919);
+                let mut cx = x0 + dx * t;
+                let mut cy = y0 + dy * t;
+
+                if self.brush.scatter > 0.0 && !self.brush.spray_mode {
+                    let sc = self.brush.scatter.min(radius * 0.6);
+                    cx += (brush_rand(seed) * 2.0 - 1.0) * sc;
+                    cy += (brush_rand(seed.wrapping_add(1)) * 2.0 - 1.0) * sc;
+                }
+
+                let min_px = ((cx - radius - 1.0).max(0.0)) as u32;
+                let max_px = ((cx + radius + 1.0).ceil() as u32).min(w);
+                let min_py = ((cy - radius - 1.0).max(0.0)) as u32;
+                let max_py = ((cy + radius + 1.0).ceil() as u32).min(h);
+
+                for py in min_py..max_py {
+                    for px in min_px..max_px {
+                        let falloff = brush_shape_falloff(
+                            px as f32 - cx, py as f32 - cy,
+                            radius, self.brush.aspect_ratio,
+                            self.brush.angle.to_radians(),
+                            self.brush.softness, self.brush.shape,
+                        );
+                        if falloff <= 0.0 { continue; }
+
+                        let tex_mul = if self.brush.texture_strength > 0.0 {
+                            1.0 - self.brush.texture_strength * brush_texture_noise(px, py, self.brush.texture_mode)
+                        } else { 1.0 };
+
+                        let alpha = (falloff * self.brush.flow * self.brush.opacity * tex_mul * 255.0)
+                            .clamp(0.0, 255.0) as u8;
+                        if alpha == 0 { continue; }
+
+                        let idx = (py * w + px) as usize;
+                        if idx >= buf.len() { continue; }
+                        let [er, eg, eb, ea] = buf[idx];
+                        let fa = alpha as u16;
+                        let bf = (base_a as u16 * fa) / 255;
+                        let ba = 255u16.saturating_sub(bf);
+                        buf[idx] = [
+                            ((r as u16 * bf + er as u16 * ba) / 255) as u8,
+                            ((g as u16 * bf + eg as u16 * ba) / 255) as u8,
+                            ((b_ch as u16 * bf + eb as u16 * ba) / 255) as u8,
+                            ((bf + ea as u16 * ba / 255).min(255)) as u8,
+                        ];
+                    }
+                }
+            }
+        }
+
+        buf.iter().map(|&[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a)).collect()
+    }
 }
 
 #[inline(always)]
@@ -1686,11 +1768,7 @@ pub(super) fn brush_rand(seed: u64) -> f32 {
 }
 
 #[inline]
-pub(super) fn brush_shape_falloff(
-    dx: f32, dy: f32,
-    radius: f32, aspect: f32, angle: f32,
-    softness: f32, shape: BrushShape,
-) -> f32 {
+pub(super) fn brush_shape_falloff(dx: f32, dy: f32, radius: f32, aspect: f32, angle: f32, softness: f32, shape: BrushShape) -> f32 {
     let (cos_a, sin_a) = (angle.cos(), angle.sin());
     let lx: f32 = dx * cos_a + dy * sin_a;
     let ly: f32 = -dx * sin_a + dy * cos_a;
@@ -1713,11 +1791,34 @@ pub(super) fn brush_shape_falloff(
 
     if t >= 1.0 { return 0.0; }
     if softness < 0.001 { return 1.0; }
-
     let soft_inner: f32 = 1.0 - softness;
     if t <= soft_inner { return 1.0; }
     let s: f32 = ((t - soft_inner) / softness).clamp(0.0, 1.0);
     1.0 - s * s * (3.0 - 2.0 * s)
+}
+
+fn smooth_hash_2d(px: u32, py: u32, scale: u32, seed: u64) -> f32 {
+    let s = scale.max(1);
+    let gx = px / s; let gy = py / s;
+    let fx = (px % s) as f32 / s as f32; let fy = (py % s) as f32 / s as f32;
+    let ux = fx * fx * (3.0 - 2.0 * fx); let uy = fy * fy * (3.0 - 2.0 * fy);
+    let h = |x: u32, y: u32| -> f32 { brush_rand((x as u64).wrapping_mul(0x517CC1B7) ^ (y as u64).wrapping_mul(0x9E3779B9) ^ seed,) };
+    let n00 = h(gx,gy); let n10 = h(gx + 1, gy);
+    let n01 = h(gx, gy + 1); let n11 = h(gx + 1, gy + 1);
+    let x0 = n00 + (n10 - n00) * ux; let x1 = n01 + (n11 - n01) * ux;
+    x0 + (x1 - x0) * uy
+}
+
+fn paper_noise(px: u32, py: u32) -> f32 {
+    let n0 = smooth_hash_2d(px, py,  2, 1); let n1 = smooth_hash_2d(px, py,  5, 2) * 0.60;
+    let n2 = smooth_hash_2d(px, py, 13, 3) * 0.40; let n3 = smooth_hash_2d(px, py, 28, 4) * 0.28;
+    let wx = smooth_hash_2d(px.wrapping_add(17), py.wrapping_add(31), 9, 5); let wy = smooth_hash_2d(px.wrapping_add(43), py.wrapping_add(7),  9, 6);
+    let warp_x = (px as i32 + ((wx - 0.5) * 6.0) as i32).max(0) as u32; let warp_y = (py as i32 + ((wy - 0.5) * 6.0) as i32).max(0) as u32;
+    let n_warped = smooth_hash_2d(warp_x, warp_y, 3, 7) * 0.35;
+    let micro = brush_rand(8) * 0.08;
+    let raw = (n0 + n1 + n2 + n3 + n_warped + micro) / 2.71;
+    let c = ((raw - 0.48) * 1.55 + 0.5).clamp(0.0, 1.0);
+    c
 }
 
 #[inline]
@@ -1725,7 +1826,9 @@ pub(super) fn brush_texture_noise(px: u32, py: u32, mode: BrushTextureMode) -> f
     match mode {
         BrushTextureMode::None => 0.0,
         BrushTextureMode::Rough => {
-            brush_rand(px as u64 * 37 ^ py as u64 * 1009 ^ 0xDEAD)
+            let coarse = brush_rand((px as u64).wrapping_mul(37) ^ (py as u64).wrapping_mul(1009) ^ 0xDEAD);
+            let smooth = smooth_hash_2d(px, py, 3, 0xBEEF0011) * 0.45;
+            ((coarse + smooth) / 1.45).clamp(0.0, 1.0)
         }
         BrushTextureMode::Canvas => {
             let cx: u64 = (px / 4) as u64;
@@ -1734,10 +1837,6 @@ pub(super) fn brush_texture_noise(px: u32, py: u32, mode: BrushTextureMode) -> f
             let fine: f32 = brush_rand(px as u64 * 53 ^ py as u64 * 79 ^ 0xBEEF) * 0.25;
             (cell * 0.75 + fine).clamp(0.0, 1.0)
         }
-        BrushTextureMode::Paper => {
-            let cx: u64 = (px / 3) as u64;
-            let cy: u64 = (py / 3) as u64;
-            brush_rand(cx * 43 ^ cy * 97 ^ 0xF00D) * 0.9
-        }
+        BrushTextureMode::Paper  => paper_noise(px, py),
     }
 }
