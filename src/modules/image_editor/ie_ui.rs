@@ -11,7 +11,7 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::GRAY_300)
         };
-        
+
         egui::Frame::new()
             .fill(bg).stroke(egui::Stroke::new(1.0, border))
             .corner_radius(6.0)
@@ -450,9 +450,9 @@ impl ImageEditor {
                         }
                     }
                     FilterPanel::Blur => {
-                        ui.horizontal(|ui: &mut egui::Ui| { 
-                            ui.label(egui::RichText::new("Radius:").size(12.0).color(label_col)); 
-                            ui.add(egui::Slider::new(&mut self.blur_radius, 0.5..=20.0)); 
+                        ui.horizontal(|ui: &mut egui::Ui| {
+                            ui.label(egui::RichText::new("Radius:").size(12.0).color(label_col));
+                            ui.add(egui::Slider::new(&mut self.blur_radius, 0.5..=20.0));
                         });
                         ui.add_space(4.0);
                         match filter_action_row(ui, theme, self.filter_preview_active) {
@@ -1521,7 +1521,7 @@ impl ImageEditor {
                     }
                 }
                 Tool::Text | Tool::Pan => {
-                    let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> = 
+                    let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> =
                         self.text_drag.as_ref().map(|d| (d.handle, d.start, d.orig_img_x, d.orig_img_y, d.orig_font_size, d.orig_box_width, d.orig_box_height, d.orig_rotation, d.orig_rot_start_angle));
 
                     if let (Some(id), Some((handle, drag_start, orig_ix, orig_iy, orig_fs, orig_bw, orig_bh, orig_rot, orig_rot_start))) = (self.selected_text, drag_data) {
@@ -2767,7 +2767,7 @@ fn filter_action_row(ui: &mut egui::Ui, theme: ThemeMode, preview_active: bool) 
 }
 
 fn gradient_slider_ui(ui: &mut egui::Ui, value: &mut f32, min: f32, max: f32, left_col: egui::Color32, right_col: egui::Color32, left_label: &str,
-    right_label: &str, fmt: impl Fn(f32) -> String, drag_input: bool, drag_display_scale: f32, drag_suffix: &str) -> bool 
+    right_label: &str, fmt: impl Fn(f32) -> String, drag_input: bool, drag_display_scale: f32, drag_suffix: &str) -> bool
 {
     let mut changed: bool = false;
     let range: f32 = (max - min).max(1e-6_f32);

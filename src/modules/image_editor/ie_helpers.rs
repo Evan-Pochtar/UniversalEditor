@@ -138,3 +138,31 @@ pub(super) fn draw_crop_handles(painter: &egui::Painter, r: egui::Rect, color: e
         painter.rect_stroke(hr, 2.0, egui::Stroke::new(1.0, egui::Color32::WHITE), egui::StrokeKind::Outside);
     }
 }
+
+pub(super) fn smooth_hash_2d(px: u32, py: u32, scale: u32, seed: u64) -> f32 {
+    let s = scale.max(1);
+    let (gx, gy) = (px/s, py/s);
+    let (fx, fy) = ((px%s) as f32/s as f32, (py%s) as f32/s as f32);
+    let (ux, uy) = (fx*fx*(3.0-2.0*fx), fy*fy*(3.0-2.0*fy));
+    let h = |x: u32, y: u32| -> f32 {
+        brush_rand((x as u64).wrapping_mul(0x517CC1B7) ^ (y as u64).wrapping_mul(0x9E3779B9) ^ seed)
+    };
+    let (n00, n10, n01, n11) = (h(gx,gy), h(gx+1,gy), h(gx,gy+1), h(gx+1,gy+1));
+    let x0 = n00 + (n10-n00)*ux;
+    let x1 = n01 + (n11-n01)*ux;
+    x0 + (x1-x0)*uy
+}
+
+#[inline(always)]
+pub(super) fn brush_rand(seed: u64) -> f32 {
+    let x = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let x = x ^ (x >> 33);
+    let x = x.wrapping_mul(0xff51afd7ed558ccd);
+    let x = x ^ (x >> 33);
+    let x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
+    let x = x ^ (x >> 33);
+    (x >> 11) as f32 / (1u64 << 53) as f32
+}
+
+#[inline(always)]
+pub(super) fn retouch_lerp_u8(a: u8, b: u8, t: f32) -> u8 { (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8 }
