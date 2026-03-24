@@ -305,7 +305,7 @@ impl ImageEditor {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
-                        if self.tool != Tool::Retouch || self.tool != Tool::Pan {
+                        if self.tool != Tool::Retouch && self.tool != Tool::Pan {
                             if ui.add(egui::Button::new("").fill(self.color).min_size(egui::vec2(28.0, 28.0))).clicked() { self.show_color_picker = !self.show_color_picker; }
                             ui.label(egui::RichText::new("Color:").size(12.0).color(label_col));
 
@@ -1555,6 +1555,14 @@ impl ImageEditor {
                                 THandle::Rotate => { let cur_angle: f32 = (pos - rot_center).angle(); layer.rotation = orig_rot + (cur_angle - orig_rot_start).to_degrees(); }
                             }
                         }
+                    } else if self.tool == Tool::Pan && self.image_drag.is_none() && self.text_drag.is_none() {
+                        let no_transform_drag = self.image_layer_transform_handles()
+                            .and_then(|h| h.hit_test(response.interact_pointer_pos().unwrap_or(pos))).is_none();
+                        let no_text_drag = self.text_transform_handles()
+                            .and_then(|h| h.hit_test(response.interact_pointer_pos().unwrap_or(pos))).is_none();
+                        if no_transform_drag && no_text_drag {
+                            self.pan += response.drag_delta();
+                        }
                     }
                 }
                 _ => {}
@@ -2462,8 +2470,8 @@ impl ImageEditor {
                             }
                             if n > 1 {
                                 let can_ctx_merge = stack_idx > 0
-                                    && !matches!(self.layers.get(stack_idx.saturating_sub(1)).map(|l| l.kind), Some(LayerKind::Text) | Some(LayerKind::Image))
-                                    && !matches!(layer_kind, LayerKind::Image);
+                                    && !matches!(self.layers.get(stack_idx.saturating_sub(1)).map(|l| l.kind), Some(LayerKind::Text))
+                                    && !matches!(layer_kind, LayerKind::Text);
                                 if ui.add_enabled(can_ctx_merge, egui::Button::new("Merge Down")).clicked() {
                                     action = Some(LayerPanelAction::MergeDown(stack_idx));
                                     ui.close();
@@ -2573,6 +2581,12 @@ impl ImageEditor {
                         }
                         LayerPanelAction::MergeDown(idx) => {
                             self.active_layer_id = self.layers[idx].id;
+                            if self.layers[idx].kind == LayerKind::Image {
+                                self.rasterize_image_layer();
+                                if let Some(new_idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) {
+                                    self.active_layer_id = self.layers[new_idx].id;
+                                }
+                            }
                             self.merge_down();
                         }
                         LayerPanelAction::Flatten => {

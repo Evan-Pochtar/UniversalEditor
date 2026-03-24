@@ -49,17 +49,13 @@
 
 ### Image Editor Bugs
 
-- [ ] Eyedrop tool lags on very large images
 - [ ] On very large images, there is a slight lag at the end of brush strokes, eraser strokes, or retouch tool strokes
-- [ ] Layer drawings and edits stay on image even after being cropped using crop tool
-- [ ] Pan tool doesn't allow for left click panning
-- [ ] Vibrance retouch tool has a red outline
 - [ ] Blur and Sharpen tool laggy on very large images when moving mouse fast
-- [ ] Image wide filters do not work on image layers (Greyscale, invert, and sepia do however)
-- [ ] Image layer CAN merge downwards onto a rasterized layer using ctrl+e or the top toolbar, but not using the layer sidebar
+- [ ] Image layer CAN merge downwards onto a rasterized layer using ctrl+e or the top toolbar, but not using the layer sidebar, it should rasterize the image, then merge
 - [ ] Cannot use image top toolbar transformation to rotate an image layer
-- [ ] Rasterizing image layer causes it to be invisible (it still exists, just cant be seen, the second any edits are made it is visible)
-
+- [ ] Can't use eyedropper on image layer to get color from imported image
+- [ ] Brush Preview is hard to see when the colors are black on black, or white on white
+  
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view
@@ -68,7 +64,6 @@
 ### Other Bugs
 
 - [ ] Save warning dialogue does not show up on application close
-- [ ] Some pages have a double separator line within the "View" tab on the top toolbar
 
 ## Features
 

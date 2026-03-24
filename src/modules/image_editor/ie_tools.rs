@@ -312,12 +312,34 @@ impl ImageEditor {
     }
 
     pub(super) fn sample_color(&mut self, x: u32, y: u32) {
-        if let Some(composite) = self.composite_all_layers() {
-            let p = composite.get_pixel(x, y).0;
-            self.color = egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]);
-            self.add_color_to_history();
-            self.hex_input = RgbaColor::from_egui(self.color).to_hex();
+        let mut result = [0u8; 4];
+        for layer in &self.layers {
+            if !layer.visible { continue; }
+            let pixel: Option<[u8; 4]> = match layer.kind {
+                LayerKind::Background => self.image.as_ref().and_then(|img| {
+                    if x < img.width() && y < img.height() { Some(img.get_pixel(x, y).0) } else { None }
+                }),
+                LayerKind::Raster => self.layer_images.get(&layer.id).and_then(|img| {
+                    if x < img.width() && y < img.height() { Some(img.get_pixel(x, y).0) } else { None }
+                }),
+                _ => None,
+            };
+            if let Some(p) = pixel {
+                let sa = (p[3] as f32 / 255.0) * layer.opacity.clamp(0.0, 1.0);
+                if sa < 1e-6 { continue; }
+                let da = result[3] as f32 / 255.0;
+                let out_a = sa + da * (1.0 - sa);
+                if out_a > 1e-6 {
+                    for i in 0..3 {
+                        result[i] = ((p[i] as f32 * sa + result[i] as f32 * da * (1.0 - sa)) / out_a).clamp(0.0, 255.0) as u8;
+                    }
+                    result[3] = (out_a * 255.0).clamp(0.0, 255.0) as u8;
+                }
+            }
         }
+        self.color = egui::Color32::from_rgba_unmultiplied(result[0], result[1], result[2], result[3]);
+        self.add_color_to_history();
+        self.hex_input = RgbaColor::from_egui(self.color).to_hex();
     }
 
     pub(super) fn stamp_single_text_layer(&self, base: &DynamicImage, tl: &TextLayer, opacity: f32) -> DynamicImage {
@@ -621,14 +643,29 @@ impl ImageEditor {
         if x1 <= x0 || y1 <= y0 { return; }
         let cropped = img.crop_imm(x0, y0, x1-x0, y1-y0);
         self.resize_w = cropped.width(); self.resize_h = cropped.height();
-        self.image = Some(cropped); self.texture_dirty = true; self.composite_dirty = true; self.dirty = true;
+        self.image = Some(cropped);
+        let raster_ids: Vec<u64> = self.layers.iter().filter(|l| l.kind == LayerKind::Raster).map(|l| l.id).collect();
+        for id in raster_ids {
+            if let Some(layer_img) = self.layer_images.get(&id) {
+                let (lw, lh) = (layer_img.width(), layer_img.height());
+                let lx1 = x1.min(lw); let ly1 = y1.min(lh);
+                if x0 < lx1 && y0 < ly1 {
+                    let cropped_layer = layer_img.crop_imm(x0, y0, lx1 - x0, ly1 - y0);
+                    self.layer_images.insert(id, cropped_layer);
+                }
+                self.raster_layer_texture_dirty.insert(id);
+                self.raster_layer_dirty_rects.remove(&id);
+            }
+        }
+        for tl in &mut self.text_layers { tl.img_x -= x0 as f32; tl.img_y -= y0 as f32; }
+        self.texture_dirty = true; self.composite_dirty = true; self.dirty = true;
         self.crop_state = CropState::default(); self.fit_on_next_frame = true;
     }
 
     fn run_filter_threaded<F>(&mut self, f: F)
     where F: FnOnce(DynamicImage) -> DynamicImage + Send + 'static
     {
-        let img = match self.active_raster_image().cloned().or_else(|| self.image.clone()) { Some(i) => i, None => return };
+        let img = match self.active_filterable_image() { Some(i) => i, None => return };
         self.filter_target_layer_id = self.active_layer_id;
         let result = Arc::clone(&self.pending_filter_result);
         let progress = Arc::clone(&self.filter_progress);
@@ -641,7 +678,7 @@ impl ImageEditor {
     }
 
     pub(super) fn apply_brightness_contrast(&mut self) {
-        let img = match self.active_raster_image().cloned().or_else(|| self.image.clone()) { Some(i) => i, None => return };
+        let img = match self.active_filterable_image() { Some(i) => i, None => return };
         self.filter_target_layer_id = self.active_layer_id;
         let (b, c) = (self.brightness, 1.0 + self.contrast / 100.0);
         let progress = Arc::clone(&self.filter_progress);
@@ -662,7 +699,7 @@ impl ImageEditor {
     }
 
     pub(super) fn apply_hue_saturation(&mut self) {
-        let img = match self.active_raster_image().cloned().or_else(|| self.image.clone()) { Some(i) => i, None => return };
+        let img = match self.active_filterable_image() { Some(i) => i, None => return };
         self.filter_target_layer_id = self.active_layer_id;
         let (sat_factor, hue_shift) = (1.0 + self.saturation / 100.0, self.hue);
         let progress = Arc::clone(&self.filter_progress);
@@ -935,7 +972,7 @@ impl ImageEditor {
                             let off=py2 as usize*stride+px2 as usize*4;
                             let (h,s,v)=rgb_to_hsv(raw[off],raw[off+1],raw[off+2]);
                             let vf=if vib_delta>=0.0{1.0-s}else{s};
-                            let (nr,ng,nb)=hsv_to_rgb((h+vib_delta*vf*fo).clamp(0.0,1.0),(s+vib_delta*vf*fo).clamp(0.0,1.0),v);
+                            let (nr,ng,nb)=hsv_to_rgb(h,(s+vib_delta*vf*fo).clamp(0.0,1.0),v);
                             raw[off]=nr; raw[off+1]=ng; raw[off+2]=nb;
                         }}
                     }
@@ -1331,6 +1368,19 @@ impl ImageEditor {
     }
 
     pub(super) fn apply_rotate_cw(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            self.push_undo();
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                let rotated = ild.image.rotate90();
+                let old_dw = ild.display_w;
+                ild.display_w = ild.display_h;
+                ild.display_h = old_dw;
+                ild.image = rotated;
+            }
+            self.image_layer_texture_dirty.insert(iid);
+            self.composite_dirty = true; self.dirty = true;
+            return;
+        }
         let (old_w, old_h, rotated) = match &self.image { Some(img) => (img.width(), img.height(), img.rotate90()), None => return };
         self.transform_text_rotate_cw(old_w, old_h); self.image = Some(rotated);
         self.resize_w = self.image.as_ref().unwrap().width(); self.resize_h = self.image.as_ref().unwrap().height();
@@ -1338,6 +1388,19 @@ impl ImageEditor {
     }
 
     pub(super) fn apply_rotate_ccw(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            self.push_undo();
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                let rotated = ild.image.rotate270();
+                let old_dw = ild.display_w;
+                ild.display_w = ild.display_h;
+                ild.display_h = old_dw;
+                ild.image = rotated;
+            }
+            self.image_layer_texture_dirty.insert(iid);
+            self.composite_dirty = true; self.dirty = true;
+            return;
+        }
         let (old_w, old_h, rotated) = match &self.image { Some(img) => (img.width(), img.height(), img.rotate270()), None => return };
         self.transform_text_rotate_ccw(old_w, old_h); self.image = Some(rotated);
         self.resize_w = self.image.as_ref().unwrap().width(); self.resize_h = self.image.as_ref().unwrap().height();

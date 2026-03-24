@@ -199,10 +199,19 @@
 - **GENERAL**: Sidebar "Recent Files" list now differentiates similarly named files that are located in different folders
 
 #### Debugging
+- **JSON EDITOR**: Newlines no longer display on string preview in the tree view
 - **IMG EDITOR**: Jpeg and JPG's now load the same into the canvas
 - **IMG EDITOR**: "Fit" now properly fits the screen to small canvases
 - **IMG EDITOR**: Can now select and see the selection bounds of textbox's even when hiding beneath an image layer
 - **IMG EDITOR**: In a rasterized layer, the brush no longer fades to dark, and fades depending on the background instead
 - **IMG EDITOR**: Brush, eraser, and retouch no longer lag on large images while in rasterized layers
 - **IMG EDITOR**: Can no longer move the background layer
+- **IMG EDITOR**: Rasterized images are no longer invisible
+- **IMG EDITOR**: Cropped layer drawings are no longer included in the final image
+- **IMG EDITOR**: Pan tool now properly allows for panning across the image when not selected
+- **IMG EDITOR**: Vibrance calculation now no longer sometimes adds a red "hue" or outline
+- **IMG EDITOR**: Image-Wide top bar filters now work on imported images
+- **IMG EDITOR**: Eyedrop tool now has the same performance no matter the image size
 - **IMG2IMG CONVERTER**: JPG's now load properly into the input space
+- **GENERAL**: File names no longer go outside of sidebar buttons bounds
+- **GENERAL**: In Converters with no view items, as well as the main menu, there are no longer double separators

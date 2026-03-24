@@ -424,18 +424,22 @@ impl UniversalEditor {
 
                 ui.menu_button("View", |ui| {
                     if ui.button("Toggle Sidebar (Ctrl+\\)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.sidebar_open = !self.sidebar_open; ui.close(); }
-                    ui.separator();
-                    if self.is_in_text_editor() {
-                        let a = ui.checkbox(&mut self.show_toolbar_te, "Show Toolbar").changed();
-                        let b = ui.checkbox(&mut self.show_file_info_te, "Show File Info").changed();
-                        if a || b { self.save_settings(); }
-                    }
-                    if self.is_in_json_editor() {
-                        if ui.checkbox(&mut self.show_file_info_je, "Show File Info").changed() { self.save_settings(); }
+                    if self.is_in_text_editor() || self.is_in_json_editor() {
+                        ui.separator();
+                        if self.is_in_text_editor() {
+                            let a = ui.checkbox(&mut self.show_toolbar_te, "Show Toolbar").changed();
+                            let b = ui.checkbox(&mut self.show_file_info_te, "Show File Info").changed();
+                            if a || b { self.save_settings(); }
+                        }
+                        if self.is_in_json_editor() {
+                            if ui.checkbox(&mut self.show_file_info_je, "Show File Info").changed() { 
+                                self.save_settings(); 
+                            }
+                        }
                     }
                     if !contributions.view_items.is_empty() { ui.separator(); self.menu_items_ui(ui, &contributions.view_items.clone()); }
-                    ui.separator();
-                    ui.label("Theme:");
+
+                    ui.separator(); ui.label("Theme:");
                     let sys = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
                     let light = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light), "Light").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
                     let dark = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark), "Dark").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
@@ -515,11 +519,23 @@ impl UniversalEditor {
                             if is_duplicate {
                                 let parent_dir = rf.path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("...");
                                 let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width() - 8.0, 42.0), egui::Sense::click());
-                                let hover_bg = if response.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); match theme_mode { ThemeMode::Dark => egui::Color32::from_rgb(40, 40, 48), ThemeMode::Light => ColorPalette::GRAY_200 } } else { egui::Color32::TRANSPARENT };
-                                ui.painter().rect_filled(rect, 4.0, hover_bg);
-                                ui.painter().text(rect.left_center() + egui::vec2(12.0, 0.0), egui::Align2::LEFT_CENTER, "F", egui::FontId::proportional(14.0), normal_text);
-                                ui.painter().text(egui::pos2(rect.left() + 32.0, rect.top() + 10.0), egui::Align2::LEFT_TOP, file_name, egui::FontId::proportional(12.5), normal_text);
-                                ui.painter().text(egui::pos2(rect.left() + 32.0, rect.top() + 26.0), egui::Align2::LEFT_TOP, format!("…/{}", parent_dir), egui::FontId::proportional(10.5), muted_text);
+                                let painter = ui.painter_at(rect);
+                                let hover_bg = if response.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    match theme_mode {
+                                        ThemeMode::Dark => egui::Color32::from_rgb(40, 40, 48),
+                                        ThemeMode::Light => ColorPalette::GRAY_200,
+                                    }
+                                } else { egui::Color32::TRANSPARENT };
+
+                                painter.rect_filled(rect, 4.0, hover_bg);
+                                painter.text(rect.left_center() + egui::vec2(12.0, 0.0), egui::Align2::LEFT_CENTER, "F",
+                                    egui::FontId::proportional(14.0), normal_text);
+                                painter.text(egui::pos2(rect.left() + 32.0, rect.top() + 10.0),egui::Align2::LEFT_TOP, file_name,
+                                    egui::FontId::proportional(12.5), normal_text);
+                                painter.text(egui::pos2(rect.left() + 32.0, rect.top() + 26.0),egui::Align2::LEFT_TOP,format!("…/{}", parent_dir),
+                                    egui::FontId::proportional(10.5),muted_text);
+
                                 if response.clicked() { file_to_open = Some(rf.path.clone()); }
                                 add_context_menu(response, &rf.path, file_name);
                             } else {

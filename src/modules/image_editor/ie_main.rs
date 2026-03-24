@@ -709,11 +709,16 @@ impl ImageEditor {
         }
     }
 
-    pub(super) fn active_raster_image(&self) -> Option<&DynamicImage> {
-        match self.layers.iter().find(|l| l.id == self.active_layer_id)?.kind {
-            LayerKind::Background => self.image.as_ref(),
-            LayerKind::Raster => self.layer_images.get(&self.active_layer_id),
-            LayerKind::Text | LayerKind::Image => None,
+    pub(super) fn active_filterable_image(&self) -> Option<DynamicImage> {
+        let layer = self.layers.iter().find(|l| l.id == self.active_layer_id)?;
+        match layer.kind {
+            LayerKind::Background => self.image.clone(),
+            LayerKind::Raster => self.layer_images.get(&self.active_layer_id).cloned(),
+            LayerKind::Image => {
+                let iid = layer.linked_image_id?;
+                self.image_layer_data.get(&iid).map(|ild| ild.image.clone())
+            }
+            LayerKind::Text => None,
         }
     }
 
@@ -1261,6 +1266,7 @@ impl ImageEditor {
             linked_text_id: None, linked_image_id: None,
         };
         self.active_layer_id = new_lid;
+        self.raster_layer_texture_dirty.insert(new_lid);
         self.composite_dirty = true; self.dirty = true;
     }
 
@@ -1553,8 +1559,9 @@ impl ImageEditor {
         if *self.filter_progress.lock().unwrap() >= 1.0 {
             if let Some(result) = self.pending_filter_result.lock().unwrap().take() {
                 let target_id = self.filter_target_layer_id;
-                let kind = self.layers.iter().find(|l| l.id == target_id)
-                    .map(|l| l.kind).unwrap_or(LayerKind::Background);
+                let layer = self.layers.iter().find(|l| l.id == target_id);
+                let kind = layer.map(|l| l.kind).unwrap_or(LayerKind::Background);
+                let linked_iid = layer.and_then(|l| l.linked_image_id);
                 match kind {
                     LayerKind::Background => {
                         self.resize_w = result.width(); self.resize_h = result.height();
@@ -1564,6 +1571,15 @@ impl ImageEditor {
                         self.layer_images.insert(target_id, result);
                         self.raster_layer_texture_dirty.insert(target_id);
                         self.raster_layer_dirty_rects.remove(&target_id);
+                    }
+                    LayerKind::Image => {
+                        if let Some(iid) = linked_iid {
+                            if let Some(ild) = self.image_layer_data.get_mut(&iid) {
+                                ild.image = result;
+                            }
+                            self.image_layer_texture_dirty.insert(iid);
+                            self.image_layer_stroke_rects.remove(&iid);
+                        }
                     }
                     _ => {}
                 }

@@ -54,6 +54,12 @@
 
 ### Image Editor Bugs
 
+- [x] Rasterizing image layer causes it to be invisible (it still exists, just cant be seen, the second any edits are made it is visible)
+- [x] Layer drawings and edits stay on image even after being cropped using crop tool, even when the drawings are outside of the crop made
+- [x] Pan tool doesn't allow for left click panning/moving camera
+- [x] Vibrance retouch tool has a red outline
+- [x] Image wide filters do not work on image layers (Greyscale, invert, and sepia do however)
+- [x] Eyedrop tool lags on very large images
 - [x] Can't just click to color for brush, must drag
 - [x] Retouch tool bar is placed randomly, some things very high, some very low
 - [x] Brushes remove background/text close to the brush while drawing, reapplies after drawing is done
@@ -109,6 +115,7 @@
 ### Json Editor Bugs
 
 - [x] Going into Tree view causes "modified" tag to show up
+- [x] Newlines within a string of text cause them to be too big for the row in the tree view
 - [x] Error popup in text view should hug right side, also text leaves the size of the box
 - [x] File information and search bar backgrounds do not go all the way to the right of the screen
 - [x] Format and sort combobox not centered in the toolbar
@@ -128,6 +135,8 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [x] Can click on buttons in the background of the main menu with patch notes/settings modal up
+- [x] Some pages have a double separator line within the "View" tab on the top toolbar
+- [x] Large file names go out of bounds in the "Recent files" section of the sidebar
 
 ## Features
 
