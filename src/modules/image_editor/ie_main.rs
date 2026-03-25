@@ -959,6 +959,23 @@ impl ImageEditor {
         let below_kind = self.layers[idx - 1].kind;
         if matches!(below_kind, LayerKind::Text | LayerKind::Image) { return; }
         self.push_undo();
+        let idx = if self.layers[idx].kind == LayerKind::Image {
+            let (cw, ch) = match &self.image { Some(i) => (i.width(), i.height()), None => return };
+            let iid = match self.layers[idx].linked_image_id { Some(id) => id, None => return };
+            let ild_clone = match self.image_layer_data.get(&iid) { Some(d) => d.clone(), None => return };
+            let (opacity, blend, name) = (self.layers[idx].opacity, self.layers[idx].blend_mode, self.layers[idx].name.clone());
+            let new_lid = self.next_layer_id; self.next_layer_id += 1;
+            let mut raster = ImageBuffer::from_pixel(cw, ch, Rgba([0u8,0,0,0]));
+            Self::stamp_image_layer(&mut raster, &ild_clone, opacity, blend);
+            self.image_layer_data.remove(&iid);
+            self.image_layer_texture_dirty.remove(&iid);
+            if self.selected_image_layer == Some(iid) { self.selected_image_layer = None; }
+            self.layer_images.insert(new_lid, DynamicImage::ImageRgba8(raster));
+            self.raster_layer_texture_dirty.insert(new_lid);
+            self.layers[idx] = ImageLayer { id: new_lid, name, opacity: 1.0, visible: true, locked: false, blend_mode: BlendMode::Normal, kind: LayerKind::Raster, linked_text_id: None, linked_image_id: None };
+            self.active_layer_id = new_lid;
+            idx
+        } else { idx };
         let top_id = self.layers[idx].id;
         let below_id = self.layers[idx - 1].id;
         let top_img: Option<DynamicImage> = match self.layers[idx].kind {

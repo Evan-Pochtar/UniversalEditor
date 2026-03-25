@@ -48,13 +48,6 @@
 - [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
-
-- [ ] On very large images, there is a slight lag at the end of brush strokes, eraser strokes, or retouch tool strokes
-- [ ] Blur and Sharpen tool laggy on very large images when moving mouse fast
-- [ ] Image layer CAN merge downwards onto a rasterized layer using ctrl+e or the top toolbar, but not using the layer sidebar, it should rasterize the image, then merge
-- [ ] Cannot use image top toolbar transformation to rotate an image layer
-- [ ] Can't use eyedropper on image layer to get color from imported image
-- [ ] Brush Preview is hard to see when the colors are black on black, or white on white
   
 ### Json Editor Bugs
 

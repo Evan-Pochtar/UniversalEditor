@@ -98,6 +98,11 @@
 - [x] Area around brush strokes in layers fades to dark
 - [x] Brush, Eraser, and Retouch get EXTREMELY laggy in large images when within a layer, background layer brush, eraser, and retouch does not.
 - [x] Can sometimes have both a textbox AND an image selected
+- [x] Image layer CAN merge downwards onto a rasterized layer using ctrl+e or the top toolbar, but not using the layer sidebar, it should rasterize the image, then merge
+- [x] Cannot use image top toolbar transformation to rotate an image layer
+- [x] On very large images, there is a slight lag at the end of brush strokes, eraser strokes, or retouch tool strokes
+- [x] Blur and Sharpen tool laggy on very large images when moving mouse fast
+- [x] Can't use eyedropper on image layer to get color from imported image
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image

@@ -212,6 +212,11 @@
 - **IMG EDITOR**: Vibrance calculation now no longer sometimes adds a red "hue" or outline
 - **IMG EDITOR**: Image-Wide top bar filters now work on imported images
 - **IMG EDITOR**: Eyedrop tool now has the same performance no matter the image size
+- **IMG EDITOR**: Image layers can now be merged with rasterized layers
+- **IMG EDITOR**: Can now use the top toolbar to rotate images and text
+- **IMG EDITOR**: Performance improvements with sharpen and blur retouch tools on large images
+- **IMG EDITOR**: On large images, there is no longer a slight lag at the end of brush strokes, eraser strokes, or retouch strokes
+- **IMG EDITOR**: Can now use the eyedropper on imported image layers
 - **IMG2IMG CONVERTER**: JPG's now load properly into the input space
 - **GENERAL**: File names no longer go outside of sidebar buttons bounds
 - **GENERAL**: In Converters with no view items, as well as the main menu, there are no longer double separators

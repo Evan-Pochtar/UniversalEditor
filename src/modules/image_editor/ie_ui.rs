@@ -1572,7 +1572,7 @@ impl ImageEditor {
 
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
-                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.composite_dirty = true; self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
+                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
                 Tool::Text | Tool::Pan => { if self.text_drag.is_some() { self.composite_dirty = true; } self.text_drag = None; }
                 Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
@@ -1786,27 +1786,19 @@ impl ImageEditor {
                         if let Some(preview_tid) = self.brush_preview_texture {
                             let avail_w = ui.available_width();
                             let preview_h = 66.0_f32;
-                            let frame_fill = if matches!(theme, ThemeMode::Dark) {
-                                egui::Color32::from_rgb(14, 14, 19)
-                            } else {
-                                egui::Color32::from_rgb(230, 230, 236)
-                            };
+                            
                             egui::Frame::new()
-                                .fill(frame_fill)
                                 .stroke(egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }))
                                 .corner_radius(6.0)
-                                .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 4, bottom: 4 })
+                                .inner_margin(0) 
                                 .show(ui, |ui: &mut egui::Ui| {
                                     let (preview_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(avail_w - pad * 2.0, preview_h),
+                                        egui::vec2(avail_w, preview_h),
                                         egui::Sense::hover(),
                                     );
-                                    ui.painter().image(
-                                        preview_tid,
-                                        preview_rect,
-                                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                                        egui::Color32::WHITE,
-                                    );
+                                    
+                                    let sized_tex = egui::load::SizedTexture::new(preview_tid, preview_rect.size());
+                                    ui.put(preview_rect, egui::Image::new(sized_tex).corner_radius(6.0));
                                     let note = format!(
                                         "{}  ·  {:.0}px  ·  {:.0}% opacity  ·  {:.0}% softness",
                                         self.brush.shape.label(),
@@ -1815,11 +1807,11 @@ impl ImageEditor {
                                         self.brush.softness * 100.0,
                                     );
                                     ui.painter().text(
-                                        preview_rect.right_bottom() - egui::vec2(4.0, 4.0),
+                                        preview_rect.right_bottom() - egui::vec2(8.0, 6.0),
                                         egui::Align2::RIGHT_BOTTOM,
                                         &note,
                                         egui::FontId::proportional(9.5),
-                                        egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200),
+                                        ColorPalette::SLATE_600,
                                     );
                                 });
                         }
@@ -2470,8 +2462,7 @@ impl ImageEditor {
                             }
                             if n > 1 {
                                 let can_ctx_merge = stack_idx > 0
-                                    && !matches!(self.layers.get(stack_idx.saturating_sub(1)).map(|l| l.kind), Some(LayerKind::Text))
-                                    && !matches!(layer_kind, LayerKind::Text);
+                                    && !matches!(self.layers.get(stack_idx.saturating_sub(1)).map(|l| l.kind), Some(LayerKind::Text | LayerKind::Image));
                                 if ui.add_enabled(can_ctx_merge, egui::Button::new("Merge Down")).clicked() {
                                     action = Some(LayerPanelAction::MergeDown(stack_idx));
                                     ui.close();
@@ -2581,12 +2572,6 @@ impl ImageEditor {
                         }
                         LayerPanelAction::MergeDown(idx) => {
                             self.active_layer_id = self.layers[idx].id;
-                            if self.layers[idx].kind == LayerKind::Image {
-                                self.rasterize_image_layer();
-                                if let Some(new_idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) {
-                                    self.active_layer_id = self.layers[new_idx].id;
-                                }
-                            }
                             self.merge_down();
                         }
                         LayerPanelAction::Flatten => {
@@ -2659,8 +2644,7 @@ impl ImageEditor {
                         let can_up = !is_bg && idx < self.layers.len() - 1;
                         let can_down = !is_bg && idx > 1;
                         let can_merge = !is_bg && idx > 0
-                            && !matches!(self.layers[idx - 1].kind, LayerKind::Text | LayerKind::Image)
-                            && !matches!(self.layers[idx].kind, LayerKind::Image);
+                            && !matches!(self.layers[idx - 1].kind, LayerKind::Text | LayerKind::Image);
 
                         if ui.add_enabled(can_up, egui::Button::new(egui::RichText::new("⬆").size(11.0)).min_size(egui::vec2(28.0, 24.0))).on_hover_text("Move layer up").clicked() {
                             self.push_undo();
@@ -2687,21 +2671,16 @@ impl ImageEditor {
 
     pub(super) fn ensure_brush_preview(&mut self, ctx: &egui::Context) {
         let is_dark = ctx.style().visuals.dark_mode;
-        let key = (self.brush.clone(), self.color, is_dark);
+        let key = (self.brush.clone(), egui::Color32::BLACK, is_dark);
         if let Some(ref cached) = self.brush_preview_cache_key {
             if *cached == key && self.brush_preview_texture.is_some() { return; }
         }
-        let pw = 300u32;
-        let ph = 66u32;
-        let pixels = self.render_brush_preview_to_pixels(pw, ph, is_dark);
-        let ci = egui::ColorImage {
-            size: [pw as usize, ph as usize],
-            source_size: egui::vec2(pw as f32, ph as f32),
-            pixels,
-        };
+        let pw = 300u32; let ph = 66u32;
+        let original_color = self.color; self.color = egui::Color32::BLACK;
+        let pixels = self.render_brush_preview_to_pixels(pw, ph); self.color = original_color;
+        let ci = egui::ColorImage {size: [pw as usize, ph as usize], source_size: egui::vec2(pw as f32, ph as f32), pixels};
         let opts = egui::TextureOptions {
-            magnification: egui::TextureFilter::Linear,
-            minification:  egui::TextureFilter::Linear,
+            magnification: egui::TextureFilter::Linear, minification:  egui::TextureFilter::Linear,
             ..Default::default()
         };
         if let Some(tid) = self.brush_preview_texture {

@@ -322,7 +322,16 @@ impl ImageEditor {
                 LayerKind::Raster => self.layer_images.get(&layer.id).and_then(|img| {
                     if x < img.width() && y < img.height() { Some(img.get_pixel(x, y).0) } else { None }
                 }),
-                _ => None,
+                LayerKind::Image => {
+                    if let Some(iid) = layer.linked_image_id {
+                        self.image_layer_data.get(&iid).and_then(|ild| {
+                            ild.canvas_to_local(x as f32, y as f32).and_then(|(lx, ly)| {
+                                if lx < ild.image.width() && ly < ild.image.height() { Some(ild.image.get_pixel(lx, ly).0) } else { None }
+                            })
+                        })
+                    } else { None }
+                },
+                LayerKind::Text => None,
             };
             if let Some(p) = pixel {
                 let sa = (p[3] as f32 / 255.0) * layer.opacity.clamp(0.0, 1.0);
@@ -930,24 +939,16 @@ impl ImageEditor {
                             let src = py2 * stride + sx0 * 4;
                             snap_buf[ri*srw*4..ri*srw*4+srw*4].copy_from_slice(&raw[src..src+srw*4]);
                         }
-                        let sum = |px: u32, py: u32| -> [f32;4] {
-                            let mut acc=[0f32;4]; let mut cnt=0i32;
-                            for ky in (-blur_r)..=blur_r { for kx in (-blur_r)..=blur_r {
-                                let nx=px as i32+kx; let ny=py as i32+ky;
-                                if nx<sx0 as i32||ny<sy0 as i32||nx>=sx1 as i32||ny>=sy1 as i32{continue;}
-                                let o=(ny as usize-sy0)*srw*4+(nx as usize-sx0)*4;
-                                for c in 0..4{acc[c]+=snap_buf[o+c] as f32;} cnt+=1;
-                            }}
-                            if cnt>0{[acc[0]/cnt as f32,acc[1]/cnt as f32,acc[2]/cnt as f32,acc[3]/cnt as f32]}else{acc}
-                        };
+                        let blurred = separable_box_blur_u8(&snap_buf, srw, srh, blur_r as usize);
                         for py2 in min_y..max_y { for px2 in min_x..max_x {
                             let fo=brush_shape_falloff(px2 as f32-cx,py2 as f32-cy,radius,1.0,0.0,softness,BrushShape::Circle);
                             if fo<=0.0{continue;}
-                            let blurred=sum(px2,py2); let off=py2 as usize*stride+px2 as usize*4;
+                            let bo=(py2 as usize-sy0)*srw*4+(px2 as usize-sx0)*4;
+                            let off=py2 as usize*stride+px2 as usize*4;
                             if mode==RetouchMode::Blur {
-                                for c in 0..4{raw[off+c]=retouch_lerp_u8(raw[off+c],blurred[c] as u8,fo*strength);}
+                                for c in 0..4{raw[off+c]=retouch_lerp_u8(raw[off+c],blurred[bo+c],fo*strength);}
                             } else {
-                                for c in 0..3{raw[off+c]=(raw[off+c] as f32+(raw[off+c] as f32-blurred[c])*strength*2.0).clamp(0.0,255.0) as u8;}
+                                for c in 0..3{raw[off+c]=(raw[off+c] as f32+(raw[off+c] as f32-blurred[bo+c] as f32)*strength*2.0).clamp(0.0,255.0) as u8;}
                             }
                         }}
                     }
@@ -1195,28 +1196,20 @@ impl ImageEditor {
                         let blur_r=((strength*5.0) as i32).max(1);
                         let sx0=(min_px-blur_r).max(0) as usize; let sy0=(min_py-blur_r).max(0) as usize;
                         let sx1=(max_px+blur_r).min(bw as i32) as usize; let sy1=(max_py+blur_r).min(bh as i32) as usize;
-                        let srw=sx1.saturating_sub(sx0);
-                        let mut snap=vec![0u8;srw*(sy1.saturating_sub(sy0))*4];
+                        let srw=sx1.saturating_sub(sx0); let srh=sy1.saturating_sub(sy0);
+                        let mut snap=vec![0u8;srw*srh*4];
                         for (ri,py2) in (sy0..sy1).enumerate() {
                             let src=py2*stride+sx0*4;
                             snap[ri*srw*4..ri*srw*4+srw*4].copy_from_slice(&raw[src..src+srw*4]);
                         }
-                        let sum=|px:u32,py:u32|->[f32;4]{
-                            let mut acc=[0f32;4];let mut cnt=0i32;
-                            for ky in (-blur_r)..=blur_r{for kx in (-blur_r)..=blur_r{
-                                let nx=px as i32+kx;let ny=py as i32+ky;
-                                if nx<sx0 as i32||ny<sy0 as i32||nx>=sx1 as i32||ny>=sy1 as i32{continue;}
-                                let o=(ny as usize-sy0)*srw*4+(nx as usize-sx0)*4;
-                                for c in 0..4{acc[c]+=snap[o+c] as f32;}cnt+=1;
-                            }}
-                            if cnt>0{[acc[0]/cnt as f32,acc[1]/cnt as f32,acc[2]/cnt as f32,acc[3]/cnt as f32]}else{acc}
-                        };
+                        let blurred = separable_box_blur_u8(&snap, srw, srh, blur_r as usize);
                         for py2 in min_py.max(0) as u32..max_py.max(0) as u32{for px2 in min_px.max(0) as u32..max_px.max(0) as u32{
                             let fo=brush_shape_falloff(px2 as f32-cx_img,py2 as f32-cy_img,radius,1.0,0.0,softness,BrushShape::Circle);
                             if fo<=0.0{continue;}
-                            let blurred=sum(px2,py2);let off=py2 as usize*stride+px2 as usize*4;
-                            if mode==RetouchMode::Blur{for c in 0..4{raw[off+c]=retouch_lerp_u8(raw[off+c],blurred[c] as u8,fo*strength);}}
-                            else{for c in 0..3{raw[off+c]=(raw[off+c] as f32+(raw[off+c] as f32-blurred[c])*strength*2.0).clamp(0.0,255.0) as u8;}}
+                            let bo=(py2 as usize-sy0)*srw*4+(px2 as usize-sx0)*4;
+                            let off=py2 as usize*stride+px2 as usize*4;
+                            if mode==RetouchMode::Blur{for c in 0..4{raw[off+c]=retouch_lerp_u8(raw[off+c],blurred[bo+c],fo*strength);}}
+                            else{for c in 0..3{raw[off+c]=(raw[off+c] as f32+(raw[off+c] as f32-blurred[bo+c] as f32)*strength*2.0).clamp(0.0,255.0) as u8;}}
                         }}
                     }
                     RetouchMode::Smudge => {
@@ -1356,6 +1349,13 @@ impl ImageEditor {
     }
 
     pub(super) fn apply_flip_h(&mut self) {
+        if let Some(iid) = self.image_layer_for_active() {
+            self.push_undo();
+            if let Some(ild) = self.image_layer_data.get_mut(&iid) { ild.flip_h = !ild.flip_h; }
+            self.image_layer_texture_dirty.insert(iid);
+            self.composite_dirty = true; self.dirty = true;
+            return;
+        }
         let (old_w, flipped) = match &self.image { Some(img) => (img.width(), img.fliph()), None => return };
         self.transform_text_flip_h(old_w); self.image = Some(flipped);
         self.texture_dirty = true; self.composite_dirty = true; self.dirty = true;
@@ -1442,8 +1442,8 @@ impl ImageEditor {
         Ok(path)
     }
 
-    pub(super) fn render_brush_preview_to_pixels(&self, w: u32, h: u32, is_dark: bool) -> Vec<egui::Color32> {
-        let bg = if is_dark { [18u8, 18, 23, 255] } else { [238u8, 238, 244, 255] };
+    pub(super) fn render_brush_preview_to_pixels(&self, w: u32, h: u32) -> Vec<egui::Color32> {
+        let bg = [255u8, 255, 255, 255];
         let mut buf: Vec<[u8; 4]> = vec![bg; (w * h) as usize];
         let (r, g, b_ch, base_a) = (self.color.r(), self.color.g(), self.color.b(), self.color.a().max(180));
         let max_r = h as f32 * 0.36;
@@ -1494,6 +1494,35 @@ impl ImageEditor {
         }
         buf.iter().map(|&[r,g,b,a]| egui::Color32::from_rgba_unmultiplied(r,g,b,a)).collect()
     }
+}
+
+fn separable_box_blur_u8(src: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
+    let mut tmp = vec![0u32; w * h * 4];
+    let mut dst = vec![0u8; w * h * 4];
+    for y in 0..h {
+        let row = y * w;
+        let mut acc = [0u32; 4];
+        let mut cnt = 0u32;
+        for ix in 0..=r.min(w.saturating_sub(1)) { let o=(row+ix)*4; for c in 0..4 { acc[c]+=src[o+c] as u32; } cnt+=1; }
+        let o=row*4; for c in 0..4 { tmp[o+c]=acc[c]/cnt; }
+        for x in 1..w {
+            if x+r < w { let o=(row+x+r)*4; for c in 0..4 { acc[c]+=src[o+c] as u32; } cnt+=1; }
+            if x >= r+1 { let o=(row+x-r-1)*4; for c in 0..4 { acc[c]-=src[o+c] as u32; } cnt-=1; }
+            let o=(row+x)*4; for c in 0..4 { tmp[o+c]=acc[c]/cnt; }
+        }
+    }
+    for x in 0..w {
+        let mut acc = [0u32; 4];
+        let mut cnt = 0u32;
+        for iy in 0..=r.min(h.saturating_sub(1)) { let o=(iy*w+x)*4; for c in 0..4 { acc[c]+=tmp[o+c]; } cnt+=1; }
+        let o=x*4; for c in 0..4 { dst[o+c]=(acc[c]/cnt) as u8; }
+        for y in 1..h {
+            if y+r < h { let o=((y+r)*w+x)*4; for c in 0..4 { acc[c]+=tmp[o+c]; } cnt+=1; }
+            if y >= r+1 { let o=((y-r-1)*w+x)*4; for c in 0..4 { acc[c]-=tmp[o+c]; } cnt-=1; }
+            let o=(y*w+x)*4; for c in 0..4 { dst[o+c]=(acc[c]/cnt) as u8; }
+        }
+    }
+    dst
 }
 
 #[inline]
