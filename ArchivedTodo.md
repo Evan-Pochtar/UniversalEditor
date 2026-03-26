@@ -172,6 +172,7 @@
 - [x] Add way to rename file
 - [x] Add way to convert file from txt to md and vice versa
 - [x] Ability to load tables in markdown mode
+- [x] Redo file information toolbar, move word count and character count to separate window to prevent constant recalculations
 
 ### Image Editor
 

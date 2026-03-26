@@ -48,7 +48,9 @@
 - [ ] Undoing all changes does not remove "modified" file information status
 
 ### Image Editor Bugs
-  
+
+- [ ] Brush, fill, etc. sometimes select image instead of actually
+
 ### Json Editor Bugs
 
 - [ ] Sort and Search do not work on text view

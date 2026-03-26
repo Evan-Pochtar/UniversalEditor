@@ -553,11 +553,6 @@ impl UniversalEditor {
                 if let Some((path, name)) = rename_init { self.rename_target = Some(path); self.rename_buffer = name; }
                 ui.add_space(8.0);
             });
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.add_space(8.0); ui.separator(); ui.add_space(4.0);
-                ui.horizontal(|ui| { ui.weak("FPS:"); ui.label(format!("{:.0}", 1.0 / ctx.input(|i| i.unstable_dt))); });
-                ui.add_space(4.0);
-            });
         });
     }
 
