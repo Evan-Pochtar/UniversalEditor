@@ -2,6 +2,7 @@ use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
 use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter};
+use crate::modules::image_editor::ie_cache;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -105,7 +106,7 @@ struct PatchCategory { name: String, notes: Vec<PatchNote> }
 struct PatchVersion { version: String, tag: String, categories: Vec<PatchCategory> }
 
 #[derive(PartialEq, Clone, Copy)]
-enum SettingsTab { General, TextEditor, JsonEditor }
+enum SettingsTab { General, TextEditor, JsonEditor, Cache }
 
 pub struct UniversalEditor {
     active_module: Option<Box<dyn EditorModule>>,
@@ -135,6 +136,7 @@ pub struct UniversalEditor {
     patch_notes_page: usize,
     rename_target: Option<PathBuf>,
     rename_buffer: String,
+    cache_entries: Option<Vec<ie_cache::CacheEntry>>,
 }
 
 fn open_file_location(path: &PathBuf) {
@@ -243,6 +245,7 @@ impl UniversalEditor {
             recent_file_tx: tx, recent_file_rx: rx,
             path_replace_tx: replace_tx, path_replace_rx: replace_rx,
             patch_notes, patch_notes_page: 0, rename_target: None, rename_buffer: String::new(),
+            cache_entries: None,
         }
     }
 
@@ -276,7 +279,10 @@ impl UniversalEditor {
                 Box::new(e)
             }
             CreateModule::ImageEditor => {
-                let mut e = if let Some(p) = path { ImageEditor::load(p) } else { ImageEditor::new() };
+                let mut e = if let Some(ref p) = path { ImageEditor::load(p.clone()) } else { ImageEditor::new() };
+                if let Some(ref p) = path {
+                    if let Some(cache) = ie_cache::load_cache(p) { ie_cache::apply_cache(&mut e, cache); }
+                }
                 let tx = self.recent_file_tx.clone();
                 e.set_file_callback(Box::new(move |p: PathBuf| { let _ = tx.send(p); }));
                 Box::new(e)
@@ -297,6 +303,7 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::OpenFile(path)); self.show_unsaved_dialog = true;
         } else {
+            self.save_image_cache_if_needed();
             self.recent_files.add_file(path.clone()); self.active_module = Some(self.module_from_path(path));
         }
     }
@@ -313,6 +320,7 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::SwitchModule(module)); self.show_unsaved_dialog = true;
         } else {
+            self.save_image_cache_if_needed();
             self.active_module = Some(module);
         }
     }
@@ -321,18 +329,28 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::GoHome); self.show_unsaved_dialog = true;
         } else {
+            self.save_image_cache_if_needed();
             self.active_module = None;
         }
     }
 
     fn execute_pending_action(&mut self) {
         if let Some(action) = self.pending_action.take() {
+            self.save_image_cache_if_needed();
             match action {
                 PendingAction::OpenFile(path) => { self.recent_files.add_file(path.clone()); self.active_module = Some(self.module_from_path(path)); }
                 PendingAction::NewFile => { let mut e = TextEditor::new_empty(); self.apply_default_font(&mut e); self.active_module = Some(Box::new(e)); }
                 PendingAction::SwitchModule(module) => { self.active_module = Some(module); }
                 PendingAction::GoHome => { self.active_module = None; }
                 PendingAction::Exit => {}
+            }
+        }
+    }
+
+    fn save_image_cache_if_needed(&self) {
+        if let Some(m) = &self.active_module {
+            if let Some(e) = m.as_any().downcast_ref::<ImageEditor>() {
+                if e.file_path.is_some() && e.layers.len() > 1 { let _ = ie_cache::save_cache(e); }
             }
         }
     }
@@ -722,7 +740,7 @@ impl UniversalEditor {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::JsonEditor, "Json Editor")] {
+                    for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::JsonEditor, "Json Editor"), (SettingsTab::Cache, "Layer Cache")] {
                         let selected = self.settings_tab == *tab;
                         let (fill, tc) = if selected { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
                         if ui.add(egui::Button::new(egui::RichText::new(*label).size(13.0).color(tc)).fill(fill).corner_radius(6.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.settings_tab = *tab; }
@@ -781,12 +799,65 @@ impl UniversalEditor {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_file_info_je, "").changed() { prefs_changed = true; } });
                         });
                     }
+                    SettingsTab::Cache => {
+                        if self.cache_entries.is_none() { self.cache_entries = Some(ie_cache::list_caches()); }
+                        let entries = self.cache_entries.as_ref().map(|e| e.len()).unwrap_or(0);
+                        let total_kb: u64 = self.cache_entries.as_ref().map(|v| v.iter().map(|e| e.size_kb).sum()).unwrap_or(0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("LAYER CACHES").size(11.0).color(muted));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add_enabled(entries > 0, egui::Button::new(egui::RichText::new("Clear All").size(12.0).color(if is_dark { ColorPalette::RED_400 } else { ColorPalette::RED_600 }))).clicked() {
+                                    ie_cache::delete_all_caches();
+                                    self.cache_entries = Some(Vec::new());
+                                }
+                            });
+                        });
+                        ui.label(egui::RichText::new(format!("{} cached files  ·  {} KB total", entries, total_kb)).size(12.0).color(muted));
+                        ui.add_space(8.0);
+                        if entries == 0 {
+                            ui.label(egui::RichText::new("No layer caches stored.").size(13.0).color(muted).italics());
+                        } else {
+                            egui::ScrollArea::vertical().max_height(220.0).id_salt("cache_scroll").show(ui, |ui| {
+                                let mut to_delete: Option<usize> = None;
+                                if let Some(ref entries_vec) = self.cache_entries {
+                                    for (i, entry) in entries_vec.iter().enumerate() {
+                                        let file_name = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path);
+                                        let row_fill = if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 };
+                                        egui::Frame::new().fill(row_fill).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                                            ui.horizontal(|ui| {
+                                                ui.vertical(|ui| {
+                                                    ui.label(egui::RichText::new(file_name).size(13.0).color(text));
+                                                    ui.label(egui::RichText::new(&entry.src_path).size(10.0).color(muted));
+                                                });
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    ui.label(egui::RichText::new(format!("{} KB", entry.size_kb)).size(11.0).color(muted));
+                                                    if ui.add(egui::Button::new(egui::RichText::new("Delete").size(11.0))).clicked() { to_delete = Some(i); }
+                                                });
+                                            });
+                                        });
+                                        ui.add_space(4.0);
+                                    }
+                                }
+                                if let Some(idx) = to_delete {
+                                    if let Some(ref entries_vec) = self.cache_entries {
+                                        if let Some(entry) = entries_vec.get(idx) {
+                                            let _ = std::fs::remove_dir_all(&entry.cache_dir);
+                                        }
+                                    }
+                                    self.cache_entries = Some(ie_cache::list_caches());
+                                }
+                            });
+                        }
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Layer caches are automatically cleared if the source image is modified outside this application.").size(11.0).color(muted).italics());
+                    }
                 }
             });
 
         if let Some(r) = response {
             if ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))) { open = false; }
         }
+        if !open { self.cache_entries = None; }
         self.show_settings = open;
         if sys_clicked { self.theme_preference = ThemePreference::System; self.theme_mode = match ctx.theme() { egui::Theme::Dark => ThemeMode::Dark, egui::Theme::Light => ThemeMode::Light }; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
         if light_clicked { self.theme_preference = ThemePreference::Light; self.theme_mode = ThemeMode::Light; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }

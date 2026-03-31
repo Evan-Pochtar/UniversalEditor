@@ -49,7 +49,8 @@
 
 ### Image Editor Bugs
 
-- [ ] Brush, fill, etc. sometimes select image instead of actually
+- [ ] Brush, fill, etc. sometimes select image instead of applying
+- [ ] Text disappears when flattened into background or rasterized layer
 
 ### Json Editor Bugs
 
@@ -85,7 +86,7 @@
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
-- [ ] Add way to save layers and settings per image
+- [ ] Add button to rasterize text box
 
 ### Json Editor
 

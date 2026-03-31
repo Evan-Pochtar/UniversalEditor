@@ -231,6 +231,7 @@
 - [x] Crop should show preview of the size of the image
 - [x] Center hue picker and color square within color picker
 - [x] Move "Import Image" to top bar instead of the toolbar
+- [x] Add way to save layers and settings per image
 - [x] Import Images into Canvas
   - [x] Drag-and-drop image open
 

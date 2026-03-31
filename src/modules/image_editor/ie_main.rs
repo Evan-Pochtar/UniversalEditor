@@ -430,7 +430,7 @@ impl BlendMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum LayerKind { Background, Raster, Text, Image }
 
 #[derive(Debug, Clone)]
@@ -455,7 +455,7 @@ pub struct ImageEditor {
     pub(super) texture: Option<egui::TextureId>,
     pub(super) texture_dirty: bool,
     pub(super) texture_dirty_rect: Option<[u32; 4]>,
-    pub(super) file_path: Option<PathBuf>,
+    pub(crate) file_path: Option<PathBuf>,
     pub(super) dirty: bool,
     pub(super) undo_stack: VecDeque<LayerUndoEntry>,
     pub(super) redo_stack: VecDeque<LayerUndoEntry>,
@@ -515,7 +515,7 @@ pub struct ImageEditor {
     pub(super) retouch_pixelate_block: u32,
     pub(super) filter_preview_active: bool,
     pub(super) filter_preview_snapshot: Option<LayerUndoEntry>,
-    pub(super) layers: Vec<ImageLayer>,
+    pub(crate) layers: Vec<ImageLayer>,
     pub(super) active_layer_id: u64,
     pub(super) next_layer_id: u64,
     pub(super) layer_images: std::collections::HashMap<u64, DynamicImage>,
@@ -1682,6 +1682,7 @@ impl ImageEditor {
             let composite = self.composite_all_layers().ok_or("No image to save")?;
             composite.save(&path).map_err(|e| e.to_string())?;
             self.dirty = false;
+            if self.layers.len() > 1 { let _ = super::ie_cache::save_cache(self); }
         }
         Ok(())
     }
@@ -1696,6 +1697,7 @@ impl ImageEditor {
                 composite.save(&path).map_err(|e| e.to_string())?;
                 self.file_path = Some(path);
                 self.dirty = false;
+                if self.layers.len() > 1 { let _ = super::ie_cache::save_cache(self); }
             }
             Ok(())
         } else { Err("Cancelled".to_string()) }
