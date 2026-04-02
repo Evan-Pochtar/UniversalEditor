@@ -195,6 +195,7 @@
 - **IMG EDITOR**: Custom brushes can now be exported and imported
 - **IMG EDITOR**: Added a brush preview to brush settings
 - **IMG EDITOR**: Can now save layer and brush settings per image, with option to delete in main menu
+- **IMG EDITOR**: Added button to rasterize text box into rasterized layer
 - **TEXT EDITOR**: Removing constantly updating character count, moved to top toolbar under "File", option named "Word Count"
 - **GENERAL**: Added "About" modal in the main menu to describe the current state of the project
 - **GENERAL**: Added keyboard shortcut to close sidebar (Ctrl+Backslash)
@@ -220,6 +221,7 @@
 - **IMG EDITOR**: Performance improvements with sharpen and blur retouch tools on large images
 - **IMG EDITOR**: On large images, there is no longer a slight lag at the end of brush strokes, eraser strokes, or retouch strokes
 - **IMG EDITOR**: Can now use the eyedropper on imported image layers
+- **IMG EDITOR**: Textbox no longer becomes invisible after merging into a rasterized or background layer
 - **IMG2IMG CONVERTER**: JPG's now load properly into the input space
 - **GENERAL**: File names no longer go outside of sidebar buttons bounds
 - **GENERAL**: In Converters with no view items, as well as the main menu, there are no longer double separators

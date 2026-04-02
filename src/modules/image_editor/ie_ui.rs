@@ -143,10 +143,8 @@ impl ImageEditor {
                                     self.text_layers.retain(|l: &TextLayer| l.id != id);
                                     self.selected_text = None; self.editing_text = false;
                                 }
-                            }
-                            if !self.text_layers.is_empty() {
                                 ui.separator();
-                                ui.label(egui::RichText::new(format!("{} layer(s)", self.text_layers.len())).size(11.0).color(label_col));
+                                if toolbar_action_btn(ui, egui::RichText::new("Rasterize").size(12.0), theme).on_hover_text("Convert text layer to a raster layer").clicked() { self.rasterize_text_layer(); }
                             }
                         }
                         Tool::Pan => {

@@ -959,6 +959,22 @@ impl ImageEditor {
         let below_kind = self.layers[idx - 1].kind;
         if matches!(below_kind, LayerKind::Text | LayerKind::Image) { return; }
         self.push_undo();
+        let idx = if self.layers[idx].kind == LayerKind::Text {
+            let tid = match self.layers[idx].linked_text_id { Some(id) => id, None => return };
+            let tl = match self.text_layers.iter().find(|t| t.id == tid).cloned() { Some(t) => t, None => return };
+            let (cw, ch) = match &self.image { Some(i) => (i.width(), i.height()), None => return };
+            let base = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(cw, ch, Rgba([0u8, 0, 0, 0])));
+            let rasterized = self.stamp_single_text_layer(&base, &tl, self.layers[idx].opacity);
+            let new_lid = self.next_layer_id; self.next_layer_id += 1;
+            let (name, blend, vis, locked) = (self.layers[idx].name.clone(), self.layers[idx].blend_mode, self.layers[idx].visible, self.layers[idx].locked);
+            self.layer_images.insert(new_lid, rasterized);
+            self.raster_layer_texture_dirty.insert(new_lid);
+            self.text_layers.retain(|t| t.id != tid);
+            if self.selected_text == Some(tid) { self.selected_text = None; self.editing_text = false; self.text_drag = None; }
+            self.layers[idx] = ImageLayer { id: new_lid, name, opacity: 1.0, visible: vis, locked, blend_mode: blend, kind: LayerKind::Raster, linked_text_id: None, linked_image_id: None };
+            self.active_layer_id = new_lid;
+            idx
+        } else { idx };
         let idx = if self.layers[idx].kind == LayerKind::Image {
             let (cw, ch) = match &self.image { Some(i) => (i.width(), i.height()), None => return };
             let iid = match self.layers[idx].linked_image_id { Some(id) => id, None => return };
@@ -1257,6 +1273,27 @@ impl ImageEditor {
                 self.composite_dirty = true; self.dirty = true;
             }
         }
+    }
+
+    pub(super) fn rasterize_text_layer(&mut self) {
+        let Some(idx) = self.layers.iter().position(|l| l.id == self.active_layer_id) else { return };
+        if self.layers[idx].kind != LayerKind::Text { return; }
+        let Some(tid) = self.layers[idx].linked_text_id else { return };
+        let Some(tl) = self.text_layers.iter().find(|t| t.id == tid).cloned() else { return };
+        let (cw, ch) = match &self.image { Some(i) => (i.width(), i.height()), None => return };
+        self.push_undo();
+        let base = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(cw, ch, Rgba([0u8, 0, 0, 0])));
+        let rasterized = self.stamp_single_text_layer(&base, &tl, 1.0);
+        let new_lid = self.next_layer_id; self.next_layer_id += 1;
+        let (name, blend, vis, locked, opacity) = (self.layers[idx].name.clone(), self.layers[idx].blend_mode, self.layers[idx].visible, self.layers[idx].locked, self.layers[idx].opacity);
+        self.layer_images.insert(new_lid, rasterized);
+        self.raster_layer_texture_dirty.insert(new_lid);
+        self.text_layers.retain(|t| t.id != tid);
+        if self.selected_text == Some(tid) { self.selected_text = None; self.editing_text = false; self.text_drag = None; }
+        self.layers[idx] = ImageLayer { id: new_lid, name, opacity, visible: vis, locked, blend_mode: blend, kind: LayerKind::Raster, linked_text_id: None, linked_image_id: None };
+        self.active_layer_id = new_lid;
+        self.composite_dirty = true;
+        self.dirty = true;
     }
 
     pub(super) fn rasterize_image_layer(&mut self) {

@@ -116,6 +116,7 @@
   - [x] Cursor getting disconnected from where text is actually being written.
   - [x] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
   - [x] Vertical and Horizontal Rotations do not rotate textbox properly
+  - [x] Text disappears when flattened into background or rasterized layer
 
 ### Json Editor Bugs
 
@@ -232,6 +233,7 @@
 - [x] Center hue picker and color square within color picker
 - [x] Move "Import Image" to top bar instead of the toolbar
 - [x] Add way to save layers and settings per image
+- [x] Add button to rasterize text box
 - [x] Import Images into Canvas
   - [x] Drag-and-drop image open
 
