@@ -223,8 +223,13 @@ impl ImageConverter {
         avif_quality: u8,
         avif_speed: u8,
     ) -> Result<(), String> {
-        let img = image::open(input_path)
-            .map_err(|e| format!("Failed to open image: {}", e))?;
+        let img = image::ImageReader::open(input_path)
+            .map_err(|e| format!("Failed to open image: {}", e))?
+            .with_guessed_format()
+            .map_err(|e| format!("Failed to detect image format: {}", e))?
+            .decode()
+            .or_else(|_| image::open(input_path))
+            .map_err(|e| format!("Failed to decode image: {}", e))?;
 
         let stem = input_path.file_stem()
             .and_then(|s| s.to_str())

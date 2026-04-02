@@ -9,6 +9,7 @@
   - [x] Improved Patch Notes Screen
   - [x] Settings per page
   - [x] Way to go back to main menu
+  - [x] Add About Page
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -17,6 +18,8 @@
 - [x] Easier way to add new screens/converters (Code only change)
 - [x] Add right click context menu to change file name and open file location in "recent files" list
 - [x] Allow for right click, open with universal_editor on windows
+- [x] Keyboard shortcuts to close/open sidebar, toolbar, etc.
+- [x] Add way to differentiate between same name files in "recent files" list
 
 ## Screens
 
@@ -51,6 +54,12 @@
 
 ### Image Editor Bugs
 
+- [x] Rasterizing image layer causes it to be invisible (it still exists, just cant be seen, the second any edits are made it is visible)
+- [x] Layer drawings and edits stay on image even after being cropped using crop tool, even when the drawings are outside of the crop made
+- [x] Pan tool doesn't allow for left click panning/moving camera
+- [x] Vibrance retouch tool has a red outline
+- [x] Image wide filters do not work on image layers (Greyscale, invert, and sepia do however)
+- [x] Eyedrop tool lags on very large images
 - [x] Can't just click to color for brush, must drag
 - [x] Retouch tool bar is placed randomly, some things very high, some very low
 - [x] Brushes remove background/text close to the brush while drawing, reapplies after drawing is done
@@ -84,7 +93,16 @@
 - [x] Image always acts as highest layer, even when it shouldn't be
 - [x] Can't move the text box using the select tool
 - [x] When selected on the select/pan tool, and then I click on a text box, I can't select a imported image
+- [x] Fit does not properly fit the screen on very small canvas sizes
+- [x] Cannot select text when text is "hiding" behind image layer
+- [x] Area around brush strokes in layers fades to dark
+- [x] Brush, Eraser, and Retouch get EXTREMELY laggy in large images when within a layer, background layer brush, eraser, and retouch does not.
 - [x] Can sometimes have both a textbox AND an image selected
+- [x] Image layer CAN merge downwards onto a rasterized layer using ctrl+e or the top toolbar, but not using the layer sidebar, it should rasterize the image, then merge
+- [x] Cannot use image top toolbar transformation to rotate an image layer
+- [x] On very large images, there is a slight lag at the end of brush strokes, eraser strokes, or retouch tool strokes
+- [x] Blur and Sharpen tool laggy on very large images when moving mouse fast
+- [x] Can't use eyedropper on image layer to get color from imported image
 - [x] Text Issues
   - [x] Bold only shows up when fully saved
   - [x] Rotated text has spots in final image
@@ -98,10 +116,12 @@
   - [x] Cursor getting disconnected from where text is actually being written.
   - [x] Exported Image doesn't fully contain wrapped text if there are no spaces (E.g one really long word that spans multiple lines)
   - [x] Vertical and Horizontal Rotations do not rotate textbox properly
+  - [x] Text disappears when flattened into background or rasterized layer
 
 ### Json Editor Bugs
 
 - [x] Going into Tree view causes "modified" tag to show up
+- [x] Newlines within a string of text cause them to be too big for the row in the tree view
 - [x] Error popup in text view should hug right side, also text leaves the size of the box
 - [x] File information and search bar backgrounds do not go all the way to the right of the screen
 - [x] Format and sort combobox not centered in the toolbar
@@ -121,6 +141,8 @@
 - [x] Sidebar down arrow shows as empty square
 - [x] Top bar "View" should not show text editor options when not on text editor
 - [x] Can click on buttons in the background of the main menu with patch notes/settings modal up
+- [x] Some pages have a double separator line within the "View" tab on the top toolbar
+- [x] Large file names go out of bounds in the "Recent files" section of the sidebar
 
 ## Features
 
@@ -151,6 +173,7 @@
 - [x] Add way to rename file
 - [x] Add way to convert file from txt to md and vice versa
 - [x] Ability to load tables in markdown mode
+- [x] Redo file information toolbar, move word count and character count to separate window to prevent constant recalculations
 
 ### Image Editor
 
@@ -192,6 +215,10 @@
     - [x] Pencil
     - [x] Crayon
   - [x] Custom brush shapes
+  - [x] Keyboard shortcuts to change between presets/favorite brushes
+  - [x] Export custom brushes
+  - [x] Improve realism of paper texture type
+  - [x] Brush preview
 - [x] Keyboard Shortcuts
 - [x] Canvas size (extend without scaling)
 - [x] Export with metadata
@@ -204,6 +231,9 @@
 - [x] Add different cursors for different functions/tools
 - [x] Crop should show preview of the size of the image
 - [x] Center hue picker and color square within color picker
+- [x] Move "Import Image" to top bar instead of the toolbar
+- [x] Add way to save layers and settings per image
+- [x] Add button to rasterize text box
 - [x] Import Images into Canvas
   - [x] Drag-and-drop image open
 

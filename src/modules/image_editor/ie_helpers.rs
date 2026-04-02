@@ -42,6 +42,34 @@ pub(super) fn blend_pixels_u8(dst: [u8; 4], src: [u8; 4], opacity: f32, mode: Bl
     ]
 }
 
+#[inline]
+pub(super) fn srgb_to_linear(c: u8) -> f32 { let c = c as f32 / 255.0; if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) } }
+
+#[inline]
+pub(super) fn linear_to_srgb_u8(c: f32) -> u8 {
+    let c = c.clamp(0.0, 1.0);
+    let s = if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 };
+    (s * 255.0).round() as u8
+}
+
+#[inline]
+pub(super) fn blend_pixels_linear(dst: [u8; 4], src: [u8; 4], opacity: f32, mode: BlendMode) -> [u8; 4] {
+    let sa = (src[3] as f32 / 255.0) * opacity;
+    if sa < 1e-6 { return dst; }
+    let da = dst[3] as f32 / 255.0;
+    let out_a = sa + da * (1.0 - sa);
+    if out_a < 1e-6 { return [0, 0, 0, 0]; }
+    let sl = [srgb_to_linear(src[0]), srgb_to_linear(src[1]), srgb_to_linear(src[2])];
+    let dl = [srgb_to_linear(dst[0]), srgb_to_linear(dst[1]), srgb_to_linear(dst[2])];
+    let out = std::array::from_fn::<f32, 3, _>(|i| (mode.blend_channel(dl[i], sl[i]) * sa + dl[i] * da * (1.0 - sa)) / out_a);
+    [
+        linear_to_srgb_u8(out[0]),
+        linear_to_srgb_u8(out[1]),
+        linear_to_srgb_u8(out[2]),
+        (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]
+}
+
 pub(super) fn rgb_to_hsv_f32(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -110,3 +138,31 @@ pub(super) fn draw_crop_handles(painter: &egui::Painter, r: egui::Rect, color: e
         painter.rect_stroke(hr, 2.0, egui::Stroke::new(1.0, egui::Color32::WHITE), egui::StrokeKind::Outside);
     }
 }
+
+pub(super) fn smooth_hash_2d(px: u32, py: u32, scale: u32, seed: u64) -> f32 {
+    let s = scale.max(1);
+    let (gx, gy) = (px/s, py/s);
+    let (fx, fy) = ((px%s) as f32/s as f32, (py%s) as f32/s as f32);
+    let (ux, uy) = (fx*fx*(3.0-2.0*fx), fy*fy*(3.0-2.0*fy));
+    let h = |x: u32, y: u32| -> f32 {
+        brush_rand((x as u64).wrapping_mul(0x517CC1B7) ^ (y as u64).wrapping_mul(0x9E3779B9) ^ seed)
+    };
+    let (n00, n10, n01, n11) = (h(gx,gy), h(gx+1,gy), h(gx,gy+1), h(gx+1,gy+1));
+    let x0 = n00 + (n10-n00)*ux;
+    let x1 = n01 + (n11-n01)*ux;
+    x0 + (x1-x0)*uy
+}
+
+#[inline(always)]
+pub(super) fn brush_rand(seed: u64) -> f32 {
+    let x = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let x = x ^ (x >> 33);
+    let x = x.wrapping_mul(0xff51afd7ed558ccd);
+    let x = x ^ (x >> 33);
+    let x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
+    let x = x ^ (x >> 33);
+    (x >> 11) as f32 / (1u64 << 53) as f32
+}
+
+#[inline(always)]
+pub(super) fn retouch_lerp_u8(a: u8, b: u8, t: f32) -> u8 { (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8 }

@@ -11,7 +11,7 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::GRAY_300)
         };
-        
+
         egui::Frame::new()
             .fill(bg).stroke(egui::Stroke::new(1.0, border))
             .corner_radius(6.0)
@@ -31,20 +31,6 @@ impl ImageEditor {
                             self.tool_btn(ui, "Crop", Tool::Crop, Some("C"), theme);
                             self.tool_btn(ui, "Select/Pan", Tool::Pan, Some("P"), theme);
                             self.tool_btn(ui, "Retouch", Tool::Retouch, Some("R"), theme);
-                            ui.separator();
-                            if toolbar_action_btn(ui, egui::RichText::new("Place Image").size(12.0), theme)
-                                .on_hover_text("Import image as new layer (I)")
-                                .clicked()
-                            {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif"])
-                                    .pick_file()
-                                {
-                                    if let Ok(img) = image::open(&path) {
-                                        self.insert_image_layer(img, true);
-                                    }
-                                }
-                            }
                         });
                     });
             });
@@ -157,10 +143,8 @@ impl ImageEditor {
                                     self.text_layers.retain(|l: &TextLayer| l.id != id);
                                     self.selected_text = None; self.editing_text = false;
                                 }
-                            }
-                            if !self.text_layers.is_empty() {
                                 ui.separator();
-                                ui.label(egui::RichText::new(format!("{} layer(s)", self.text_layers.len())).size(11.0).color(label_col));
+                                if toolbar_action_btn(ui, egui::RichText::new("Rasterize").size(12.0), theme).on_hover_text("Convert text layer to a raster layer").clicked() { self.rasterize_text_layer(); }
                             }
                         }
                         Tool::Pan => {
@@ -319,7 +303,7 @@ impl ImageEditor {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
-                        if self.tool != Tool::Retouch {
+                        if self.tool != Tool::Retouch && self.tool != Tool::Pan {
                             if ui.add(egui::Button::new("").fill(self.color).min_size(egui::vec2(28.0, 28.0))).clicked() { self.show_color_picker = !self.show_color_picker; }
                             ui.label(egui::RichText::new("Color:").size(12.0).color(label_col));
 
@@ -464,9 +448,9 @@ impl ImageEditor {
                         }
                     }
                     FilterPanel::Blur => {
-                        ui.horizontal(|ui: &mut egui::Ui| { 
-                            ui.label(egui::RichText::new("Radius:").size(12.0).color(label_col)); 
-                            ui.add(egui::Slider::new(&mut self.blur_radius, 0.5..=20.0)); 
+                        ui.horizontal(|ui: &mut egui::Ui| {
+                            ui.label(egui::RichText::new("Radius:").size(12.0).color(label_col));
+                            ui.add(egui::Slider::new(&mut self.blur_radius, 0.5..=20.0));
                         });
                         ui.add_space(4.0);
                         match filter_action_row(ui, theme, self.filter_preview_active) {
@@ -973,58 +957,236 @@ impl ImageEditor {
             painter.rect_stroke(img_rect, 0.0, egui::Stroke::new(1.0, ColorPalette::ZINC_500), egui::StrokeKind::Outside);
         }
 
+        self.ensure_raster_layer_textures(ctx);
         self.ensure_image_layer_textures(ctx);
+
+        let zoom = self.zoom;
+        let editing_text = self.editing_text;
+        let selected_text = self.selected_text;
+        let text_cursor = self.text_cursor;
+        let text_sel_anchor = self.text_sel_anchor;
+        let mut text_galleys: std::collections::HashMap<u64, std::sync::Arc<egui::Galley>> = std::collections::HashMap::new();
+        for i in 0..self.text_layers.len() {
+            let tl = &self.text_layers[i];
+            let font_size_screen = tl.font_size * zoom;
+            let font_family = egui::FontFamily::Name(tl.font_family_name().into());
+            let font_id = egui::FontId::new(font_size_screen, font_family);
+            let box_w_screen = tl.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
+            let layer_color = tl.color;
+            let layer_underline = tl.underline;
+            let content_snap = tl.content.clone();
+            let layer_font_size = tl.font_size;
+            let tid = tl.id;
+            let mut job = egui::text::LayoutJob::default();
+            job.wrap.max_width = box_w_screen;
+            job.append(&content_snap, 0.0, egui::TextFormat {
+                font_id: font_id.clone(), color: layer_color, italics: false,
+                underline: if layer_underline {
+                    egui::Stroke::new((font_size_screen * 0.06).max(1.0), layer_color)
+                } else { egui::Stroke::NONE },
+                ..Default::default()
+            });
+            let galley = ui.painter().layout_job(job);
+            self.text_layers[i].rendered_height = (galley.rect.height() / zoom).max(layer_font_size);
+            let content_chars: Vec<char> = content_snap.chars().collect();
+            let mut char_ptr = 0usize;
+            let mut new_cached: Vec<String> = Vec::with_capacity(galley.rows.len());
+            for row in &galley.rows {
+                let n = row.glyphs.len();
+                let end = (char_ptr + n).min(content_chars.len());
+                new_cached.push(content_chars[char_ptr..end].iter().collect());
+                char_ptr = end;
+                if char_ptr < content_chars.len() && content_chars[char_ptr] == '\n' { char_ptr += 1; }
+            }
+            self.text_layers[i].cached_lines = new_cached;
+            text_galleys.insert(tid, galley);
+        }
+
         {
             let (img_w, img_h) = self.image.as_ref().map(|i| (i.width() as f32, i.height() as f32)).unwrap_or((1.0, 1.0));
-            let zoom = self.zoom; let pan = self.pan;
             let selected_iid = self.selected_image_layer;
-            let iids_and_visible: Vec<(u64, u64, bool)> = self.layers.iter()
-                .filter(|l| l.kind == LayerKind::Image && l.visible)
-                .filter(|l| l.linked_image_id.is_some() && l.linked_image_id == selected_iid)
-                .filter_map(|l| l.linked_image_id.map(|iid| (l.id, iid, l.id == self.active_layer_id)))
-                .collect();
-            for (_lid, iid, is_active) in &iids_and_visible {
-                let iid = *iid;
-                if let (Some(tid), Some(ild)) = (self.image_layer_textures.get(&iid), self.image_layer_data.get(&iid)) {
-                    let screen_rect = ild.screen_rect(img_w, img_h, canvas_rect, zoom, pan);
-                    let angle_rad = ild.rotation.to_radians();
-                    let tint = egui::Color32::WHITE;
-                    if angle_rad == 0.0 && !ild.flip_h && !ild.flip_v {
-                        painter.image(*tid, screen_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
-                    } else {
-                        let (u0, v0, u1, v1) = (if ild.flip_h { 1.0 } else { 0.0 }, if ild.flip_v { 1.0 } else { 0.0 }, if ild.flip_h { 0.0 } else { 1.0 }, if ild.flip_v { 0.0 } else { 1.0 });
-                        let center = screen_rect.center();
-                        let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
-                        let rot = |p: egui::Pos2| -> egui::Pos2 { let d = p - center; center + egui::vec2(d.x*cos_a - d.y*sin_a, d.x*sin_a + d.y*cos_a) };
-                        let corners = [rot(screen_rect.left_top()), rot(screen_rect.right_top()), rot(screen_rect.right_bottom()), rot(screen_rect.left_bottom())];
-                        let uvs = [egui::pos2(u0,v0), egui::pos2(u1,v0), egui::pos2(u1,v1), egui::pos2(u0,v1)];
-                        painter.add(egui::Shape::mesh({
-                            let mut mesh = egui::Mesh::with_texture(*tid);
-                            mesh.vertices = corners.iter().zip(uvs.iter()).map(|(&pos, &uv)| egui::epaint::Vertex { pos, uv, color: tint }).collect();
-                            mesh.indices = vec![0,1,2, 0,2,3];
-                            mesh
-                        }));
-                    }
-                    if *is_active && selected_iid == Some(iid) {
-                        if let Some(handles) = self.image_layer_transform_handles() {
-                            handles.draw(&painter, ColorPalette::GREEN_400);
+            let layers_snap: Vec<(u64, LayerKind, Option<u64>, f32, bool)> = self.layers.iter().filter(|l| l.visible && l.kind != LayerKind::Background)
+                .map(|l| (l.id, l.kind, l.linked_image_id.or(l.linked_text_id), l.opacity, l.id == self.active_layer_id)).collect();
+            for (lid, kind, linked_id, layer_opacity, is_active) in &layers_snap {
+                let alpha = (layer_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+                match kind {
+                    LayerKind::Background => {}
+                    LayerKind::Raster => {
+                        if let Some(&tid) = self.raster_layer_textures.get(lid) {
+                            let center = canvas_rect.center();
+                            let raster_rect = egui::Rect::from_center_size(
+                                egui::pos2(center.x + self.pan.x, center.y + self.pan.y),
+                                egui::vec2(img_w * self.zoom, img_h * self.zoom),
+                            );
+                            painter.image(tid, raster_rect,
+                                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha));
                         }
-                        let gcd = { let mut a = ild.orig_w(); let mut b = ild.orig_h(); while b != 0 { let t = b; b = a % b; a = t; } a.max(1) };
-                        let (rw, rh) = (ild.orig_w()/gcd, ild.orig_h()/gcd);
-                        let aspect_label = format!("{}x{}  {}:{}", ild.orig_w(), ild.orig_h(), rw, rh);
-                        let screen_r = ild.screen_rect(img_w, img_h, canvas_rect, zoom, pan);
-                        let label_pos = egui::pos2(screen_r.min.x, screen_r.min.y - 18.0).max(canvas_rect.min + egui::vec2(2.0, 2.0));
-                        painter.text(label_pos + egui::vec2(1.0, 1.0), egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::from_black_alpha(180));
-                        painter.text(label_pos, egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::WHITE);
+                    }
+                    LayerKind::Image => {
+                        if let Some(iid) = linked_id {
+                            let iid = *iid;
+                            if let (Some(&tex_id), Some(ild)) = (
+                                self.image_layer_textures.get(&iid),
+                                self.image_layer_data.get(&iid),
+                            ) {
+                                let screen_rect = ild.screen_rect(img_w, img_h, canvas_rect, self.zoom, self.pan);
+                                let angle_rad = ild.rotation.to_radians();
+                                let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
+                                if angle_rad == 0.0 && !ild.flip_h && !ild.flip_v {
+                                    painter.image(tex_id, screen_rect,
+                                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
+                                } else {
+                                    let (u0, v0, u1, v1) = (
+                                        if ild.flip_h { 1.0 } else { 0.0 },
+                                        if ild.flip_v { 1.0 } else { 0.0 },
+                                        if ild.flip_h { 0.0 } else { 1.0 },
+                                        if ild.flip_v { 0.0 } else { 1.0 },
+                                    );
+                                    let center = screen_rect.center();
+                                    let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+                                    let rot = |p: egui::Pos2| -> egui::Pos2 {
+                                        let d = p - center;
+                                        center + egui::vec2(d.x*cos_a - d.y*sin_a, d.x*sin_a + d.y*cos_a)
+                                    };
+                                    let corners = [
+                                        rot(screen_rect.left_top()), rot(screen_rect.right_top()),
+                                        rot(screen_rect.right_bottom()), rot(screen_rect.left_bottom()),
+                                    ];
+                                    let uvs = [
+                                        egui::pos2(u0,v0), egui::pos2(u1,v0),
+                                        egui::pos2(u1,v1), egui::pos2(u0,v1),
+                                    ];
+                                    painter.add(egui::Shape::mesh({
+                                        let mut mesh = egui::Mesh::with_texture(tex_id);
+                                        mesh.vertices = corners.iter().zip(uvs.iter())
+                                            .map(|(&pos, &uv)| egui::epaint::Vertex { pos, uv, color: tint })
+                                            .collect();
+                                        mesh.indices = vec![0,1,2, 0,2,3];
+                                        mesh
+                                    }));
+                                }
+                                if *is_active && selected_iid == Some(iid) {
+                                    if let Some(handles) = self.image_layer_transform_handles() {
+                                        handles.draw(&painter, ColorPalette::GREEN_400);
+                                    }
+                                    let gcd = { let mut a = ild.orig_w(); let mut b = ild.orig_h(); while b != 0 { let t = b; b = a % b; a = t; } a.max(1) };
+                                    let (rw, rh) = (ild.orig_w()/gcd, ild.orig_h()/gcd);
+                                    let aspect_label = format!("{}x{}  {}:{}", ild.orig_w(), ild.orig_h(), rw, rh);
+                                    let screen_r = ild.screen_rect(img_w, img_h, canvas_rect, self.zoom, self.pan);
+                                    let label_pos = egui::pos2(screen_r.min.x, screen_r.min.y - 18.0)
+                                        .max(canvas_rect.min + egui::vec2(2.0, 2.0));
+                                    painter.text(label_pos + egui::vec2(1.0, 1.0), egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::from_black_alpha(180));
+                                    painter.text(label_pos, egui::Align2::LEFT_TOP, &aspect_label, egui::FontId::proportional(11.0), egui::Color32::WHITE);
+                                }
+                            }
+                        }
+                    }
+                    LayerKind::Text => {
+                        if let Some(tid) = linked_id {
+                            let tid = *tid;
+                            if let Some(tl_idx) = self.text_layers.iter().position(|t| t.id == tid) {
+                                let tl = &self.text_layers[tl_idx];
+                                let anchor = self.image_to_screen(tl.img_x, tl.img_y);
+                                let font_size_screen = tl.font_size * zoom;
+                                let layer_color = tl.color;
+                                let content_snap = tl.content.clone();
+                                let angle_rad = tl.rotation.to_radians();
+                                let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
+                                let sel_rect = tl.screen_rect(anchor, zoom);
+                                let center = sel_rect.center();
+                                let d = anchor - center;
+                                let text_pos = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
+                                let is_editing = editing_text && selected_text == Some(tid);
+                                let effective_alpha = (layer_color.a() as f32 * layer_opacity).clamp(0.0, 255.0) as u8;
+                                let draw_color = egui::Color32::from_rgba_unmultiplied(
+                                    layer_color.r(), layer_color.g(), layer_color.b(), effective_alpha);
+
+                                if let Some(galley) = text_galleys.get(&tid).cloned() {
+                                    let mut text_shape = egui::epaint::TextShape::new(text_pos, galley.clone(), draw_color);
+                                    text_shape.angle = angle_rad;
+
+                                    if is_editing {
+                                        let cursor_byte = text_cursor;
+                                        let sel_anchor_opt = text_sel_anchor;
+                                        let galley_to_canvas = |lp: egui::Pos2| -> egui::Pos2 {
+                                            text_pos + egui::vec2(lp.x * cos_a - lp.y * sin_a, lp.x * sin_a + lp.y * cos_a)
+                                        };
+                                        let glyph_pos_for = |byte_off: usize| -> egui::Pos2 {
+                                            let char_idx = content_snap[..byte_off.min(content_snap.len())].chars().count();
+                                            let mut ci = 0usize;
+                                            for row in &galley.rows {
+                                                for g in &row.glyphs {
+                                                    if ci == char_idx { return egui::pos2(g.pos.x, row.rect().min.y); }
+                                                    ci += 1;
+                                                }
+                                                if ci == char_idx { return egui::pos2(row.rect().max.x, row.rect().min.y); }
+                                            }
+                                            galley.rows.last().map(|r: &egui::epaint::text::PlacedRow| egui::pos2(r.rect().max.x, r.rect().min.y)).unwrap_or(egui::pos2(0.0, 0.0))
+                                        };
+                                        if let Some(anchor_sel) = sel_anchor_opt {
+                                            let (lo, hi) = (anchor_sel.min(cursor_byte), anchor_sel.max(cursor_byte));
+                                            let char_lo = content_snap[..lo.min(content_snap.len())].chars().count();
+                                            let char_hi = content_snap[..hi.min(content_snap.len())].chars().count();
+                                            let mut ci = 0usize;
+                                            for row in &galley.rows {
+                                                let row_start = ci; let row_end = ci + row.glyphs.len();
+                                                let sel_start = char_lo.max(row_start);
+                                                let sel_end = char_hi.min(row_end);
+                                                if sel_start < sel_end || (char_lo <= row_start && char_hi >= row_end) {
+                                                    let x0 = if sel_start <= row_start { row.rect().min.x } else { row.glyphs.get(sel_start - row_start).map(|g| g.pos.x).unwrap_or(row.rect().min.x) };
+                                                    let x1 = if sel_end >= row_end { row.rect().max.x } else { row.glyphs.get(sel_end - row_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x) };
+                                                    let corners = [
+                                                        galley_to_canvas(egui::pos2(x0, row.rect().min.y)),
+                                                        galley_to_canvas(egui::pos2(x1, row.rect().min.y)),
+                                                        galley_to_canvas(egui::pos2(x1, row.rect().max.y)),
+                                                        galley_to_canvas(egui::pos2(x0, row.rect().max.y)),
+                                                    ];
+                                                    painter.add(egui::Shape::convex_polygon(corners.to_vec(), egui::Color32::from_rgba_unmultiplied(100, 140, 255, 80), egui::Stroke::NONE));
+                                                }
+                                                ci = row_end;
+                                            }
+                                        }
+                                        let blink = (ctx.input(|i: &egui::InputState| i.time) * 2.0) as u32 % 2 == 0;
+                                        if blink {
+                                            let lp = glyph_pos_for(cursor_byte);
+                                            let row_h = galley.rows.iter()
+                                                .find(|r| r.rect().min.y <= lp.y && lp.y <= r.rect().max.y)
+                                                .map(|r| r.rect().height()).unwrap_or(font_size_screen);
+                                            painter.line_segment(
+                                                [galley_to_canvas(lp), galley_to_canvas(egui::pos2(lp.x, lp.y + row_h))],
+                                                egui::Stroke::new(2.0, layer_color));
+                                        }
+                                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+                                    }
+                                    painter.add(egui::Shape::Text(text_shape));
+                                }
+                            }
+                        }
                     }
                 }
+            }
+        }
+
+        if let Some(sel_tid) = self.selected_text {
+            if let Some(tl) = self.text_layers.iter().find(|t| t.id == sel_tid) {
+                let anchor = self.image_to_screen(tl.img_x, tl.img_y);
+                let sel_rect = tl.screen_rect(anchor, self.zoom);
+                let angle_rad = tl.rotation.to_radians();
+                TransformHandleSet::with_rotation(sel_rect, angle_rad)
+                    .draw(&painter, ColorPalette::BLUE_400);
             }
         }
 
         let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
         for dropped in dropped_files {
             if let Some(path) = &dropped.path {
-                if let Ok(img) = image::open(path) {
+                let img_opt = image::ImageReader::open(path)
+                    .ok()
+                    .and_then(|r| r.with_guessed_format().ok())
+                    .and_then(|r| r.decode().ok())
+                    .or_else(|| image::open(path).ok());
+                if let Some(img) = img_opt {
                     self.insert_image_layer(img, true);
                 }
             } else if let Some(bytes) = &dropped.bytes {
@@ -1066,123 +1228,6 @@ impl ImageEditor {
                 painter.text(text_pos + egui::vec2(1.0, 1.0), egui::Align2::LEFT_TOP, &label, egui::FontId::proportional(12.0), egui::Color32::from_black_alpha(160));
                 painter.text(text_pos, egui::Align2::LEFT_TOP, &label, egui::FontId::proportional(12.0), egui::Color32::WHITE);
             }
-        }
-
-        let editing_text = self.editing_text;
-        let selected_text = self.selected_text;
-        let text_cursor = self.text_cursor;
-        let text_sel_anchor = self.text_sel_anchor;
-        let zoom = self.zoom;
-        for i in 0..self.text_layers.len() {
-            let lid = self.text_layers[i].id;
-            let is_editing = editing_text && selected_text == Some(lid);
-            let is_selected = selected_text == Some(lid);
-            if !is_editing && !is_selected { continue; }
-
-            let (img_x, img_y) = (self.text_layers[i].img_x, self.text_layers[i].img_y);
-            let anchor: egui::Pos2 = self.image_to_screen(img_x, img_y);
-            let layer = &self.text_layers[i];
-            let font_size_screen: f32 = layer.font_size * zoom;
-            let angle_rad: f32 = layer.rotation.to_radians();
-            let (cos_a, sin_a) = (angle_rad.cos(), angle_rad.sin());
-            let sel_rect: egui::Rect = layer.screen_rect(anchor, zoom);
-            let font_family: egui::FontFamily = egui::FontFamily::Name(layer.font_family_name().into());
-            let font_id: egui::FontId = egui::FontId::new(font_size_screen, font_family);
-            let box_w_screen: f32 = layer.box_width.map(|w| w * zoom).unwrap_or(f32::INFINITY);
-            let layer_color = layer.color;
-            let layer_underline = layer.underline;
-            let content_snap = layer.content.clone();
-            let layer_font_size = layer.font_size;
-
-            let make_job = |text: &str| {
-                let mut job: egui::text::LayoutJob = egui::text::LayoutJob::default();
-                job.wrap.max_width = box_w_screen;
-                job.append(text, 0.0, egui::TextFormat {
-                    font_id: font_id.clone(), color: layer_color, italics: false,
-                    underline: if layer_underline { egui::Stroke::new((font_size_screen * 0.06).max(1.0), layer_color) } else { egui::Stroke::NONE },
-                    ..Default::default()
-                });
-                job
-            };
-
-            let center: egui::Pos2 = sel_rect.center();
-            let d: egui::Vec2 = anchor - center;
-            let text_pos: egui::Pos2 = center + egui::vec2(d.x * cos_a - d.y * sin_a, d.x * sin_a + d.y * cos_a);
-            let galley: std::sync::Arc<egui::Galley> = ui.painter().layout_job(make_job(&content_snap));
-            self.text_layers[i].rendered_height = (galley.rect.height() / zoom).max(layer_font_size);
-            let content_chars: Vec<char> = content_snap.chars().collect();
-            let mut char_ptr = 0usize;
-            let mut new_cached: Vec<String> = Vec::with_capacity(galley.rows.len());
-            for row in &galley.rows {
-                let n = row.glyphs.len();
-                let end = (char_ptr + n).min(content_chars.len());
-                new_cached.push(content_chars[char_ptr..end].iter().collect());
-                char_ptr = end;
-                if char_ptr < content_chars.len() && content_chars[char_ptr] == '\n' { char_ptr += 1; }
-            }
-            self.text_layers[i].cached_lines = new_cached;
-            let mut text_shape: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
-            text_shape.angle = angle_rad;
-            let mut text_shape_pan: egui::epaint::TextShape = egui::epaint::TextShape::new(text_pos, galley.clone(), layer_color);
-            text_shape_pan.angle = angle_rad;
-            text_shape.angle = angle_rad;
-
-            if is_editing {
-                let cursor_byte: usize = text_cursor;
-                let sel_anchor: Option<usize> = text_sel_anchor;
-
-                let glyph_pos_for = |byte_off: usize| -> egui::Pos2 {
-                    let char_idx: usize = content_snap[..byte_off.min(content_snap.len())].chars().count();
-                    let mut ci: usize = 0usize;
-                    for row in &galley.rows {
-                        for g in &row.glyphs {
-                            if ci == char_idx { return egui::pos2(g.pos.x, row.rect().min.y); }
-                            ci += 1;
-                        }
-                        if ci == char_idx { return egui::pos2(row.rect().max.x, row.rect().min.y); }
-                    }
-                    galley.rows.last().map(|r: &egui::epaint::text::PlacedRow| egui::pos2(r.rect().max.x, r.rect().min.y)).unwrap_or(egui::pos2(0.0, 0.0))
-                };
-
-                let galley_to_canvas = |lp: egui::Pos2| -> egui::Pos2 {
-                    text_pos + egui::vec2(lp.x * cos_a - lp.y * sin_a, lp.x * sin_a + lp.y * cos_a)
-                };
-
-                if let Some(anchor_sel) = sel_anchor {
-                    let (lo, hi) = (anchor_sel.min(cursor_byte), anchor_sel.max(cursor_byte));
-                    let char_lo: usize = content_snap[..lo.min(content_snap.len())].chars().count();
-                    let char_hi: usize = content_snap[..hi.min(content_snap.len())].chars().count();
-                    let mut ci: usize = 0usize;
-                    for row in &galley.rows {
-                        let row_start: usize = ci; let row_end: usize = ci + row.glyphs.len();
-                        let sel_start_in_row: usize = char_lo.max(row_start);
-                        let sel_end_in_row: usize = char_hi.min(row_end);
-                        if sel_start_in_row < sel_end_in_row || (char_lo <= row_start && char_hi >= row_end) {
-                            let x0: f32 = if sel_start_in_row <= row_start { row.rect().min.x } else { row.glyphs.get(sel_start_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().min.x) };
-                            let x1: f32 = if sel_end_in_row >= row_end { row.rect().max.x } else { row.glyphs.get(sel_end_in_row - row_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x) };
-                            let corners: [egui::Pos2; 4] = [
-                                galley_to_canvas(egui::pos2(x0, row.rect().min.y)),
-                                galley_to_canvas(egui::pos2(x1, row.rect().min.y)),
-                                galley_to_canvas(egui::pos2(x1, row.rect().max.y)),
-                                galley_to_canvas(egui::pos2(x0, row.rect().max.y)),
-                            ];
-                            painter.add(egui::Shape::convex_polygon(corners.to_vec(), egui::Color32::from_rgba_unmultiplied(100, 140, 255, 80), egui::Stroke::NONE));
-                        }
-                        ci = row_end;
-                    }
-                }
-
-                let blink: bool = (ctx.input(|i: &egui::InputState| i.time) * 2.0) as u32 % 2 == 0;
-                if blink {
-                    let lp: egui::Pos2 = glyph_pos_for(cursor_byte);
-                    let row_h: f32 = galley.rows.iter().find(|r| r.rect().min.y <= lp.y && lp.y <= r.rect().max.y).map(|r| r.rect().height()).unwrap_or(font_size_screen);
-                    painter.line_segment([galley_to_canvas(lp), galley_to_canvas(egui::pos2(lp.x, lp.y + row_h))], egui::Stroke::new(2.0, layer_color));
-                }
-                ctx.request_repaint_after(std::time::Duration::from_millis(500));
-                painter.add(egui::Shape::Text(text_shape));
-            }
-            if is_selected && !is_editing { painter.add(egui::Shape::Text(text_shape_pan)); }
-            if is_selected { TransformHandleSet::with_rotation(sel_rect, angle_rad).draw(&painter, ColorPalette::BLUE_400); }
         }
 
         let mouse_pos: Option<egui::Pos2> = ui.input(|i: &egui::InputState| i.pointer.latest_pos());
@@ -1474,7 +1519,7 @@ impl ImageEditor {
                     }
                 }
                 Tool::Text | Tool::Pan => {
-                    let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> = 
+                    let drag_data: Option<(THandle, egui::Pos2, f32, f32, f32, Option<f32>, Option<f32>, f32, f32)> =
                         self.text_drag.as_ref().map(|d| (d.handle, d.start, d.orig_img_x, d.orig_img_y, d.orig_font_size, d.orig_box_width, d.orig_box_height, d.orig_rotation, d.orig_rot_start_angle));
 
                     if let (Some(id), Some((handle, drag_start, orig_ix, orig_iy, orig_fs, orig_bw, orig_bh, orig_rot, orig_rot_start))) = (self.selected_text, drag_data) {
@@ -1508,6 +1553,14 @@ impl ImageEditor {
                                 THandle::Rotate => { let cur_angle: f32 = (pos - rot_center).angle(); layer.rotation = orig_rot + (cur_angle - orig_rot_start).to_degrees(); }
                             }
                         }
+                    } else if self.tool == Tool::Pan && self.image_drag.is_none() && self.text_drag.is_none() {
+                        let no_transform_drag = self.image_layer_transform_handles()
+                            .and_then(|h| h.hit_test(response.interact_pointer_pos().unwrap_or(pos))).is_none();
+                        let no_text_drag = self.text_transform_handles()
+                            .and_then(|h| h.hit_test(response.interact_pointer_pos().unwrap_or(pos))).is_none();
+                        if no_transform_drag && no_text_drag {
+                            self.pan += response.drag_delta();
+                        }
                     }
                 }
                 _ => {}
@@ -1517,7 +1570,7 @@ impl ImageEditor {
 
         if response.drag_stopped_by(egui::PointerButton::Primary) {
             match self.tool {
-                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.composite_dirty = true; self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
+                Tool::Brush | Tool::Eraser | Tool::Retouch => { self.stroke_points.clear(); self.is_dragging = false; self.stroke_backdrop = None; }
                 Tool::Text | Tool::Pan => { if self.text_drag.is_some() { self.composite_dirty = true; } self.text_drag = None; }
                 Tool::Crop => { self.crop_drag = None; self.crop_drag_orig = None; }
                 _ => {}
@@ -1646,6 +1699,7 @@ impl ImageEditor {
                     if let Some(hit) = self.hit_text_layer(pos) {
                         if self.selected_text != Some(hit) { self.commit_or_discard_active_text(); }
                         self.selected_text = Some(hit);
+                        self.selected_image_layer = None;
                         self.composite_dirty = true;
                         if let Some(linked_layer) = self.layers.iter().find(|l| l.linked_text_id == Some(hit)) {
                             self.active_layer_id = linked_layer.id;
@@ -1690,13 +1744,13 @@ impl ImageEditor {
         } else {
             (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
         };
-
         let accent: egui::Color32 = ColorPalette::BLUE_500;
         let screen_h = ctx.content_rect().height();
         let panel_max_h = (screen_h - 130.0).max(300.0);
         let canvas_origin: egui::Pos2 = ui.available_rect_before_wrap().min;
         let modal_pos: egui::Pos2 = canvas_origin + egui::vec2(10.0, 10.0);
 
+        self.ensure_brush_preview(ctx);
         let win_resp = egui::Window::new("Brush Settings")
             .collapsible(false)
             .resizable(true)
@@ -1726,6 +1780,39 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new(label).size(10.0).color(label_col).strong());
                                 });
                         };
+
+                        if let Some(preview_tid) = self.brush_preview_texture {
+                            let avail_w = ui.available_width();
+                            let preview_h = 66.0_f32;
+                            
+                            egui::Frame::new()
+                                .stroke(egui::Stroke::new(1.0, if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }))
+                                .corner_radius(6.0)
+                                .inner_margin(0) 
+                                .show(ui, |ui: &mut egui::Ui| {
+                                    let (preview_rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(avail_w, preview_h),
+                                        egui::Sense::hover(),
+                                    );
+                                    
+                                    let sized_tex = egui::load::SizedTexture::new(preview_tid, preview_rect.size());
+                                    ui.put(preview_rect, egui::Image::new(sized_tex).corner_radius(6.0));
+                                    let note = format!(
+                                        "{}  ·  {:.0}px  ·  {:.0}% opacity  ·  {:.0}% softness",
+                                        self.brush.shape.label(),
+                                        self.brush.size,
+                                        self.brush.opacity * 100.0,
+                                        self.brush.softness * 100.0,
+                                    );
+                                    ui.painter().text(
+                                        preview_rect.right_bottom() - egui::vec2(8.0, 6.0),
+                                        egui::Align2::RIGHT_BOTTOM,
+                                        &note,
+                                        egui::FontId::proportional(9.5),
+                                        ColorPalette::SLATE_600,
+                                    );
+                                });
+                        }
 
                         section_label(ui, "SHAPE");
                         egui::Frame::new()
@@ -1790,7 +1877,10 @@ impl ImageEditor {
                                                 lbl_col,
                                             );
                                         }
-                                        if resp.clicked() { self.brush.shape = *shape; }
+                                        if resp.clicked() {
+                                            self.brush.shape = *shape;
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     }
                                 });
                             });
@@ -1805,35 +1895,45 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new("Size").size(12.0).color(label_col)).on_hover_text("Brush diameter in pixels.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.add(egui::DragValue::new(&mut self.brush.size).range(1.0..=200.0).speed(0.5).suffix("px"));
-                                        ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.size, 1.0..=200.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Opacity").size(12.0).color(label_col)).on_hover_text("Maximum alpha of the overall stroke.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.opacity * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.opacity, 0.0..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Softness").size(12.0).color(label_col)).on_hover_text("0% = hard pixel-sharp edge.\n100% = fully feathered, airbrushed falloff.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.softness * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.softness, 0.0..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.softness, 0.0..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Flow").size(12.0).color(label_col)).on_hover_text("Per-stamp opacity. Low flow builds color gradually;\nhigh flow paints solidly each stamp.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.flow * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.flow, 0.01..=1.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.flow, 0.01..=1.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Spacing").size(12.0).color(label_col)).on_hover_text("Distance between consecutive stamp positions,\nas a fraction of brush diameter.\nLow = dense/continuous; high = dotted.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.0}%", self.brush.step * 100.0)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.step, 0.02..=3.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.step, 0.02..=3.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                             });
@@ -1850,14 +1950,18 @@ impl ImageEditor {
                                         ui.label(egui::RichText::new("Angle").size(12.0).color(label_col)).on_hover_text("Rotation of the stamp shape in degrees.");
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("{:.0}°", self.brush.angle)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.angle, -180.0..=180.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.angle, -180.0..=180.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                     ui.horizontal(|ui: &mut egui::Ui| {
                                         ui.label(egui::RichText::new("Angle Jitter").size(12.0).color(label_col)).on_hover_text("Max random rotation added per stamp. Creates organic, hand-drawn variation.");
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("±{:.0}°", self.brush.angle_jitter)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.angle_jitter, 0.0..=180.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.angle_jitter, 0.0..=180.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                     if needs_aspect {
@@ -1865,7 +1969,9 @@ impl ImageEditor {
                                             ui.label(egui::RichText::new("Aspect Ratio").size(12.0).color(label_col)).on_hover_text("Width-to-height ratio of the flat calligraphy nib.\n0.05 = very thin stroke; 1.0 = circular.");
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                 ui.label(egui::RichText::new(format!("{:.2}", self.brush.aspect_ratio)).size(11.0).color(text_col));
-                                                ui.add(egui::Slider::new(&mut self.brush.aspect_ratio, 0.05..=1.0).show_value(false));
+                                                if ui.add(egui::Slider::new(&mut self.brush.aspect_ratio, 0.05..=1.0).show_value(false)).changed() {
+                                                    self.brush_preview_cache_key = None;
+                                                }
                                             });
                                         });
                                     }
@@ -1882,7 +1988,9 @@ impl ImageEditor {
                                     ui.label(egui::RichText::new("Scatter").size(12.0).color(label_col)).on_hover_text("Max random offset (in pixels) added to each stamp position.\nCreates a spray or scattered feel.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(egui::RichText::new(format!("{:.1}px", self.brush.scatter)).size(11.0).color(text_col));
-                                        ui.add(egui::Slider::new(&mut self.brush.scatter, 0.0..=200.0).show_value(false));
+                                        if ui.add(egui::Slider::new(&mut self.brush.scatter, 0.0..=200.0).show_value(false)).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
 
@@ -1903,6 +2011,7 @@ impl ImageEditor {
                                             let (bg_c, txt_c) = if is_active { (accent, egui::Color32::WHITE) } else if matches!(theme, ThemeMode::Dark) { (ColorPalette::ZINC_700, ColorPalette::ZINC_300) } else { (ColorPalette::GRAY_200, ColorPalette::GRAY_700) };
                                             if styled_btn(ui, mode.label(), 11.0, egui::vec2(0.0, 20.0), bg_c, bg_c, txt_c) {
                                                 self.brush.texture_mode = *mode;
+                                                self.brush_preview_cache_key = None;
                                             }
                                         }
                                     });
@@ -1912,7 +2021,9 @@ impl ImageEditor {
                                         ui.label(egui::RichText::new("Texture Strength").size(12.0).color(label_col));
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                             ui.label(egui::RichText::new(format!("{:.0}%", self.brush.texture_strength * 100.0)).size(11.0).color(text_col));
-                                            ui.add(egui::Slider::new(&mut self.brush.texture_strength, 0.0..=1.0).show_value(false));
+                                            if ui.add(egui::Slider::new(&mut self.brush.texture_strength, 0.0..=1.0).show_value(false)).changed() {
+                                                self.brush_preview_cache_key = None;
+                                            }
                                         });
                                     });
                                 }
@@ -1921,7 +2032,9 @@ impl ImageEditor {
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Spray Mode").size(12.0).color(label_col)).on_hover_text("Replaces solid stamp with randomly-scattered individual dots\nfor an aerosol spray-can effect.");
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        ui.add(egui::Checkbox::new(&mut self.brush.spray_mode, ""));
+                                        if ui.add(egui::Checkbox::new(&mut self.brush.spray_mode, "")).changed() {
+                                            self.brush_preview_cache_key = None;
+                                        }
                                     });
                                 });
                                 if self.brush.spray_mode {
@@ -1968,6 +2081,7 @@ impl ImageEditor {
                                                 });
                                                 if btn.clicked() {
                                                     self.brush = preset.settings(self.brush.size);
+                                                    self.brush_preview_cache_key = None;
                                                 }
                                             });
                                         }
@@ -1975,16 +2089,16 @@ impl ImageEditor {
                                 }
                             });
 
-                        section_label(ui, "FAVORITES");
+                        section_label(ui, "FAVORITES (CTRL+1-9, 0)");
                         egui::Frame::new()
                             .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 8, bottom: 10 })
                             .show(ui, |ui: &mut egui::Ui| {
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new("Name:").size(12.0).color(label_col));
                                     ui.add(egui::TextEdit::singleline(&mut self.brush_fav_name)
-                                        .desired_width(200.0)
+                                        .desired_width(160.0)
                                         .font(egui::TextStyle::Body)
-                                        .hint_text("Enter a name for this brush...")
+                                        .hint_text("Name for this brush…")
                                     );
                                     let can_save = !self.brush_fav_name.trim().is_empty();
                                     ui.scope(|ui: &mut egui::Ui| {
@@ -2000,21 +2114,60 @@ impl ImageEditor {
                                         s.visuals.widgets.active.bg_fill = save_hover;
                                         s.visuals.widgets.active.weak_bg_fill = save_hover;
                                         s.visuals.override_text_color = Some(if can_save { egui::Color32::WHITE } else if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_500 });
-                                        if ui.add_enabled(can_save, egui::Button::new(egui::RichText::new("Save").size(12.0)).min_size(egui::vec2(54.0, 24.0))).clicked() {
+                                        if ui.add_enabled(can_save, egui::Button::new(egui::RichText::new("Save").size(12.0)).min_size(egui::vec2(48.0, 24.0))).clicked() {
                                             let name = self.brush_fav_name.trim().to_string();
                                             if let Some(existing) = self.brush_favorites.brushes.iter_mut().find(|b| b.name == name) {
                                                 existing.settings = self.brush.clone();
                                             } else {
-                                                self.brush_favorites.brushes.push(SavedBrush {
-                                                    name,
-                                                    settings: self.brush.clone(),
-                                                });
+                                                self.brush_favorites.brushes.push(SavedBrush { name, settings: self.brush.clone() });
                                             }
                                             self.brush_favorites.save();
                                             self.brush_fav_name.clear();
                                         }
                                     });
                                 });
+
+                                let mut do_export = false; let mut do_import = false;
+                                ui.horizontal(|ui: &mut egui::Ui| {
+                                    let (ebg, ehov, etxt) = theme_btn(theme);
+                                    if styled_btn(ui, "⬆ Export Favorites", 11.0, egui::vec2(150.0, 24.0), ebg, ehov, etxt) {
+                                        do_export = true;
+                                    }
+                                    if styled_btn(ui, "⬇ Import Favorites", 11.0, egui::vec2(150.0, 24.0), ebg, ehov, etxt) {
+                                        do_import = true;
+                                    }
+                                });
+
+                                if do_export {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .set_file_name("brush_favorites.json")
+                                        .add_filter("JSON", &["json"])
+                                        .save_file()
+                                    {
+                                        if let Ok(json) = serde_json::to_string_pretty(&self.brush_favorites.brushes) {
+                                            let _ = std::fs::write(path, json);
+                                        }
+                                    }
+                                }
+                                if do_import {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("JSON", &["json"])
+                                        .pick_file()
+                                    {
+                                        if let Ok(content) = std::fs::read_to_string(&path) {
+                                            if let Ok(imported) = serde_json::from_str::<Vec<SavedBrush>>(&content) {
+                                                for b in imported {
+                                                    if let Some(existing) = self.brush_favorites.brushes.iter_mut().find(|e| e.name == b.name) {
+                                                        existing.settings = b.settings;
+                                                    } else {
+                                                        self.brush_favorites.brushes.push(b);
+                                                    }
+                                                }
+                                                self.brush_favorites.save();
+                                            }
+                                        }
+                                    }
+                                }
 
                                 ui.add_space(6.0);
 
@@ -2023,6 +2176,7 @@ impl ImageEditor {
                                 } else {
                                     let mut to_load: Option<usize> = None;
                                     let mut to_delete: Option<usize> = None;
+                                    const MAX_HOTKEYS: usize = 10;
 
                                     for (idx, saved) in self.brush_favorites.brushes.iter().enumerate() {
                                         let row_fill = if matches!(theme, ThemeMode::Dark) {
@@ -2060,9 +2214,16 @@ impl ImageEditor {
                                                                 }
                                                             }
                                                         }
+                                                        if idx < MAX_HOTKEYS {
+                                                            let key_label = if idx == 9 { "0".to_string() } else { format!("{}", idx + 1) };
+                                                            let badge = egui::Rect::from_min_size(pr.min, egui::vec2(13.0, 13.0));
+                                                            painter.rect_filled(badge, egui::CornerRadius { nw: 4, ne: 0, sw: 0, se: 4 }, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 190));
+                                                            painter.text(badge.center(), egui::Align2::CENTER_CENTER, &key_label, egui::FontId::monospace(8.0), egui::Color32::from_rgba_unmultiplied(200, 220, 255, 240));
+                                                        }
                                                     }
+
                                                     ui.label(egui::RichText::new(&saved.name).size(12.0).color(text_col));
-                                                    let desc = format!("{} / {:.0}px / S{:.0}%", saved.settings.shape.label(), saved.settings.size, saved.settings.softness * 100.0, );
+                                                    let desc = format!("{} / {:.0}px / S{:.0}%", saved.settings.shape.label(), saved.settings.size, saved.settings.softness * 100.0);
                                                     ui.label(egui::RichText::new(desc).size(10.0).color(label_col));
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui: &mut egui::Ui| {
                                                         if styled_btn(ui, "Delete", 11.0, egui::vec2(52.0, 22.0), egui::Color32::from_rgb(180, 60, 60), egui::Color32::from_rgb(200, 80, 80), egui::Color32::WHITE) {
@@ -2079,6 +2240,7 @@ impl ImageEditor {
 
                                     if let Some(idx) = to_load {
                                         self.brush = self.brush_favorites.brushes[idx].settings.clone();
+                                        self.brush_preview_cache_key = None;
                                     }
                                     if let Some(idx) = to_delete {
                                         self.brush_favorites.brushes.remove(idx);
@@ -2152,8 +2314,22 @@ impl ImageEditor {
                     let layer_name = layer.name.clone();
                     let layer_visible = layer.visible;
                     let layer_locked  = layer.locked;
-                    let _layer_opacity = layer.opacity;
+                    let is_background = layer_kind == LayerKind::Background;
                     let row_fill = if is_active { bg_active } else { bg_row };
+
+                    if is_background && n > 1 {
+                        let sep_color = if is_dark {
+                            egui::Color32::from_rgb(80, 80, 100)
+                        } else {
+                            egui::Color32::from_rgb(180, 180, 200)
+                        };
+                        let (sep_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 1.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(sep_rect, 0.0, sep_color);
+                        ui.add_space(2.0);
+                    }
 
                     let row_resp = egui::Frame::new()
                         .fill(row_fill)
@@ -2163,14 +2339,24 @@ impl ImageEditor {
                         .show(ui, |ui| {
                             ui.set_min_width(ui.available_width() - 4.0);
                             ui.horizontal(|ui| {
-                                let eye = if layer_visible { "👁" } else { "🚫" };
-                                if ui.add(egui::Button::new(egui::RichText::new(eye).size(13.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
-                                    action = Some(LayerPanelAction::ToggleVisible(stack_idx));
+                                if is_background {
+                                    ui.add(egui::Label::new(egui::RichText::new("👁").size(13.0).color(text_mute))
+                                        .sense(egui::Sense::hover()))
+                                        .on_hover_text("Background layer is always visible");
+                                    ui.add(egui::Label::new(egui::RichText::new("🔒").size(12.0).color(text_mute))
+                                        .sense(egui::Sense::hover()))
+                                        .on_hover_text("Background layer cannot be moved or deleted");
+                                } else {
+                                    let eye = if layer_visible { "👁" } else { "🚫" };
+                                    if ui.add(egui::Button::new(egui::RichText::new(eye).size(13.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
+                                        action = Some(LayerPanelAction::ToggleVisible(stack_idx));
+                                    }
+                                    let lock_icon = if layer_locked { "🔒" } else { "🔓" };
+                                    if ui.add(egui::Button::new(egui::RichText::new(lock_icon).size(12.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
+                                        action = Some(LayerPanelAction::ToggleLocked(stack_idx));
+                                    }
                                 }
-                                let lock_icon = if layer_locked { "🔒" } else { "🔓" };
-                                if ui.add(egui::Button::new(egui::RichText::new(lock_icon).size(12.0)).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
-                                    action = Some(LayerPanelAction::ToggleLocked(stack_idx));
-                                }
+
                                 let kind_badge = match layer_kind {
                                     LayerKind::Background => ("BG", egui::Color32::from_rgb(80, 140, 80)),
                                     LayerKind::Raster => ("R",  egui::Color32::from_rgb(80, 100, 180)),
@@ -2187,7 +2373,7 @@ impl ImageEditor {
 
                                 ui.add_space(2.0);
 
-                                if self.layer_rename_id == Some(layer_id) {
+                                if !is_background && self.layer_rename_id == Some(layer_id) {
                                     let rename_resp = ui.add(
                                         egui::TextEdit::singleline(&mut self.layer_rename_buf)
                                             .desired_width(ui.available_width() - 28.0)
@@ -2200,21 +2386,30 @@ impl ImageEditor {
                                         action = Some(LayerPanelAction::CommitRename(stack_idx));
                                     }
                                 } else {
+                                    let name_color = if is_active {
+                                        egui::Color32::WHITE
+                                    } else if is_background {
+                                        text_mute
+                                    } else {
+                                        text_prim
+                                    };
+                                    let rich = egui::RichText::new(&layer_name).size(12.0).color(name_color);
+                                    let rich = if is_background { rich.italics() } else { rich };
                                     let name_resp = ui.add(
-                                        egui::Label::new(egui::RichText::new(&layer_name).size(12.0).color(if is_active { egui::Color32::WHITE } else { text_prim }))
+                                        egui::Label::new(rich)
                                             .truncate()
                                             .sense(egui::Sense::click())
                                     );
                                     if name_resp.clicked() {
                                         action = Some(LayerPanelAction::Select(stack_idx));
                                     }
-                                    if name_resp.double_clicked() {
+                                    if !is_background && name_resp.double_clicked() {
                                         action = Some(LayerPanelAction::StartRename(stack_idx, layer_name.clone()));
                                     }
                                 }
 
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if n > 1 {
+                                    if !is_background && n > 1 {
                                         if ui.add(egui::Button::new(egui::RichText::new("🗑").size(11.0).color(if is_active { egui::Color32::from_rgb(255, 120, 120) } else { text_mute })).frame(false).min_size(egui::vec2(18.0, 18.0))).clicked() {
                                             action = Some(LayerPanelAction::Delete(stack_idx));
                                         }
@@ -2226,37 +2421,58 @@ impl ImageEditor {
                     if row_resp.response.clicked() && action.is_none() {
                         action = Some(LayerPanelAction::Select(stack_idx));
                     }
-                    if row_resp.response.drag_started() {
+                    if !is_background && row_resp.response.drag_started() {
                         self.layer_drag_src = Some(stack_idx);
                     }
                     if let (Some(drag_src), Some(pp)) = (self.layer_drag_src, pointer_pos) {
                         if row_resp.response.rect.contains(pp) && drag_src != stack_idx {
-                            drop_indicator = Some(stack_idx);
+                            if stack_idx > 0 {
+                                drop_indicator = Some(stack_idx);
+                            }
                         }
                     }
 
-                    row_resp.response.context_menu(|ui| {
-                        if ui.button("Rename").clicked() {
-                            action = Some(LayerPanelAction::StartRename(stack_idx, layer_name.clone()));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button("Duplicate").clicked() {
-                            action = Some(LayerPanelAction::Duplicate(stack_idx));
-                            ui.close();
-                        }
-                        if n > 1 {
-                            if ui.add_enabled(stack_idx > 0, egui::Button::new("Merge Down")).clicked() {
-                                action = Some(LayerPanelAction::MergeDown(stack_idx));
+                    if is_background {
+                        row_resp.response.context_menu(|ui| {
+                            ui.add_enabled(false, egui::Button::new(
+                                egui::RichText::new("Background layer").size(11.0).color(text_mute)
+                            ));
+                            ui.separator();
+                            if ui.button("Duplicate as Raster Layer").clicked() {
+                                action = Some(LayerPanelAction::Duplicate(stack_idx));
                                 ui.close();
                             }
-                        }
-                        ui.separator();
-                        if ui.add_enabled(n > 1, egui::Button::new(egui::RichText::new("Delete").color(danger))).clicked() {
-                            action = Some(LayerPanelAction::Delete(stack_idx));
-                            ui.close();
-                        }
-                    });
+                            if ui.button("Flatten Image").clicked() {
+                                action = Some(LayerPanelAction::Flatten);
+                                ui.close();
+                            }
+                        });
+                    } else {
+                        row_resp.response.context_menu(|ui| {
+                            if ui.button("Rename").clicked() {
+                                action = Some(LayerPanelAction::StartRename(stack_idx, layer_name.clone()));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("Duplicate").clicked() {
+                                action = Some(LayerPanelAction::Duplicate(stack_idx));
+                                ui.close();
+                            }
+                            if n > 1 {
+                                let can_ctx_merge = stack_idx > 0
+                                    && !matches!(self.layers.get(stack_idx.saturating_sub(1)).map(|l| l.kind), Some(LayerKind::Text | LayerKind::Image));
+                                if ui.add_enabled(can_ctx_merge, egui::Button::new("Merge Down")).clicked() {
+                                    action = Some(LayerPanelAction::MergeDown(stack_idx));
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            if ui.add_enabled(n > 1, egui::Button::new(egui::RichText::new("Delete").color(danger))).clicked() {
+                                action = Some(LayerPanelAction::Delete(stack_idx));
+                                ui.close();
+                            }
+                        });
+                    }
 
                     ui.add_space(1.0);
                 }
@@ -2267,7 +2483,7 @@ impl ImageEditor {
 
                 if pointer_released {
                     if let (Some(src), Some(dst)) = (self.layer_drag_src, drop_indicator) {
-                        if src != dst {
+                        if src != dst && src > 0 && dst > 0 {
                             action = Some(LayerPanelAction::Reorder(src, dst));
                         }
                     }
@@ -2321,6 +2537,7 @@ impl ImageEditor {
                             self.layers[idx].locked = !self.layers[idx].locked;
                         }
                         LayerPanelAction::Delete(idx) => {
+                            if self.layers[idx].kind == LayerKind::Background { return; }
                             let id = self.layers[idx].id;
                             if self.active_layer_id == id {
                                 self.active_layer_id = self.layers[if idx > 0 { idx - 1 } else { 1.min(self.layers.len()-1) }].id;
@@ -2355,6 +2572,9 @@ impl ImageEditor {
                             self.active_layer_id = self.layers[idx].id;
                             self.merge_down();
                         }
+                        LayerPanelAction::Flatten => {
+                            self.flatten_all_layers();
+                        }
                         LayerPanelAction::Reorder(src, dst) => {
                             self.push_undo();
                             self.layers.swap(src, dst);
@@ -2375,45 +2595,54 @@ impl ImageEditor {
                 .inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 6 })
                 .fill(bg_deep)
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Opacity").size(11.0).color(text_mute));
-                    let old_opacity = self.layers[idx].opacity;
-                    let mut opacity_pct = (old_opacity * 100.0).round() as i32;
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().slider_width = panel_w - 80.0;
-                        let resp = ui.add(egui::Slider::new(&mut opacity_pct, 0..=100).show_value(false));
-                        if resp.changed() {
-                            self.layers[idx].opacity = opacity_pct as f32 / 100.0;
-                            self.dirty = true;
-                        }
-                        if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
-                            self.composite_dirty = true;
-                        }
-                        ui.label(egui::RichText::new(format!("{}%", opacity_pct)).size(11.0).color(text_prim));
-                    });
+                    let is_bg_layer = self.layers[idx].kind == LayerKind::Background;
+                    ui.scope(|ui| {
+                        if is_bg_layer { ui.disable(); }
 
-                    ui.add_space(4.0);
-
-                    ui.label(egui::RichText::new("Blend Mode").size(11.0).color(text_mute));
-                    let current_blend = self.layers[idx].blend_mode;
-                    egui::ComboBox::from_id_salt("layer_blend_mode")
-                        .selected_text(egui::RichText::new(current_blend.label()).size(12.0))
-                        .width(panel_w - 18.0)
-                        .show_ui(ui, |ui| {
-                            for &mode in BlendMode::all() {
-                                if ui.selectable_label(current_blend == mode, mode.label()).clicked() {
-                                    self.layers[idx].blend_mode = mode;
-                                    self.composite_dirty = true;
-                                    self.dirty = true;
-                                }
+                        ui.label(egui::RichText::new("Opacity").size(11.0).color(text_mute));
+                        let old_opacity = self.layers[idx].opacity;
+                        let mut opacity_pct = if is_bg_layer { 100 } else { (old_opacity * 100.0).round() as i32 };
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().slider_width = panel_w - 80.0;
+                            let resp = ui.add(egui::Slider::new(&mut opacity_pct, 0..=100).show_value(false));
+                            if resp.changed() {
+                                self.layers[idx].opacity = opacity_pct as f32 / 100.0;
+                                self.dirty = true;
                             }
+                            if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
+                                self.composite_dirty = true;
+                            }
+                            ui.label(egui::RichText::new(format!("{}%", opacity_pct)).size(11.0).color(text_prim));
                         });
+
+                        ui.add_space(4.0);
+
+                        ui.label(egui::RichText::new("Blend Mode").size(11.0).color(text_mute));
+                        let current_blend = self.layers[idx].blend_mode;
+                        egui::ComboBox::from_id_salt("layer_blend_mode")
+                            .selected_text(egui::RichText::new(
+                                if is_bg_layer { "Normal" } else { current_blend.label() }
+                            ).size(12.0))
+                            .width(panel_w - 18.0)
+                            .show_ui(ui, |ui| {
+                                for &mode in BlendMode::all() {
+                                    if ui.selectable_label(current_blend == mode, mode.label()).clicked() {
+                                        self.layers[idx].blend_mode = mode;
+                                        self.composite_dirty = true;
+                                        self.dirty = true;
+                                    }
+                                }
+                            });
+                    });
 
                     ui.add_space(6.0);
 
                     ui.horizontal_wrapped(|ui| {
-                        let can_up   = idx < self.layers.len() - 1;
-                        let can_down = idx > 0;
-                        let can_merge = idx > 0 && !matches!(self.layers[idx - 1].kind, LayerKind::Text | LayerKind::Image) && !matches!(self.layers[idx].kind, LayerKind::Image);
+                        let is_bg = self.layers[idx].kind == LayerKind::Background;
+                        let can_up = !is_bg && idx < self.layers.len() - 1;
+                        let can_down = !is_bg && idx > 1;
+                        let can_merge = !is_bg && idx > 0
+                            && !matches!(self.layers[idx - 1].kind, LayerKind::Text | LayerKind::Image);
 
                         if ui.add_enabled(can_up, egui::Button::new(egui::RichText::new("⬆").size(11.0)).min_size(egui::vec2(28.0, 24.0))).on_hover_text("Move layer up").clicked() {
                             self.push_undo();
@@ -2430,12 +2659,36 @@ impl ImageEditor {
                         if ui.add_enabled(can_merge, egui::Button::new(egui::RichText::new("⬇ Merge").size(11.0)).min_size(egui::vec2(60.0, 24.0))).on_hover_text("Merge down").clicked() {
                             self.merge_down();
                         }
-                        if ui.add_enabled(self.layers.len() > 1, egui::Button::new(egui::RichText::new("Flat").size(11.0)).min_size(egui::vec2(46.0, 24.0))).on_hover_text("Flatten all layers").clicked() {
+                        if ui.add_enabled(self.layers.len() > 1, egui::Button::new(egui::RichText::new("Flatten All Layers").size(11.0)).min_size(egui::vec2(46.0, 24.0))).on_hover_text("Flatten all layers").clicked() {
                             self.flatten_all_layers();
                         }
                     });
                 });
         }
+    }
+
+    pub(super) fn ensure_brush_preview(&mut self, ctx: &egui::Context) {
+        let is_dark = ctx.style().visuals.dark_mode;
+        let key = (self.brush.clone(), egui::Color32::BLACK, is_dark);
+        if let Some(ref cached) = self.brush_preview_cache_key {
+            if *cached == key && self.brush_preview_texture.is_some() { return; }
+        }
+        let pw = 300u32; let ph = 66u32;
+        let original_color = self.color; self.color = egui::Color32::BLACK;
+        let pixels = self.render_brush_preview_to_pixels(pw, ph); self.color = original_color;
+        let ci = egui::ColorImage {size: [pw as usize, ph as usize], source_size: egui::vec2(pw as f32, ph as f32), pixels};
+        let opts = egui::TextureOptions {
+            magnification: egui::TextureFilter::Linear, minification:  egui::TextureFilter::Linear,
+            ..Default::default()
+        };
+        if let Some(tid) = self.brush_preview_texture {
+            ctx.tex_manager().write().set(tid, egui::epaint::ImageDelta::full(ci, opts));
+        } else {
+            self.brush_preview_texture = Some(
+                ctx.tex_manager().write().alloc("brush_preview".into(), ci.into(), opts),
+            );
+        }
+        self.brush_preview_cache_key = Some(key);
     }
 }
 
@@ -2449,6 +2702,7 @@ enum LayerPanelAction {
     Duplicate(usize),
     MergeDown(usize),
     Reorder(usize, usize),
+    Flatten,
 }
 
 fn layer_icon_btn(ui: &mut egui::Ui, text: &str, tooltip: &str, bg: egui::Color32, fg: egui::Color32, _dark: bool) -> bool {
@@ -2504,7 +2758,7 @@ fn filter_action_row(ui: &mut egui::Ui, theme: ThemeMode, preview_active: bool) 
 }
 
 fn gradient_slider_ui(ui: &mut egui::Ui, value: &mut f32, min: f32, max: f32, left_col: egui::Color32, right_col: egui::Color32, left_label: &str,
-    right_label: &str, fmt: impl Fn(f32) -> String, drag_input: bool, drag_display_scale: f32, drag_suffix: &str) -> bool 
+    right_label: &str, fmt: impl Fn(f32) -> String, drag_input: bool, drag_display_scale: f32, drag_suffix: &str) -> bool
 {
     let mut changed: bool = false;
     let range: f32 = (max - min).max(1e-6_f32);

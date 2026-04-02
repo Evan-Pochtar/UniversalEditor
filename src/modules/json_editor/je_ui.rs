@@ -398,7 +398,6 @@ impl JsonEditor {
                 let div1_x = cx + col_key_w;
                 ui.painter().line_segment([egui::pos2(div1_x, row_rect.min.y), egui::pos2(div1_x, row_rect.max.y)], egui::Stroke::new(1.0, c_border(dark)));
                 ui.painter().text(egui::pos2(div1_x + 4.0, cy), egui::Align2::LEFT_CENTER, node.val_type.type_label(), egui::FontId::proportional(11.0), c_muted(dark));
-
                 let div2_x = div1_x + col_type_w;
                 ui.painter().line_segment([egui::pos2(div2_x, row_rect.min.y), egui::pos2(div2_x, row_rect.max.y)], egui::Stroke::new(1.0, c_border(dark)));
 
@@ -411,17 +410,23 @@ impl JsonEditor {
                             let er = egui::Rect::from_min_size(egui::pos2(val_x, row_rect.min.y + 2.0), egui::vec2(col_val_w - 4.0, edit_h));
                             let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(er).layout(*ui.layout()));
                             child_ui.set_clip_rect(er.intersect(ui.clip_rect()));
+                            let buffer_before = ec.buffer.clone();
                             let scroll_resp = egui::ScrollArea::vertical().id_salt("je_str_edit_scroll").max_height(edit_h).auto_shrink([false, false])
                                 .show(&mut child_ui, |ui| {
-                                    ui.add(egui::TextEdit::multiline(&mut ec.buffer).desired_width(col_val_w - 8.0).desired_rows(1).font(egui::FontId::proportional(12.0)))
+                                    ui.add(egui::TextEdit::multiline(&mut ec.buffer)
+                                        .desired_width(col_val_w - 8.0)
+                                        .desired_rows(1)
+                                        .font(egui::FontId::proportional(12.0)))
                                 });
+                            
                             let r = scroll_resp.inner;
-                            if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift) {
-                                if ec.buffer.ends_with('\n') { ec.buffer.pop(); }
+                            if r.has_focus() && child_ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift) {
+                                ec.buffer = buffer_before; 
                                 commit_edit = true;
-                            } else if r.lost_focus() && !ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                                r.surrender_focus();
+                            } else if r.lost_focus() && !child_ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
                                 commit_edit = true;
-                            } else if r.has_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                            } else if r.has_focus() && child_ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
                                 commit_edit = true;
                             }
                         } else {

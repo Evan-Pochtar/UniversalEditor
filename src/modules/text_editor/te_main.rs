@@ -27,9 +27,12 @@ pub struct TextEditor {
     pub(super) last_cursor_range: Option<egui::text::CCursorRange>,
     pub(super) pending_cursor_pos: Option<usize>,
     pub(super) content_version: u64,
-    pub(super) cached_word_count: usize,
-    pub(super) cached_char_count: usize,
-    pub(super) cached_counts_version: u64,
+    pub(super) show_word_count_modal: bool,
+    pub(super) show_word_count_in_info: bool,
+    pub(super) modal_word_count: usize,
+    pub(super) modal_char_count: usize,
+    pub(super) modal_char_no_spaces: usize,
+    pub(super) word_count_display_version: u64,
     pub(super) line_height_cache: Option<LineHeightCache>,
     pub(super) rename_modal_open: bool,
     pub(super) rename_buffer: String,
@@ -50,9 +53,12 @@ impl TextEditor {
             last_cursor_range: None,
             pending_cursor_pos: None,
             content_version: 0,
-            cached_word_count: 0,
-            cached_char_count: 0,
-            cached_counts_version: u64::MAX,
+            show_word_count_modal: false,
+            show_word_count_in_info: false,
+            modal_word_count: 0,
+            modal_char_count: 0,
+            modal_char_no_spaces: 0,
+            word_count_display_version: u64::MAX,
             line_height_cache: None,
             rename_modal_open: false,
             rename_buffer: String::new(),
@@ -80,9 +86,12 @@ impl TextEditor {
             last_cursor_range: None,
             pending_cursor_pos: None,
             content_version: 0,
-            cached_word_count: 0,
-            cached_char_count: 0,
-            cached_counts_version: u64::MAX,
+            show_word_count_modal: false,
+            show_word_count_in_info: false,
+            modal_word_count: 0,
+            modal_char_count: 0,
+            modal_char_no_spaces: 0,
+            word_count_display_version: u64::MAX,
             line_height_cache: None,
             rename_modal_open: false,
             rename_buffer: String::new(),
@@ -150,7 +159,9 @@ impl EditorModule for TextEditor {
 
     fn get_menu_contributions(&self) -> MenuContribution {
         MenuContribution {
-            file_items: Vec::new(),
+            file_items: vec![
+                (MenuItem { label: "Word Count".to_string(), shortcut: None, enabled: true }, MenuAction::Custom("WordCount".to_string())),
+            ],
             edit_items: vec![
                 (MenuItem { label: "Undo".to_string(), shortcut: Some("Ctrl+Z".to_string()), enabled: false }, MenuAction::Undo),
                 (MenuItem { label: "Redo".to_string(), shortcut: Some("Ctrl+Y".to_string()), enabled: false }, MenuAction::Redo),
@@ -162,7 +173,18 @@ impl EditorModule for TextEditor {
         }
     }
 
-    fn handle_menu_action(&mut self, _action: MenuAction) -> bool { false }
+    fn handle_menu_action(&mut self, action: MenuAction) -> bool {
+        if let MenuAction::Custom(ref v) = action {
+            if v == "WordCount" {
+                self.modal_word_count = self.count_words();
+                self.modal_char_count = self.content.chars().count();
+                self.modal_char_no_spaces = self.content.chars().filter(|c| !c.is_whitespace()).count();
+                self.show_word_count_modal = true;
+                return true;
+            }
+        }
+        false
+    }
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, show_toolbar: bool, show_file_info: bool) {
         self.render_editor_ui(ui, ctx, show_toolbar, show_file_info);

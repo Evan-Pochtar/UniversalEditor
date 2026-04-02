@@ -91,10 +91,9 @@ impl TextEditor {
         }
 
         if show_file_info {
-            if self.cached_counts_version != self.content_version {
-                self.cached_char_count = self.count_visible_chars();
-                self.cached_word_count = self.count_words();
-                self.cached_counts_version = self.content_version;
+            if self.show_word_count_in_info && self.word_count_display_version != self.content_version {
+                self.modal_word_count = self.count_words();
+                self.word_count_display_version = self.content_version;
             }
             ui.horizontal(|ui: &mut egui::Ui| {
                 let is_dark: bool = ui.visuals().dark_mode;
@@ -147,10 +146,10 @@ impl TextEditor {
                     ("Saved", if is_dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 })
                 };
                 ui.label(egui::RichText::new(status).color(color));
-                ui.separator();
-                ui.label(format!("Characters: {}", self.cached_char_count));
-                ui.separator();
-                ui.label(format!("Words: {}", self.cached_word_count));
+                if self.show_word_count_in_info {
+                    ui.separator();
+                    ui.label(format!("Words: {}", self.modal_word_count));
+                }
             });
 
             if self.rename_modal_open {
@@ -227,6 +226,49 @@ impl TextEditor {
             if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Q) { self.format_blockquote(); }
             if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::L) { self.insert_checklist_item(); }
         });
+
+        if self.show_word_count_modal {
+            let (bg, border, text, muted) = if ui.visuals().dark_mode {
+                (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::SLATE_200, ColorPalette::ZINC_400)
+            } else {
+                (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_800, ColorPalette::GRAY_500)
+            };
+            crate::style::draw_modal_overlay(ctx, "wc_overlay", 160);
+            let mut open = self.show_word_count_modal;
+            let win_resp = egui::Window::new("Word Count")
+                .collapsible(false).resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(24.0))
+                .open(&mut open)
+                .order(egui::Order::Tooltip)
+                .show(ctx, |ui| {
+                    let row = |ui: &mut egui::Ui, label: &str, value: usize| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(label).size(13.0).color(muted));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(egui::RichText::new(value.to_string()).size(13.0).color(text));
+                            });
+                        });
+                    };
+                    row(ui, "Words", self.modal_word_count);
+                    ui.add_space(4.0);
+                    row(ui, "Characters", self.modal_char_count);
+                    ui.add_space(4.0);
+                    row(ui, "Characters (no spaces)", self.modal_char_no_spaces);
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                    ui.checkbox(&mut self.show_word_count_in_info,
+                        egui::RichText::new("Display word count in file information").size(12.0).color(text));
+                });
+            if let Some(r) = win_resp {
+                let clicked_outside = ctx.input(|i| {
+                    i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))
+                });
+                if clicked_outside { open = false; }
+            }
+            self.show_word_count_modal = open;
+        }
     }
 
     pub(super) fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {

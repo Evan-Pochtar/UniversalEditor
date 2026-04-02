@@ -184,3 +184,44 @@
 - **IMG EDITOR**: Text and imported images now can be used with the "Select/pan" tool
 - **IMG EDITOR**: Moving imported image no longer moves background canvas
 - **IMG EDITOR**: No longer allows for both imported image AND textbox to be selected at once
+
+## V0.0.7
+
+#### Features
+- **IMG EDITOR**: Improved quality of edited and exported imported images/text
+- **IMG EDITOR**: "Place Image" renamed to "Import to Canvas" and moved to top bar under "File"
+- **IMG EDITOR**: Improved paper and rough texture in the brush settings
+- **IMG EDITOR**: Favorite custom brushes now have keyboard shortcuts similar to favorite color (Ctrl+1-9, Ctrl+0)
+- **IMG EDITOR**: Custom brushes can now be exported and imported
+- **IMG EDITOR**: Added a brush preview to brush settings
+- **IMG EDITOR**: Can now save layer and brush settings per image, with option to delete in main menu
+- **IMG EDITOR**: Added button to rasterize text box into rasterized layer
+- **TEXT EDITOR**: Removing constantly updating character count, moved to top toolbar under "File", option named "Word Count"
+- **GENERAL**: Added "About" modal in the main menu to describe the current state of the project
+- **GENERAL**: Added keyboard shortcut to close sidebar (Ctrl+Backslash)
+- **GENERAL**: Sidebar "Recent Files" list now differentiates similarly named files that are located in different folders
+- **GENERAL**: Removed FPS counter to improve performance
+
+#### Debugging
+- **JSON EDITOR**: Newlines no longer display on string preview in the tree view
+- **IMG EDITOR**: Jpeg and JPG's now load the same into the canvas
+- **IMG EDITOR**: "Fit" now properly fits the screen to small canvases
+- **IMG EDITOR**: Can now select and see the selection bounds of textbox's even when hiding beneath an image layer
+- **IMG EDITOR**: In a rasterized layer, the brush no longer fades to dark, and fades depending on the background instead
+- **IMG EDITOR**: Brush, eraser, and retouch no longer lag on large images while in rasterized layers
+- **IMG EDITOR**: Can no longer move the background layer
+- **IMG EDITOR**: Rasterized images are no longer invisible
+- **IMG EDITOR**: Cropped layer drawings are no longer included in the final image
+- **IMG EDITOR**: Pan tool now properly allows for panning across the image when not selected
+- **IMG EDITOR**: Vibrance calculation now no longer sometimes adds a red "hue" or outline
+- **IMG EDITOR**: Image-Wide top bar filters now work on imported images
+- **IMG EDITOR**: Eyedrop tool now has the same performance no matter the image size
+- **IMG EDITOR**: Image layers can now be merged with rasterized layers
+- **IMG EDITOR**: Can now use the top toolbar to rotate images and text
+- **IMG EDITOR**: Performance improvements with sharpen and blur retouch tools on large images
+- **IMG EDITOR**: On large images, there is no longer a slight lag at the end of brush strokes, eraser strokes, or retouch strokes
+- **IMG EDITOR**: Can now use the eyedropper on imported image layers
+- **IMG EDITOR**: Textbox no longer becomes invisible after merging into a rasterized or background layer
+- **IMG2IMG CONVERTER**: JPG's now load properly into the input space
+- **GENERAL**: File names no longer go outside of sidebar buttons bounds
+- **GENERAL**: In Converters with no view items, as well as the main menu, there are no longer double separators

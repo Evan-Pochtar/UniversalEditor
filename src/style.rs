@@ -389,16 +389,18 @@ pub fn sidebar_item(ui: &mut egui::Ui, label: &str, icon: &str, theme: ThemeMode
             ColorPalette::GRAY_800,
         ),
     };
+
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width() - 8.0, 32.0),
         egui::Sense::click(),
     );
 
+    let painter = ui.painter_at(rect);
     let bg_color = if response.hovered() { hover_bg } else { normal_bg };
-    ui.painter().rect_filled(rect, 4.0, bg_color);
+    painter.rect_filled(rect, 4.0, bg_color);
 
     let icon_pos = rect.left_center() + egui::vec2(12.0, 0.0);
-    ui.painter().text(
+    painter.text(
         icon_pos,
         egui::Align2::LEFT_CENTER,
         icon,
@@ -407,7 +409,7 @@ pub fn sidebar_item(ui: &mut egui::Ui, label: &str, icon: &str, theme: ThemeMode
     );
 
     let text_pos = rect.left_center() + egui::vec2(32.0, 0.0);
-    ui.painter().text(
+    painter.text(
         text_pos,
         egui::Align2::LEFT_CENTER,
         label,

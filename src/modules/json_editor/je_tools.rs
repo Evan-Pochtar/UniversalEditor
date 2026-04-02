@@ -17,7 +17,10 @@ impl ValType {
             ValType::Null => "null".into(),
             ValType::Bool(b) => if *b { "true" } else { "false" }.into(),
             ValType::Number(n) => truncate_preview(n, 24),
-            ValType::Str(s) => format!("\"{}\"", truncate_preview(s, 80)),
+            ValType::Str(s) => {
+                let flat_str = s.replace('\n', "\\n").replace('\r', "\\r");
+                format!("\"{}\"", truncate_preview(&flat_str, 80))
+            },
             ValType::Array(n) => format!("[{} item{}]", n, if *n == 1 { "" } else { "s" }),
             ValType::Object(n) => format!("{{{} key{}}}", n, if *n == 1 { "" } else { "s" }),
         }
@@ -351,7 +354,7 @@ pub fn parse_cell_value(raw: &str) -> Value {
         _ => {
             if let Ok(n) = serde_json::from_str::<serde_json::Number>(t) { return Value::Number(n); }
             if let Ok(v) = serde_json::from_str::<Value>(t) { return v; }
-            Value::String(t.to_string())
+            Value::String(raw.to_string()) 
         }
     }
 }
@@ -361,7 +364,7 @@ pub fn parse_edit_value(raw: &str) -> Value {
     if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
         return Value::String(t[1..t.len() - 1].to_string());
     }
-    parse_cell_value(t)
+    parse_cell_value(raw)
 }
 
 pub fn expand_recursive(root: &Value, scope: &[String], path: &[String], max_depth: u32, expanded: &mut HashSet<String>,) {
