@@ -2,9 +2,6 @@
 
 ## General
 
-- [ ] Create Main Menu
-  - [ ] Add way to show more than 3 converters and screen (either scrollbar or list vertically)
-- [ ] Improve look of patch notes and settings modal
 - [ ] Editable keyboard shortcuts per page
 
 ## Screens

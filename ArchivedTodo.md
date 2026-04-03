@@ -10,6 +10,7 @@
   - [x] Settings per page
   - [x] Way to go back to main menu
   - [x] Add About Page
+  - [x] Add way to show more than 3 converters and screen (either scrollbar or list vertically)
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -20,6 +21,7 @@
 - [x] Allow for right click, open with universal_editor on windows
 - [x] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [x] Add way to differentiate between same name files in "recent files" list
+- [x] Improve look of patch notes and settings modal
 
 ## Screens
 

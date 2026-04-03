@@ -225,3 +225,11 @@
 - **IMG2IMG CONVERTER**: JPG's now load properly into the input space
 - **GENERAL**: File names no longer go outside of sidebar buttons bounds
 - **GENERAL**: In Converters with no view items, as well as the main menu, there are no longer double separators
+
+## V0.0.8
+
+#### Features
+- **GENERAL**: Improved look of settings and patch notes modal
+- **GENERAL**: New way to show more than 3 screens and converters on main menu (for future additions)
+
+#### Debugging

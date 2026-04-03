@@ -590,6 +590,48 @@ pub fn toolbar_toggle_btn(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, 
     }).inner
 }
 
+pub fn main_menu_modal(ctx: &egui::Context, id: &str, theme: ThemeMode, min_width: f32, content: impl FnOnce(&mut egui::Ui)) -> bool {
+    draw_modal_overlay(ctx, &format!("{}_ov", id), 160);
+    let is_dark = matches!(theme, ThemeMode::Dark);
+    let (bg, border) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700) } else { (egui::Color32::WHITE, ColorPalette::GRAY_200) };
+    let resp = egui::Window::new(id)
+        .title_bar(false).collapsible(false).resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .min_size(egui::vec2(min_width, 0.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(12.0).inner_margin(0.0))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| content(ui));
+    resp.map_or(false, |r| ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))))
+}
+
+pub fn main_menu_modal_header(ui: &mut egui::Ui, title: &str, subtitle: &str, theme: ThemeMode) -> bool {
+    let is_dark = matches!(theme, ThemeMode::Dark);
+    let hdr_bg = if is_dark { egui::Color32::from_rgb(18, 18, 24) } else { ColorPalette::GRAY_50 };
+    let (title_col, sub_col) = if is_dark { (egui::Color32::WHITE, ColorPalette::SLATE_300) } else { (ColorPalette::GRAY_900, ColorPalette::GRAY_700) };
+    let mut closed = false;
+    egui::Frame::new().fill(hdr_bg).inner_margin(egui::Margin { left: 28, right: 28, top: 24, bottom: 20 }).show(ui, |ui| {
+        let (bar, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 5.0), egui::Sense::hover());
+        let sw = bar.width() / 5.0;
+        for (i, &c) in [ColorPalette::BLUE_500, ColorPalette::TEAL_500, ColorPalette::PURPLE_500, ColorPalette::AMBER_500, ColorPalette::GREEN_500].iter().enumerate() {
+            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(bar.min.x + i as f32 * sw, bar.min.y), egui::vec2(sw + 1.0, 5.0)), 0.0, c);
+        }
+        ui.add_space(16.0);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(title).size(26.0).strong().color(title_col));
+                if !subtitle.is_empty() {
+                    ui.add_space(3.0);
+                    ui.label(egui::RichText::new(subtitle).size(13.0).color(sub_col));
+                }
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                if ui.add(egui::Button::new(egui::RichText::new("×").size(24.0).color(sub_col)).frame(false)).clicked() { closed = true; }
+            });
+        });
+    });
+    closed
+}
+
 pub fn home_section_header(ui: &mut egui::Ui, title: &str, theme: ThemeMode) {
     let text_color = match theme {
         ThemeMode::Dark  => ColorPalette::ZINC_500,
