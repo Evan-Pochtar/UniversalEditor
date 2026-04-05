@@ -6,6 +6,7 @@ use std::{
     thread,
 };
 use crate::style::{ColorPalette, ThemeMode};
+use super::converter_style::{panel_colors, format_btn_colors};
 use crate::modules::EditorModule;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -295,8 +296,7 @@ impl DataConverter {
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     for &fmt in DataFormat::all() {
-                        let selected = self.target_format == fmt;
-                        let (bg, fg) = format_button_colors(selected, theme);
+                        let (bg, fg) = format_btn_colors(fmt == self.target_format, ColorPalette::GREEN_600, theme);
                         let btn = egui::Button::new(egui::RichText::new(fmt.as_str()).size(13.0).color(fg))
                             .fill(bg).stroke(egui::Stroke::NONE).corner_radius(6.0)
                             .min_size(egui::vec2(72.0, 32.0));
@@ -529,24 +529,6 @@ impl DataConverter {
                 if ui.add_enabled(can_convert, btn).clicked() { self.start_conversion(); }
             });
         });
-    }
-}
-
-fn panel_colors(theme: ThemeMode) -> (egui::Color32, egui::Color32, egui::Color32) {
-    if matches!(theme, ThemeMode::Dark) {
-        (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_200)
-    } else {
-        (ColorPalette::GRAY_50, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
-    }
-}
-
-fn format_button_colors(selected: bool, theme: ThemeMode) -> (egui::Color32, egui::Color32) {
-    if selected {
-        (ColorPalette::GREEN_600, egui::Color32::WHITE)
-    } else if matches!(theme, ThemeMode::Dark) {
-        (ColorPalette::ZINC_700, ColorPalette::ZINC_300)
-    } else {
-        (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
     }
 }
 

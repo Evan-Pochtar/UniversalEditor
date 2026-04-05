@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter, archive_converter::ArchiveConverter};
 use crate::modules::image_editor::ie_cache;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
@@ -291,6 +291,7 @@ impl UniversalEditor {
             CreateModule::JsonEditor => Box::new(if let Some(p) = path { JsonEditor::load(p) } else { JsonEditor::new_empty() }),
             CreateModule::ImageConverter => Box::new(ImageConverter::new()),
             CreateModule::DataConverter => Box::new(DataConverter::new()),
+            CreateModule::ArchiveConverter => Box::new(ArchiveConverter::new()),
         }
     }
 
@@ -769,7 +770,7 @@ impl UniversalEditor {
                     for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::Cache, "Image Editor"), (SettingsTab::JsonEditor, "JSON Editor")] {
                         let sel = self.settings_tab == *tab;
                         let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
-                        if ui.add(egui::Button::new(egui::RichText::new(*label).size(12.0).color(tc)).fill(fill).corner_radius(6.0)).clicked() { self.settings_tab = *tab; }
+                        if ui.add(egui::Button::new(egui::RichText::new(*label).size(12.0).color(tc)).fill(fill).corner_radius(6.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.settings_tab = *tab; }
                         ui.add_space(4.0);
                     }
                 });

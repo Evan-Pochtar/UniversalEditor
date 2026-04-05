@@ -33,6 +33,7 @@
 
 - [x] Img to Img of diff type
 - [x] Data Format Converter (.json, .yaml, .toml, .xml, .csv)
+- [x] Archive Converter (.zip, .tar.gz, .7z, .bz2)
 
 ## Debugging
 

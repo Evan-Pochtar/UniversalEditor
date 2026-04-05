@@ -229,6 +229,7 @@
 ## V0.0.8
 
 #### Features
+- **ARCHIVE CONVERTER**: First prototype of the archive converter
 - **GENERAL**: Improved look of settings and patch notes modal
 - **GENERAL**: New way to show more than 3 screens and converters on main menu (for future additions)
 

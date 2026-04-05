@@ -625,7 +625,7 @@ pub fn main_menu_modal_header(ui: &mut egui::Ui, title: &str, subtitle: &str, th
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                if ui.add(egui::Button::new(egui::RichText::new("×").size(24.0).color(sub_col)).frame(false)).clicked() { closed = true; }
+                if ui.add(egui::Button::new(egui::RichText::new("x").size(24.0).color(sub_col)).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { closed = true; }
             });
         });
     });

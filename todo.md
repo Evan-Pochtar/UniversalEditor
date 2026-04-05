@@ -31,7 +31,6 @@
 - [ ] SVG Rasterizer (.svg -> .png, .jpg, .webp)
 - [ ] Image to PDF / PDF to Images (.jpg/.png/.webp -> .pdf, .pdf -> per-page .png/.jpg)
 - [ ] Image Resizer / Batch Resizer (.png, .jpg, .webp, .bmp)
-- [ ] Archive Converter (.zip, .tar.gz, .7z, .bz2)
 - [ ] Font Converter (.ttf, .otf -> .woff, .woff2, and vice versa)
 - [ ] QR Code Generator (text, URL, vCard -> .png, .svg)
 - [ ] Hash Generator (any file -> MD5, SHA-1, SHA-256, SHA-512 output)
