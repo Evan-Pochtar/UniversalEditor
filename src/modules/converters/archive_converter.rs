@@ -7,32 +7,31 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::style::{ColorPalette, ThemeMode};
 use crate::modules::EditorModule;
-use super::converter_style::{panel_colors, format_btn_colors, label_col, drop_zone_colors, error_panel_colors};
+use super::converter_style::{panel_colors, label_col, format_btn_colors, drop_zone_colors, error_panel_colors};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ArchiveFormat { Zip, TarGz, TarBz2, Tar }
+pub enum ArchiveFormat { Zip, TarGz, TarBz2, Tar, SevenZ }
 
 impl ArchiveFormat {
     pub fn as_str(self) -> &'static str {
-        match self { Self::Zip => "ZIP", Self::TarGz => "TAR.GZ", Self::TarBz2 => "TAR.BZ2", Self::Tar => "TAR" }
+        match self { Self::Zip => "ZIP", Self::TarGz => "TAR.GZ", Self::TarBz2 => "TAR.BZ2", Self::Tar => "TAR", Self::SevenZ => "7Z" }
     }
     pub fn extension(self) -> &'static str {
-        match self { Self::Zip => "zip", Self::TarGz => "tar.gz", Self::TarBz2 => "tar.bz2", Self::Tar => "tar" }
+        match self { Self::Zip => "zip", Self::TarGz => "tar.gz", Self::TarBz2 => "tar.bz2", Self::Tar => "tar", Self::SevenZ => "7z" }
     }
-    pub fn all() -> &'static [ArchiveFormat] { &[Self::Zip, Self::TarGz, Self::TarBz2, Self::Tar] }
+    pub fn all() -> &'static [ArchiveFormat] { &[Self::Zip, Self::TarGz, Self::TarBz2, Self::Tar, Self::SevenZ] }
     pub fn from_path(p: &Path) -> Option<Self> {
-        let ext = p.extension()?.to_str()?.to_lowercase();
-        let stem = p.file_stem()?.to_str()?.to_lowercase();
-        match ext.as_str() {
+        let name = p.file_name()?.to_str()?.to_lowercase();
+        if name.ends_with(".tar.gz") || name.ends_with(".tgz") { return Some(Self::TarGz); }
+        if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") { return Some(Self::TarBz2); }
+        match p.extension()?.to_str()?.to_lowercase().as_str() {
             "zip" => Some(Self::Zip),
             "tar" => Some(Self::Tar),
-            "tgz" => Some(Self::TarGz),
-            "tbz2" => Some(Self::TarBz2),
-            "gz" if stem.ends_with(".tar") => Some(Self::TarGz),
-            "bz2" if stem.ends_with(".tar") => Some(Self::TarBz2),
+            "7z" => Some(Self::SevenZ),
             _ => None,
         }
     }
+    pub fn supports_compression_level(self) -> bool { !matches!(self, Self::Tar | Self::SevenZ) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,9 +53,7 @@ impl ArchiveFile {
         let size_kb = fs::metadata(&path).ok().map(|m| m.len() / 1024);
         Self { path, format, size_kb }
     }
-    fn name(&self) -> String {
-        self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string()
-    }
+    fn name(&self) -> String { self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string() }
 }
 
 pub struct ArchiveConverter {
@@ -88,10 +85,7 @@ impl ArchiveConverter {
 
     fn add_files(&mut self, paths: Vec<PathBuf>) {
         for p in paths {
-            if p.is_file()
-                && ArchiveFormat::from_path(&p).is_some()
-                && !self.files.iter().any(|f| f.path == p)
-            {
+            if p.is_file() && ArchiveFormat::from_path(&p).is_some() && !self.files.iter().any(|f| f.path == p) {
                 self.files.push(ArchiveFile::new(p));
             }
         }
@@ -111,27 +105,16 @@ impl ArchiveConverter {
         let errors = Arc::clone(&self.errors);
 
         thread::spawn(move || {
-            {
-                let mut p = progress.lock().unwrap();
-                p.state = ConvState::Converting;
-                p.current = 0;
-                p.total = files.len();
-                p.message = "Starting conversion...".into();
-            }
+            { let mut p = progress.lock().unwrap(); p.state = ConvState::Converting; p.current = 0; p.total = files.len(); p.message = "Starting conversion...".into(); }
             let (mut ok, mut fail) = (0usize, 0usize);
             for (i, file) in files.iter().enumerate() {
-                {
-                    let mut p = progress.lock().unwrap();
-                    p.current = i + 1;
-                    p.message = format!("Converting {} ({}/{})", file.name(), i + 1, files.len());
-                }
-                let src_fmt = match file.format {
-                    Some(f) => f,
-                    None => { errors.lock().unwrap().push(format!("{}: Unknown format", file.name())); fail += 1; continue; }
-                };
-                match Self::convert_file(&file.path, &out_dir, src_fmt, target, overwrite, level) {
-                    Ok(_) => ok += 1,
-                    Err(e) => { errors.lock().unwrap().push(format!("{}: {}", file.name(), e)); fail += 1; }
+                { let mut p = progress.lock().unwrap(); p.current = i + 1; p.message = format!("Converting {} ({}/{})", file.name(), i + 1, files.len()); }
+                match file.format {
+                    None => { errors.lock().unwrap().push(format!("{}: Unknown format", file.name())); fail += 1; }
+                    Some(src_fmt) => match Self::convert_file(&file.path, &out_dir, src_fmt, target, overwrite, level) {
+                        Ok(_) => ok += 1,
+                        Err(e) => { errors.lock().unwrap().push(format!("{}: {}", file.name(), e)); fail += 1; }
+                    }
                 }
             }
             let mut p = progress.lock().unwrap();
@@ -141,10 +124,9 @@ impl ArchiveConverter {
     }
 
     fn convert_file(input: &Path, out_dir: &Path, from: ArchiveFormat, to: ArchiveFormat, overwrite: bool, level: u32) -> Result<(), String> {
-        let stem = {
-            let s = input.file_stem().and_then(|s| s.to_str()).unwrap_or("archive");
-            s.trim_end_matches(".tar").to_string()
-        };
+        let name = input.file_name().and_then(|n| n.to_str()).unwrap_or("archive");
+        let stem = ["tar.gz", "tar.bz2", "tgz", "tbz2", "tar", "zip", "7z"]
+            .iter().fold(name, |s, ext| s.strip_suffix(&format!(".{}", ext)).unwrap_or(s));
         let out = out_dir.join(format!("{}.{}", stem, to.extension()));
         if out.exists() && !overwrite { return Err("File exists and overwrite is disabled".into()); }
         let tmp = std::env::temp_dir().join(format!(
@@ -160,9 +142,9 @@ impl ArchiveConverter {
     fn extract(src: &Path, fmt: ArchiveFormat, dest: &Path) -> Result<(), String> {
         match fmt {
             ArchiveFormat::Zip => {
-                let mut archive = zip::ZipArchive::new(File::open(src).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-                for i in 0..archive.len() {
-                    let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+                let mut a = zip::ZipArchive::new(File::open(src).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                for i in 0..a.len() {
+                    let mut entry = a.by_index(i).map_err(|e| e.to_string())?;
                     let safe: PathBuf = entry.name().replace('\\', "/").split('/').filter(|s| !s.is_empty() && *s != "..").collect();
                     if safe.as_os_str().is_empty() { continue; }
                     let out = dest.join(&safe);
@@ -178,6 +160,7 @@ impl ArchiveConverter {
             ArchiveFormat::Tar => tar::Archive::new(File::open(src).map_err(|e| e.to_string())?).unpack(dest).map_err(|e| e.to_string()),
             ArchiveFormat::TarGz => tar::Archive::new(flate2::read::GzDecoder::new(File::open(src).map_err(|e| e.to_string())?)).unpack(dest).map_err(|e| e.to_string()),
             ArchiveFormat::TarBz2 => tar::Archive::new(bzip2::read::BzDecoder::new(File::open(src).map_err(|e| e.to_string())?)).unpack(dest).map_err(|e| e.to_string()),
+            ArchiveFormat::SevenZ => sevenz_rust::decompress_file(src, dest).map_err(|e| e.to_string()),
         }
     }
 
@@ -208,6 +191,7 @@ impl ArchiveConverter {
                 b.append_dir_all(".", src).map_err(|e| e.to_string())?;
                 b.into_inner().map_err(|e| e.to_string())?.finish().map_err(|e| e.to_string()).map(|_| ())
             }
+            ArchiveFormat::SevenZ => sevenz_rust::compress_to_path(src, dest).map_err(|e| e.to_string()),
         }
     }
 
@@ -233,26 +217,28 @@ impl ArchiveConverter {
         ui.add_space(12.0);
         ui.label(egui::RichText::new("Archive Converter").size(24.0).color(tc));
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Convert between ZIP, TAR.GZ, TAR.BZ2, and TAR formats").size(13.0).color(sc));
+        ui.label(egui::RichText::new("Convert between ZIP, TAR.GZ, TAR.BZ2, TAR, and 7Z formats").size(13.0).color(sc));
         ui.add_space(12.0);
     }
 
     fn render_format_selector(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let (panel_bg, border, text) = panel_colors(theme);
+        let lc = label_col(theme);
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
             ui.label(egui::RichText::new("Target Format").size(14.0).color(text));
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 for &fmt in ArchiveFormat::all() {
-                    let (bg, fg) = format_btn_colors(self.target_format == fmt, ColorPalette::TEAL_600, theme);
-                    if ui.add(egui::Button::new(egui::RichText::new(fmt.as_str()).size(13.0).color(fg)).fill(bg).stroke(egui::Stroke::NONE).corner_radius(6.0).min_size(egui::vec2(80.0, 32.0))).clicked() {
+                    let (bg, fg) = format_btn_colors(self.target_format == fmt, ColorPalette::AMBER_600, theme);
+                    if ui.add(egui::Button::new(egui::RichText::new(fmt.as_str()).size(13.0).color(fg)).fill(bg).stroke(egui::Stroke::NONE).corner_radius(6.0).min_size(egui::vec2(76.0, 32.0))).clicked() {
                         self.target_format = fmt;
                     }
                 }
             });
-            if self.target_format == ArchiveFormat::Tar {
-                ui.add_space(6.0);
-                ui.label(egui::RichText::new("TAR stores files without compression. Use TAR.GZ or TAR.BZ2 for smaller output.").size(11.0).color(label_col(theme)).italics());
+            match self.target_format {
+                ArchiveFormat::Tar => { ui.add_space(6.0); ui.label(egui::RichText::new("TAR stores files without compression. Use TAR.GZ or TAR.BZ2 for smaller output.").size(11.0).color(lc).italics()); }
+                ArchiveFormat::SevenZ => { ui.add_space(6.0); ui.label(egui::RichText::new("7Z uses LZMA compression for excellent ratios. Widely supported on all platforms.").size(11.0).color(lc).italics()); }
+                _ => {}
             }
         });
     }
@@ -269,9 +255,8 @@ impl ArchiveConverter {
             });
             if self.show_options {
                 ui.add_space(12.0);
-                let compress_active = self.target_format != ArchiveFormat::Tar;
                 ui.scope(|ui| {
-                    if !compress_active { ui.disable(); }
+                    if !self.target_format.supports_compression_level() { ui.disable(); }
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Compression Level:").color(lc));
                         ui.add(egui::Slider::new(&mut self.compression_level, 1..=9));
@@ -314,7 +299,7 @@ impl ArchiveConverter {
                     if !self.files.is_empty() && ui.button("Clear All").clicked() { self.files.clear(); }
                     if ui.button("Add Files").clicked() {
                         if let Some(paths) = rfd::FileDialog::new()
-                            .add_filter("Archives", &["zip", "tar", "gz", "tgz", "bz2", "tbz2"])
+                            .add_filter("Archives", &["zip", "tar", "gz", "tgz", "bz2", "tbz2", "7z"])
                             .pick_files()
                         { self.add_files(paths); }
                     }
@@ -329,7 +314,7 @@ impl ArchiveConverter {
                 ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Drop archives here or click to browse", egui::FontId::proportional(14.0), weak);
                 if resp.clicked() {
                     if let Some(paths) = rfd::FileDialog::new()
-                        .add_filter("Archives", &["zip", "tar", "gz", "tgz", "bz2", "tbz2"])
+                        .add_filter("Archives", &["zip", "tar", "gz", "tgz", "bz2", "tbz2", "7z"])
                         .pick_files()
                     { self.add_files(paths); }
                 }
@@ -343,7 +328,7 @@ impl ArchiveConverter {
                                     ui.label(egui::RichText::new(f.name()).color(text).size(13.0));
                                     ui.label(egui::RichText::new(format!(
                                         "{} | {}",
-                                        f.format.map(|f| f.as_str()).unwrap_or("Unknown"),
+                                        f.format.map(|fmt| fmt.as_str()).unwrap_or("Unknown"),
                                         f.size_kb.map(|s| format!("{} KB", s)).unwrap_or_else(|| "Unknown size".to_string())
                                     )).color(weak).size(11.0));
                                 });
@@ -383,7 +368,7 @@ impl ArchiveConverter {
         let (panel_bg, border, text) = panel_colors(theme);
         let prog_bg = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_200 };
         let fill = match p.state {
-            ConvState::Converting => ColorPalette::TEAL_500,
+            ConvState::Converting => ColorPalette::AMBER_500,
             ConvState::Done => ColorPalette::GREEN_500,
             ConvState::Failed => ColorPalette::RED_500,
             ConvState::Idle => ColorPalette::ZINC_500,
@@ -405,7 +390,7 @@ impl ArchiveConverter {
         let converting = self.progress.lock().unwrap().state == ConvState::Converting;
         let can = !self.files.is_empty() && !converting;
         let (bg, hover_bg, btn_text) = if can {
-            (ColorPalette::TEAL_600, ColorPalette::TEAL_500, egui::Color32::WHITE)
+            (ColorPalette::AMBER_600, ColorPalette::AMBER_500, egui::Color32::WHITE)
         } else if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_700, ColorPalette::ZINC_700, ColorPalette::ZINC_500)
         } else {
