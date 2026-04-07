@@ -63,6 +63,8 @@
 - [ ] Latex?
 - [ ] Spell Check
 - [ ] Grammar Check
+- [ ] Hovering over links with ctrl pressed should change the cursor to a pointer
+- [ ] Hovering over a checklist item should change cursor to a pointer
 
 ### Image Editor
 
@@ -87,8 +89,7 @@
 - [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
 - [ ] Search should only show up when clicking ctrl+f
-- [ ] Change cursor when hovering over buttons/navigation
-  - [ ] Make navigation bigger and more noticeable
+- [ ] Make navigation bigger and more noticeable
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
 - [ ] Add loading screen for sorting and changing views

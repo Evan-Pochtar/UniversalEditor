@@ -246,6 +246,7 @@
 - [x] Give the ability to show/hide file information
 - [x] Create JSON styling file, move out of ui file
 - [x] Add line numbers to text view
+- [x] Change cursor when hovering over buttons/navigation
 
 ### CONVERTER: Img 2 Img
 

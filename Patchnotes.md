@@ -231,6 +231,8 @@
 #### Features
 - **ARCHIVE CONVERTER**: First prototype of the archive converter
 - **ARCHIVE CONVERTER**: Now works with .7z files for both converting and input
+- **JSON EDITOR**: Added hover cursor effects
+- **TEXT EDITOR**: Added hover cursor effects
 - **GENERAL**: Improved look of settings and patch notes modal
 - **GENERAL**: New way to show more than 3 screens and converters on main menu (for future additions)
 
