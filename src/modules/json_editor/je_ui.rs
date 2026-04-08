@@ -77,17 +77,95 @@ impl JsonEditor {
             // File Information UI
             if show_file_info {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)));
+                    let file_label_resp = ui.add(
+                        egui::Label::new(egui::RichText::new(self.get_file_name()).size(12.0).color(c_text(dark)))
+                            .sense(egui::Sense::click()),
+                    );
+                    file_label_resp.clone().on_hover_text("Right-click for file options");
+                    file_label_resp.context_menu(|ui| {
+                        if ui.button("Open File Location").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            if let Some(path) = &self.file_path {
+                                #[cfg(target_os = "windows")]
+                                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+                            }
+                            ui.close();
+                        }
+                        if ui.button("Open in Converter").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            self.open_in_converter_path = self.file_path.clone();
+                            ui.close();
+                        }
+                        if self.file_path.is_some() {
+                            if ui.button("Rename File").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                self.rename_buffer = self.file_path.as_ref()
+                                    .and_then(|p| p.file_stem())
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("untitled")
+                                    .to_string();
+                                self.rename_modal_open = true;
+                                ui.close();
+                            }
+                        }
+                    });
                     ui.separator();
-                    let (status, color) = if self.dirty || self.text_modified { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) } 
+                    let (status, color) = if self.dirty || self.text_modified { ("Modified", if dark { ColorPalette::AMBER_400 } else { ColorPalette::AMBER_600 }) }
                         else { ("Saved", if dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_600 }) };
-
                     ui.label(egui::RichText::new(status).size(12.0).color(color));
                     ui.separator();
                     let node_count = self.flat.len();
                     ui.label(egui::RichText::new(format!("{} visible nodes", node_count)).size(12.0).color(c_muted(dark)));
                 });
                 ui.separator();
+
+                // Rename modal
+                if self.rename_modal_open {
+                    let (bg, border, text_col) = if dark {
+                        (egui::Color32::from_rgb(26, 26, 32), ColorPalette::ZINC_700, ColorPalette::SLATE_100)
+                    } else {
+                        (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900)
+                    };
+                    style::draw_modal_overlay(ctx, "je_rename_overlay", 160);
+                    let mut open = self.rename_modal_open;
+                    let win_resp = egui::Window::new("Rename File")
+                        .collapsible(false).resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                        .order(egui::Order::Tooltip)
+                        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(24.0))
+                        .open(&mut open)
+                        .show(ctx, |ui| {
+                            ui.label(egui::RichText::new("New filename (without extension):").size(13.0).color(text_col));
+                            ui.add_space(4.0);
+                            let resp = ui.add(egui::TextEdit::singleline(&mut self.rename_buffer).desired_width(280.0));
+                            resp.request_focus();
+                            ui.add_space(8.0);
+                            let confirmed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                            let cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                            let mut do_rename = false;
+                            let mut do_cancel = false;
+                            ui.horizontal(|ui| {
+                                if accent_button(ui, "Rename").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() || confirmed { do_rename = true; }
+                                ui.add_space(8.0);
+                                if compact_button(ui, "Cancel", dark).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() || cancelled { do_cancel = true; }
+                            });
+                            (do_rename, do_cancel)
+                        });
+                    let (do_rename, do_cancel) = win_resp
+                        .and_then(|r| r.inner)
+                        .unwrap_or((false, false));
+                    if do_rename && !self.rename_buffer.trim().is_empty() {
+                        if let Some(old_path) = self.file_path.take() {
+                            let new_name = format!("{}.json", self.rename_buffer.trim());
+                            let new_path = old_path.with_file_name(&new_name);
+                            if std::fs::rename(&old_path, &new_path).is_ok() {
+                                self.file_path = Some(new_path);
+                            } else {
+                                self.file_path = Some(old_path);
+                            }
+                        }
+                        self.rename_modal_open = false;
+                        open = false;
+                    }
+                    if do_cancel || !open { self.rename_modal_open = false; }
+                }
             }
 
             // Save error banner

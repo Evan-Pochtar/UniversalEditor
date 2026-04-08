@@ -67,6 +67,9 @@ pub struct JsonEditor {
     pub(super) export_pretty: bool,
     pub(super) show_new_confirm: bool,
     pub(super) save_error: Option<String>,
+    pub(super) rename_modal_open: bool,
+    pub(super) rename_buffer: String,
+    pub(super) open_in_converter_path: Option<std::path::PathBuf>,
 }
 
 impl JsonEditor {
@@ -133,6 +136,9 @@ impl JsonEditor {
             export_pretty: true,
             show_new_confirm: false,
             save_error: None,
+            rename_modal_open: false,
+            rename_buffer: String::new(),
+            open_in_converter_path: None,
         }
     }
 
@@ -408,6 +414,10 @@ impl JsonEditor {
 
 impl EditorModule for JsonEditor {
     fn as_any(&self) -> &dyn std::any::Any { self }
+
+    fn take_converter_path(&mut self) -> Option<std::path::PathBuf> {
+        self.open_in_converter_path.take()
+    }
 
     fn get_title(&self) -> String {
         let name = self.get_file_name();

@@ -116,6 +116,11 @@ impl DataConverter {
         }
     }
 
+    pub fn add_files_pub(&mut self, paths: Vec<PathBuf>) {
+        self.add_files(paths);
+    }
+ 
+
     fn start_conversion(&mut self) {
         if self.files.is_empty() { return; }
         self.conversion_errors.lock().unwrap().clear();

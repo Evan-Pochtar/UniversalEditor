@@ -1132,6 +1132,13 @@ impl eframe::App for UniversalEditor {
             else { self.landing_page(ui); }
         });
 
+        let converter_path = self.active_module.as_mut().and_then(|m| m.take_converter_path());
+        if let Some(path) = converter_path {
+            let mut converter = crate::modules::data_converter::DataConverter::new();
+            converter.add_files_pub(vec![path]);
+            self.switch_to_module(Box::new(converter));
+        }
+
         if self.show_unsaved_dialog { ctx.set_cursor_icon(egui::CursorIcon::Default); }
     }
 }

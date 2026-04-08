@@ -234,10 +234,6 @@ impl TextEditor {
             let dir = path.parent().unwrap_or(path.as_path());
             #[cfg(target_os = "windows")]
             { let _ = std::process::Command::new("explorer").arg(dir).spawn(); }
-            #[cfg(target_os = "macos")]
-            { let _ = std::process::Command::new("open").arg(dir).spawn(); }
-            #[cfg(target_os = "linux")]
-            { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); }
         }
     }
 

@@ -7,7 +7,7 @@ pub mod image_editor;
 pub mod converters;
 pub mod helpers;
 
-pub mod json_edit { pub use super::json_editor::JsonEditor; }
+pub mod json_edit {pub use super::json_editor::JsonEditor; }
 pub mod image_edit { pub use super::image_editor::ImageEditor; }
 pub mod image_converter { pub use super::converters::image_converter::ImageConverter; }
 pub mod data_converter { pub use super::converters::data_converter::DataConverter; }
@@ -40,4 +40,5 @@ pub trait EditorModule {
     fn as_any(&self) -> &dyn Any;
     fn get_menu_contributions(&self) -> MenuContribution { MenuContribution::default() }
     fn handle_menu_action(&mut self, action: MenuAction) -> bool { let _ = action; false }
+    fn take_converter_path(&mut self) -> Option<std::path::PathBuf> { None }
 }
