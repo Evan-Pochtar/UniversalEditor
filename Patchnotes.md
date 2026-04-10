@@ -232,6 +232,7 @@
 - **ARCHIVE CONVERTER**: First prototype of the archive converter
 - **ARCHIVE CONVERTER**: Now works with .7z files for both converting and input
 - **DOCUMENT EDITOR**: First prototype of the document editor
+- **DOCUMENT EDITOR**: Font size now works similarly to other document editor software, base font size is now located within page settings
 - **JSON EDITOR**: Added hover cursor effects
 - **JSON EDITOR**: Added File Renaming, Opening file in converter, and Open File Location by right clicking file name in file information bar
 - **TEXT EDITOR**: Added hover cursor effects
@@ -239,3 +240,6 @@
 - **GENERAL**: New way to show more than 3 screens and converters on main menu (for future additions)
 
 #### Debugging
+- **DOCUMENT EDITOR**: No longer creates non-editable newlines between text when loading documents
+- **DOCUMENT EDITOR**: Backspace now no longer removes the cursor on empty documents
+- **DOCUMENT EDITOR**: No longer puts very long lines with over a page of text on separate pages

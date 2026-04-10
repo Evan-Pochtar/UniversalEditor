@@ -55,7 +55,6 @@
 
 ### Document Editor Bugs
 
-- [ ] When loading a preexisting doc/docx, changing zoom changes font, font isn't static
 - [ ] Doesn't load bullet points properly
 - [ ] Doesn't load horizontal lines properly
 
@@ -103,7 +102,6 @@
 
 ### Document Editor
 
-- [ ] Allow changing font per line not the whole document at once
 - [ ] Add to the about modal
 - [ ] Spell check
 - [ ] Grammar Check

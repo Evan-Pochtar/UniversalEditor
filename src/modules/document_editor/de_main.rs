@@ -167,6 +167,38 @@ impl DocumentEditor {
         self.scroll_to_para = Some(self.find_results[self.find_cursor].0);
     }
 
+    pub(super) fn sel_font_size_pt(&self) -> f32 {
+        if let Some((pi, s, e)) = self.last_selection {
+            if pi < self.paras.len() {
+                let byte = if s == e { s } else { s };
+                if let Some(hp) = para_fmt_at(&self.paras[pi], byte).size_hp { return hp as f32 / 2.0; }
+            }
+        }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| hp as f32 / 2.0).unwrap_or(self.base_size)
+    }
+
+    pub(super) fn apply_fmt_size(&mut self, pt: f32) {
+        let hp = (pt * 2.0).round() as u32;
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                apply_fmt_range(&mut self.paras[pi], s, e, |f| f.size_hp = Some(hp));
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true; return;
+            }
+        }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        self.push_undo();
+        let len = self.paras[pi].text.len();
+        if len > 0 {
+            apply_fmt_range(&mut self.paras[pi], 0, len, |f| f.size_hp = Some(hp));
+            self.para_texts[pi] = self.paras[pi].text.clone();
+        }
+        self.cur_fmt.size_hp = Some(hp);
+        self.dirty = true; self.heights_dirty = true;
+    }
+
     pub(super) fn replace_current(&mut self) {
         if self.find_results.is_empty() { return; }
         let (pi, s, e) = self.find_results[self.find_cursor];

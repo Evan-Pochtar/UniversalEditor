@@ -88,8 +88,9 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     egui::ComboBox::from_id_salt("de_font_cb")
                         .selected_text(egui::RichText::new(ed.base_font.label()).size(12.0)).width(80.0)
                         .show_ui(ui, |ui| { for f in FontChoice::all() { ui.selectable_value(&mut ed.base_font, *f, f.label()); } });
-                    ui.label(egui::RichText::new("Sz:").size(11.0).color(lc));
-                    if ui.add(egui::DragValue::new(&mut ed.base_size).range(6.0..=96.0).speed(0.5).suffix("pt")).changed() { ed.heights_dirty = true; }
+                    ui.label(egui::RichText::new("Font Size:").size(11.0).color(lc));
+                    let mut sel_sz = ed.sel_font_size_pt();
+                    if ui.add(egui::DragValue::new(&mut sel_sz).range(4.0..=288.0).speed(0.5).suffix("pt")).changed() { ed.apply_fmt_size(sel_sz); }
                     ui.separator();
                     if fmt_btn(ui, egui::RichText::new("B").strong().size(13.0), ed.fmt_state_bold(), theme, "Bold (Ctrl+B)") { ed.apply_fmt_toggle_bold(); }
                     if fmt_btn(ui, egui::RichText::new("I").italics().size(13.0), ed.fmt_state_italic(), theme, "Italic (Ctrl+I)") { ed.apply_fmt_toggle_italic(); }
@@ -225,7 +226,7 @@ fn measure_para_total_height(
     zoom: f32,
     is_dark: bool,
 ) -> f32 {
-    let job = build_layout_job(&para.spans, &para.text, para, base_font, base_size, wrap_w, is_dark);
+    let job = build_layout_job(&para.spans, &para.text, para, base_font, base_size, wrap_w, is_dark, zoom);
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
     para.space_before * zoom + galley.rect.height() + para.space_after * zoom
 }
@@ -344,27 +345,41 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
     let cw = ed.layout.content_width() * ed.zoom;
     let bs = ed.base_size * ed.zoom;
     let font = ed.base_font;
-
+    let mt = ed.layout.margin_top * ed.zoom;
+    let min_fill = bs * 2.0;
     let mut changed = false;
+    let mut cur_y = mt;
     let mut i = 0usize;
-    let mut safety = 0usize;
 
-    while i < ed.paras.len() && safety < 2048 {
-        safety += 1;
-
+    while i < ed.paras.len() {
         let para = ed.paras[i].clone();
-        let indent = para.indent_left * ed.zoom;
-        let wrap_w = (cw - indent).max(40.0);
+        let wrap_w = (cw - para.indent_left * ed.zoom).max(40.0);
+        let h = measure_para_total_height(ctx, &para, font, bs, wrap_w, ed.zoom, is_dark);
+        let remaining = mt + page_content_h - cur_y;
 
-        let total_h = measure_para_total_height(ctx, &para, font, bs, wrap_w, ed.zoom, is_dark);
+        if h <= remaining + 0.5 {
+            cur_y += h;
+            if cur_y >= mt + page_content_h { cur_y = mt; }
+            i += 1;
+            continue;
+        }
 
-        if total_h > page_content_h + 0.5 && !para.text.is_empty() {
-            let mut split = find_split_byte_fit(ctx, &para, font, bs, wrap_w, page_content_h, ed.zoom, is_dark);
-
-            if split == 0 {
-                split = para.text.char_indices().nth(1).map(|(b, _)| b).unwrap_or(para.text.len());
+        if !para.text.is_empty() && cur_y > mt && remaining > min_fill {
+            let split = find_split_byte_fit(ctx, &para, font, bs, wrap_w, remaining, ed.zoom, is_dark);
+            if split > 0 && split < para.text.len() {
+                let (left, right) = split_para_at_byte(&para, split);
+                ed.paras[i] = left;
+                ed.paras.insert(i + 1, right);
+                changed = true;
+                continue;
             }
+        }
 
+        cur_y = mt;
+
+        if !para.text.is_empty() && h > page_content_h + 0.5 {
+            let split = find_split_byte_fit(ctx, &para, font, bs, wrap_w, page_content_h, ed.zoom, is_dark);
+            let split = split.max(para.text.char_indices().nth(1).map(|(b, _)| b).unwrap_or(para.text.len()));
             if split < para.text.len() {
                 let (left, right) = split_para_at_byte(&para, split);
                 ed.paras[i] = left;
@@ -374,14 +389,12 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
             }
         }
 
+        cur_y = (cur_y + h).min(mt + page_content_h);
+        if cur_y >= mt + page_content_h { cur_y = mt; }
         i += 1;
     }
 
-    if changed {
-        ed.sync_texts();
-        ed.heights_dirty = true;
-        ed.find_stale = true;
-    }
+    if changed { ed.sync_texts(); ed.heights_dirty = true; ed.find_stale = true; }
 }
 
 fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context, is_dark: bool) {
@@ -410,7 +423,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let p = &ed.paras[i];
             let indent = p.indent_left * ed.zoom;
             let wrap_w = (cw - indent).max(40.0);
-            let job = build_layout_job(&p.spans, &p.text, p, font, bs, wrap_w, is_dark);
+            let job = build_layout_job(&p.spans, &p.text, p, font, bs, wrap_w, is_dark, ed.zoom);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
             ed.para_heights[i] = p.space_before * ed.zoom + galley.rect.height() + p.space_after * ed.zoom;
         }
@@ -607,7 +620,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     .map(|cr| cr.primary.index == 0 && cr.secondary.index == 0)
                     .unwrap_or(false);
 
-                if at_start && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
+                let should_handle = at_start && (ed.paras[i].indent_left > 0.0 || i > 0);
+                if should_handle && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
                     if ed.paras[i].indent_left > 0.0 {
                         ed.push_undo();
                         ed.paras[i].indent_left = (ed.paras[i].indent_left - 18.0).max(0.0);
@@ -625,6 +639,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let base_size_snap = bs;
             let base_font_snap = font;
             let dark_snap = is_dark;
+            let zoom_snap = ed.zoom;
             let mut layouter = move |lui: &egui::Ui, s: &dyn egui::TextBuffer, _ww: f32| {
                 let job = build_layout_job(
                     &spans_clone,
@@ -634,6 +649,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     base_size_snap,
                     wrap_w,
                     dark_snap,
+                    zoom_snap,
                 );
                 lui.fonts_mut(|f| f.layout_job(job))
             };
@@ -654,6 +670,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 .show(&mut child);
 
             let has_focus = output.response.has_focus();
+            if has_focus && ed.focused_para != i {
+                ed.focused_para = i;
+                ed.line_spacing_input = ed.paras[i].line_height;
+            }
             if has_focus {
                 let mut b = false;
                 let mut it = false;

@@ -140,6 +140,10 @@
 - [x] Can't ctrl+s save
 - [x] Saving does not update "modified" file information value
 
+### Document Editor Bugs
+
+- [x] When loading a preexisting doc/docx, changing zoom changes font, font isn't static
+
 ### Other Bugs
 
 - [x] Sidebar down arrow shows as empty square
@@ -248,6 +252,10 @@
 - [x] Create JSON styling file, move out of ui file
 - [x] Add line numbers to text view
 - [x] Change cursor when hovering over buttons/navigation
+
+### Document Editor
+
+- [x] Allow changing font per line not the whole document at once
 
 ### CONVERTER: Img 2 Img
 

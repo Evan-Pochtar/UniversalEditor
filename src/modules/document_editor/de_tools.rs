@@ -246,7 +246,7 @@ pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFm
     merge_adjacent(para);
 }
 
-pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: f32, wrap_w: f32, is_dark: bool,) -> egui::text::LayoutJob {
+pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: f32, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_w;
     job.halign = egui::Align::LEFT;
@@ -295,7 +295,7 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
         let eff = span
             .fmt
             .size_hp
-            .map(|hp| hp as f32 / 2.0)
+            .map(|hp| hp as f32 / 2.0 * zoom)
             .unwrap_or(ss);
 
         let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
