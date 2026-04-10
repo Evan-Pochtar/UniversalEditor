@@ -25,9 +25,10 @@
 
 ## Screens
 
-- [x] Txt, Md
-- [x] Img Processing
-- [x] JSON Processing
+- [x] Text Editor (.txt, .md)
+- [x] Image Editor (.jpg, .jpeg, .png, .webp, .bmp, .tiff, .ico)
+- [x] JSON Processing (.json)
+- [x] Document Editor (.docx, .doc, .odt)
 
 ## Converters
 

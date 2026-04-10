@@ -6,7 +6,9 @@ pub mod text_editor;
 pub mod image_editor;
 pub mod converters;
 pub mod helpers;
+pub mod document_editor;
 
+pub mod doc_edit { pub use super::document_editor::DocumentEditor; }
 pub mod json_edit {pub use super::json_editor::JsonEditor; }
 pub mod image_edit { pub use super::image_editor::ImageEditor; }
 pub mod image_converter { pub use super::converters::image_converter::ImageConverter; }

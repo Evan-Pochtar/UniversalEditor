@@ -8,7 +8,8 @@
 
 - [ ] Code Editor (.rs, .py, .js, .ts, .c, .cpp, .go, .java, .sh, .css, .sql)
 - [ ] Spreadsheet Editor (.csv, .tsv, .xlsx, .xls, .ods)
-- [ ] Document Editor (.docx, .doc, .odt, .pdf)
+- [ ] PDF Editor (.pdf)
+- [ ] HTML Editor (.html, .htm)
 - [ ] Archive Manager (.zip, .tar, .gz, .tar.gz, .7z, .bz2)
 - [ ] Audio Editor (.mp3, .wav, .flac, .ogg, .aac, .m4a)
 - [ ] Video Editor (.mp4, .mkv, .avi, .mov, .webm)
@@ -52,6 +53,12 @@
 - [ ] Sort and Search do not work on text view
 - [ ] Undoing all changes does not remove "modified" file information status
 
+### Document Editor Bugs
+
+- [ ] When loading a preexisting doc/docx, changing zoom changes font, font isn't static
+- [ ] Doesn't load bullet points properly
+- [ ] Doesn't load horizontal lines properly
+
 ### Other Bugs
 
 - [ ] Save warning dialogue does not show up on application close
@@ -93,6 +100,28 @@
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
 - [ ] Add loading screen for sorting and changing views
+
+### Document Editor
+
+- [ ] Allow changing font per line not the whole document at once
+- [ ] Add to the about modal
+- [ ] Spell check
+- [ ] Grammar Check
+- [ ] Document Templates
+- [ ] Add .odt file compatibility
+- [ ] Add way to create comments
+- [ ] Increase indent and decrease indent buttons
+- [ ] Bulleted lists
+- [ ] Horizontal line
+- [ ] Checklists
+- [ ] Tables
+- [ ] Images
+- [ ] Links
+- [ ] Highlighting
+- [ ] Text color
+- [ ] Ability to change look of headers/normal text
+- [ ] Printing
+- [ ] Header and footers
 
 ### CONVERTER: Img 2 Img
 

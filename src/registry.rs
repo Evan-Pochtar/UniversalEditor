@@ -2,7 +2,7 @@ use eframe::egui::Color32;
 use crate::style::ColorPalette;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter, ArchiveConverter }
+pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter, ArchiveConverter, DocEditor }
 
 pub struct ScreenDef {
     pub id: &'static str,
@@ -50,6 +50,15 @@ pub static SCREENS: &[ScreenDef] = &[
         sidebar_letter: "J",
         accepted_extensions: &["json"],
         create: CreateModule::JsonEditor,
+    },
+    ScreenDef {
+        id: "doc_editor",
+        name: "Document Editor",
+        description: "Write and format documents, export as DOCX",
+        color: ColorPalette::GREEN_500,
+        sidebar_letter: "D",
+        accepted_extensions: &["docx", "doc"],
+        create: CreateModule::DocEditor,
     },
 ];
 
