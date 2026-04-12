@@ -110,7 +110,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     }
                     ui.separator();
                     if fmt_btn(ui, egui::RichText::new("Outline").size(11.0), ed.show_outline, theme, "Toggle document outline") { ed.show_outline = !ed.show_outline; }
-                    if act_btn(ui, egui::RichText::new("Page").size(11.0), theme, "Page layout settings") { ed.show_page_settings = true; }
+                    if act_btn(ui, egui::RichText::new("Page").size(11.0), theme, "Page layout settings") { ed.page_settings_draft = None; ed.show_page_settings = true; }
                     ui.separator();
                     ui.label(egui::RichText::new("Zoom:").size(11.0).color(lc));
                     if act_btn(ui, "-", theme, "Zoom out (Ctrl+-)") { ed.zoom = (ed.zoom - 0.1).max(0.3); }
@@ -885,55 +885,136 @@ fn render_stats_modal(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
 
 fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
     if !ed.show_page_settings { return; }
+    if ed.page_settings_draft.is_none() {
+        ed.page_settings_draft = Some((ed.layout.clone(), ed.preset_idx, ed.base_size));
+    }
+
     crate::style::draw_modal_overlay(ctx, "de_page_ov", 160);
-    let (bg, border, tc, muted) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::SLATE_200, ColorPalette::ZINC_400) }
-        else { (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_800, ColorPalette::GRAY_500) };
-    let mut open = ed.show_page_settings;
-    let win = egui::Window::new("Page Settings")
+    let (bg, border, tc, muted) = if is_dark {
+        (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::SLATE_200, ColorPalette::ZINC_400)
+    } else {
+        (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_800, ColorPalette::GRAY_500)
+    };
+    let sep_col = if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 };
+    let tag_bg_gd = if is_dark { egui::Color32::from_rgb(24,44,80) } else { ColorPalette::BLUE_50 };
+    let tag_bg_wd = if is_dark { egui::Color32::from_rgb(30,40,26) } else { ColorPalette::GREEN_50 };
+    let tag_col_gd = if is_dark { ColorPalette::BLUE_300 } else { ColorPalette::BLUE_600 };
+    let tag_col_wd = if is_dark { ColorPalette::GREEN_400 } else { ColorPalette::GREEN_700 };
+    let draft = ed.page_settings_draft.as_mut().unwrap();
+    let mut apply = false;
+    let mut cancel = false;
+    let mut open = true;
+
+    egui::Window::new("Page Setup")
         .collapsible(false).resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .fixed_size(egui::vec2(360.0, 0.0))
+        .fixed_size(egui::vec2(400.0, 0.0))
         .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(24.0))
         .open(&mut open).order(egui::Order::Tooltip)
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
-            ui.label(egui::RichText::new("Page Size").size(13.0).color(tc));
-            ui.horizontal_wrapped(|ui| {
-                for (idx, name) in PageLayout::presets().iter().enumerate() {
-                    let sel = ed.preset_idx == idx;
-                    let (bg2, fg) = if sel { (ColorPalette::BLUE_600, egui::Color32::WHITE) } else if is_dark { (ColorPalette::ZINC_700, ColorPalette::ZINC_300) } else { (ColorPalette::GRAY_200, ColorPalette::GRAY_800) };
-                    if ui.add(egui::Button::new(egui::RichText::new(*name).size(12.0).color(fg)).fill(bg2).corner_radius(4.0).min_size(egui::vec2(100.0, 28.0))).clicked() {
-                        ed.preset_idx = idx; ed.layout = PageLayout::from_preset(idx); ed.heights_dirty = true; ed.auto_zoom_done = false;
+            ui.label(egui::RichText::new("Paper Size").size(13.0).strong().color(tc));
+            ui.add_space(4.0);
+
+            let presets = PageLayout::presets();
+            let cols = 3usize;
+            let rows = (presets.len() + cols - 1) / cols;
+            let btn_w = (ui.available_width() - (cols as f32 - 1.0) * 6.0) / cols as f32;
+            for row in 0..rows {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for col in 0..cols {
+                        let idx = row * cols + col;
+                        let Some((name, _)) = presets.get(idx) else { continue; };
+                        let sel = draft.1 == idx;
+                        let (fill, stroke, label_col) = if sel {
+                            (if is_dark { egui::Color32::from_rgb(28,52,100) } else { egui::Color32::from_rgb(225,238,255) },
+                             egui::Stroke::new(1.5, if is_dark { ColorPalette::BLUE_500 } else { ColorPalette::BLUE_400 }),
+                             if is_dark { egui::Color32::WHITE } else { ColorPalette::BLUE_700 })
+                        } else {
+                            (if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 },
+                             egui::Stroke::new(1.0, if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }),
+                             tc)
+                        };
+                        let (tag_bg, tag_col, badge) = match idx {
+                            0 => (tag_bg_gd, tag_col_gd, Some("Docs")),
+                            1 => (tag_bg_wd, tag_col_wd, Some("Word")),
+                            _ => (egui::Color32::TRANSPARENT, egui::Color32::TRANSPARENT, None),
+                        };
+                        let (cell, _) = ui.allocate_exact_size(egui::vec2(btn_w, 44.0), egui::Sense::hover());
+                        if ui.is_rect_visible(cell) {
+                            let painter = ui.painter_at(cell);
+                            painter.rect(cell, 6.0, fill, stroke, egui::StrokeKind::Inside);
+                            let ty = if badge.is_some() { cell.min.y + 13.0 } else { cell.center().y };
+                            painter.text(egui::pos2(cell.center().x, ty), egui::Align2::CENTER_CENTER, *name, egui::FontId::proportional(12.0), label_col);
+                            if let Some(b) = badge {
+                                let bw = 34.0_f32;
+                                let br = egui::Rect::from_min_size(egui::pos2(cell.center().x - bw/2.0, cell.max.y - 14.0), egui::vec2(bw, 11.0));
+                                painter.rect_filled(br, 3.0, tag_bg);
+                                painter.text(br.center(), egui::Align2::CENTER_CENTER, b, egui::FontId::proportional(8.0), tag_col);
+                            }
+                        }
+                        let resp = ui.interact(cell, ui.id().with(("ps", idx)), egui::Sense::click());
+                        if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
+                        if resp.clicked() { draft.1 = idx; draft.0 = PageLayout::from_preset(idx); }
                     }
+                });
+            }
+
+            ui.add_space(6.0);
+            let sep = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
+            ui.allocate_rect(sep, egui::Sense::hover());
+            ui.painter().rect_filled(sep, 0.0, sep_col);
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Margins (inches)").size(13.0).strong().color(tc));
+            ui.add_space(2.0);
+            let p = PageLayout::PTS_PER_INCH;
+            ui.columns(2, |cols| {
+                for (label, pts) in [("Top", &mut draft.0.margin_top), ("Bottom", &mut draft.0.margin_bot)] {
+                    cols[0].horizontal(|ui| {
+                        ui.add_sized(egui::vec2(52.0, 18.0), egui::Label::new(egui::RichText::new(label).size(12.0).color(muted)));
+                        let mut inches = *pts / p;
+                        if ui.add(egui::DragValue::new(&mut inches).range(0.0..=4.0).speed(0.01).fixed_decimals(2).suffix("\"")).changed() { *pts = inches * p; }
+                    });
+                }
+                for (label, pts) in [("Left", &mut draft.0.margin_left), ("Right", &mut draft.0.margin_right)] {
+                    cols[1].horizontal(|ui| {
+                        ui.add_sized(egui::vec2(52.0, 18.0), egui::Label::new(egui::RichText::new(label).size(12.0).color(muted)));
+                        let mut inches = *pts / p;
+                        if ui.add(egui::DragValue::new(&mut inches).range(0.0..=4.0).speed(0.01).fixed_decimals(2).suffix("\"")).changed() { *pts = inches * p; }
+                    });
                 }
             });
-            ui.label(egui::RichText::new("Custom (points)").size(11.0).color(muted));
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("W:").size(12.0).color(muted)); if ui.add(egui::DragValue::new(&mut ed.layout.width).range(200.0..=1200.0).speed(1.0)).changed() { ed.heights_dirty = true; }
-                ui.label(egui::RichText::new("H:").size(12.0).color(muted)); ui.add(egui::DragValue::new(&mut ed.layout.height).range(200.0..=1700.0).speed(1.0));
-            });
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("Margins (points)").size(13.0).color(tc));
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Top:").size(12.0).color(muted)); if ui.add(egui::DragValue::new(&mut ed.layout.margin_top).range(0.0..=200.0).speed(1.0)).changed() { ed.heights_dirty = true; }
-                ui.label(egui::RichText::new("Bottom:").size(12.0).color(muted)); if ui.add(egui::DragValue::new(&mut ed.layout.margin_bot).range(0.0..=200.0).speed(1.0)).changed() { ed.heights_dirty = true; }
-            });
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Left:").size(12.0).color(muted)); if ui.add(egui::DragValue::new(&mut ed.layout.margin_left).range(0.0..=200.0).speed(1.0)).changed() { ed.heights_dirty = true; }
-                ui.label(egui::RichText::new("Right:").size(12.0).color(muted)); if ui.add(egui::DragValue::new(&mut ed.layout.margin_right).range(0.0..=200.0).speed(1.0)).changed() { ed.heights_dirty = true; }
-            });
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("Base Font Size").size(12.0).color(muted));
-            if ui.add(egui::Slider::new(&mut ed.base_size, 8.0..=24.0).suffix(" pt")).changed() { ed.heights_dirty = true; }
+
             ui.add_space(6.0);
+            let sep2 = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
+            ui.allocate_rect(sep2, egui::Sense::hover());
+            ui.painter().rect_filled(sep2, 0.0, sep_col);
+            ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Apply").clicked() { ed.dirty = true; ed.show_page_settings = false; }
-                if ui.button("Cancel").clicked() { ed.show_page_settings = false; }
+                ui.label(egui::RichText::new("Base Font Size:").size(12.0).color(muted));
+                ui.add(egui::Slider::new(&mut draft.2, 8.0..=24.0).suffix(" pt"));
+            });
+
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if ui.button("Apply").clicked() { apply = true; }
+                if ui.button("Cancel").clicked() { cancel = true; }
             });
         });
-    if !open { ed.show_page_settings = false; }
-    if let Some(win) = win {
-        let clicked_outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !win.response.rect.contains(p)));
-        if clicked_outside { ed.show_page_settings = false; }
+
+    if apply {
+        let (layout, preset, base_size) = ed.page_settings_draft.take().unwrap();
+        ed.layout = layout;
+        ed.preset_idx = preset;
+        ed.base_size = base_size;
+        ed.heights_dirty = true;
+        ed.auto_zoom_done = false;
+        ed.dirty = true;
+        ed.show_page_settings = false;
+    } else if cancel || !open {
+        ed.page_settings_draft = None;
+        ed.show_page_settings = false;
     }
 }

@@ -39,6 +39,7 @@ pub struct DocumentEditor {
     pub(super) preset_idx: usize,
     pub(super) line_spacing_input: f32,
     pub(super) doc_sel: Option<[DocPos; 2]>,
+    pub(super) page_settings_draft: Option<(PageLayout, usize, f32)>,
 }
 
 impl DocumentEditor {
@@ -73,7 +74,7 @@ impl DocumentEditor {
             para_ids: (0..n).map(|i| egui::Id::new(("de_para", i as u64))).collect(),
             para_heights: vec![0.0; n], heights_dirty: true,
             preset_idx: 0, line_spacing_input: 1.15,
-            doc_sel: None,
+            doc_sel: None, page_settings_draft: None,
         }
     }
 
@@ -392,7 +393,7 @@ impl EditorModule for DocumentEditor {
             MenuAction::Custom(ref v) => match v.as_str() {
                 "Find" => { self.show_find = true; true }
                 "Stats" => { self.show_stats = true; true }
-                "PageSettings" => { self.show_page_settings = true; true }
+                "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
                 "ToggleOutline" => { self.show_outline = !self.show_outline; true }
                 "ZoomIn" => { self.zoom = (self.zoom + 0.1).min(3.0); true }
                 "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); true }

@@ -107,19 +107,55 @@ impl DocParagraph {
 
 #[derive(Debug, Clone)]
 pub struct PageLayout {
-    pub width: f32, pub height: f32, pub margin_top: f32, pub margin_bot: f32,
-    pub margin_left: f32, pub margin_right: f32,
+    pub width: f32, pub height: f32, pub margin_top: f32, pub margin_bot: f32, pub margin_left: f32, pub margin_right: f32,
 }
 impl Default for PageLayout {
-    fn default() -> Self { Self { width: 612.0, height: 792.0, margin_top: 72.0, margin_bot: 72.0, margin_left: 90.0, margin_right: 90.0 } }
+    fn default() -> Self { Self { width: 612.0, height: 792.0, margin_top: 72.0, margin_bot: 72.0, margin_left: 72.0, margin_right: 72.0 } }
 }
 impl PageLayout {
+    pub const PTS_PER_INCH: f32 = 72.0;
     pub fn content_width(&self) -> f32 { self.width - self.margin_left - self.margin_right }
     pub fn content_height(&self) -> f32 { self.height - self.margin_top - self.margin_bot }
-    pub fn a4() -> Self { Self { width: 595.0, height: 842.0, ..Default::default() } }
-    pub fn a5() -> Self { Self { width: 420.0, height: 595.0, margin_top: 56.0, margin_bot: 56.0, margin_left: 60.0, margin_right: 60.0 } }
-    pub fn presets() -> &'static [&'static str] { &["Letter (8.5x11)", "A4", "A5"] }
-    pub fn from_preset(i: usize) -> Self { match i { 1 => Self::a4(), 2 => Self::a5(), _ => Self::default() } }
+    fn inch(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Self {
+        let p = Self::PTS_PER_INCH;
+        Self { width: w * p, height: h * p, margin_top: mt * p, margin_bot: mb * p, margin_left: ml * p, margin_right: mr * p }
+    }
+    pub fn letter() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.0, 1.0) }
+    pub fn letter_word() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.25, 1.25) }
+    pub fn a4() -> Self { Self::inch(8.2677, 11.6929, 1.0, 1.0, 1.0, 1.0) }
+    pub fn legal() -> Self { Self::inch(8.5, 14.0, 1.0, 1.0, 1.0, 1.0) }
+    pub fn a3() -> Self { Self::inch(11.6929, 16.5354, 1.0, 1.0, 1.0, 1.0) }
+    pub fn a5() -> Self { Self::inch(5.8268, 8.2677, 1.0, 1.0, 1.0, 1.0) }
+    pub fn executive() -> Self { Self::inch(7.25, 10.5, 1.0, 1.0, 1.0, 1.0) }
+    pub fn tabloid() -> Self { Self::inch(11.0, 17.0, 1.0, 1.0, 1.0, 1.0) }
+    pub fn b5() -> Self { Self::inch(6.9291, 9.8425, 1.0, 1.0, 1.0, 1.0) }
+    pub fn presets() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("Letter", "8.5 x 11 in  — Google Docs default"),
+            ("Letter (Word)", "8.5 x 11 in  — Word default (1.25\" sides)"),
+            ("A4", "210 x 297 mm  — International standard"),
+            ("Legal", "8.5 x 14 in  — US legal"),
+            ("A3", "297 x 420 mm"),
+            ("A5", "148 x 210 mm"),
+            ("Executive", "7.25 x 10.5 in"),
+            ("Tabloid", "11 x 17 in"),
+            ("B5", "176 x 250 mm"),
+        ]
+    }
+    pub fn from_preset(i: usize) -> Self {
+        match i {
+            0 => Self::letter(),
+            1 => Self::letter_word(),
+            2 => Self::a4(),
+            3 => Self::legal(),
+            4 => Self::a3(),
+            5 => Self::a5(),
+            6 => Self::executive(),
+            7 => Self::tabloid(),
+            8 => Self::b5(),
+            _ => Self::letter(),
+        }
+    }
 }
 
 pub fn ensure_boundary(para: &mut DocParagraph, byte: usize) {

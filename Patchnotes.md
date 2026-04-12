@@ -233,6 +233,7 @@
 - **ARCHIVE CONVERTER**: Now works with .7z files for both converting and input
 - **DOCUMENT EDITOR**: First prototype of the document editor
 - **DOCUMENT EDITOR**: Font size now works similarly to other document editor software, base font size is now located within page settings
+- **DOCUMENT EDITOR**: Adding more page presets and changing margin measurement to inches instead of pixels
 - **JSON EDITOR**: Added hover cursor effects
 - **JSON EDITOR**: Added File Renaming, Opening file in converter, and Open File Location by right clicking file name in file information bar
 - **TEXT EDITOR**: Added hover cursor effects
