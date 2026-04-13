@@ -127,6 +127,17 @@ impl DocumentEditor {
         let n = self.paras.len();
         let prefix = self.paras[from.para].text[..from.byte.min(self.paras[from.para].text.len())].to_string();
         let suffix = if to.para < n { self.paras[to.para].text[to.byte.min(self.paras[to.para].text.len())..].to_string() } else { String::new() };
+        
+        if self.paras[from.para].style == ParaStyle::HRule {
+            if to.para < n && self.paras[to.para].style != ParaStyle::HRule {
+                self.paras[from.para].style = self.paras[to.para].style;
+                self.paras[from.para].align = self.paras[to.para].align;
+                self.paras[from.para].indent_left = self.paras[to.para].indent_left;
+            } else {
+                self.paras[from.para].style = ParaStyle::Normal;
+            }
+        }
+
         rebuild_spans(&mut self.paras[from.para], format!("{}{}", prefix, suffix), &self.cur_fmt);
         if to.para > from.para && to.para < n {
             self.paras.drain(from.para + 1..=to.para.min(n - 1));
@@ -343,6 +354,18 @@ impl DocumentEditor {
     pub(super) fn fmt_state_sub(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.sub); } }
         self.cur_fmt.sub
+    }
+
+    pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                apply_fmt_range(&mut self.paras[pi], s, e, |f| f.color = color);
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true; return;
+            }
+        }
+        self.cur_fmt.color = color;
     }
 
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {

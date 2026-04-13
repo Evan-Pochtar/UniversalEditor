@@ -256,6 +256,9 @@
 ### Document Editor
 
 - [x] Allow changing font per line not the whole document at once
+- [x] Bulleted lists
+- [x] Horizontal line
+- [x] Text color
 
 ### CONVERTER: Img 2 Img
 

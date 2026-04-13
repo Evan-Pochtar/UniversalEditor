@@ -7,6 +7,41 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
+fn render_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
+    const PALETTE: &[([u8; 3], &str)] = &[
+        ([0,0,0], "Black"), ([68,68,68], "Dark Gray"), ([102,102,102], "Gray"),
+        ([153,153,153], "Light Gray"), ([204,204,204], "Silver"), ([255,255,255], "White"),
+        ([220,38,38], "Red"), ([234,88,12], "Orange"), ([234,179,8], "Yellow"),
+        ([22,163,74], "Green"), ([20,184,166], "Teal"), ([59,130,246], "Blue"),
+        ([99,102,241], "Indigo"), ([168,85,247], "Purple"), ([236,72,153], "Pink"), ([120,53,15], "Brown"),
+    ];
+    let lc = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+    ui.label(egui::RichText::new("Text Color").size(11.0).color(lc));
+    ui.add_space(4.0);
+    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(11.0)).min_size(egui::vec2(120.0, 20.0))).clicked() {
+        ed.apply_fmt_color(None);
+        egui::Popup::close_id(ui.ctx(), popup_id);
+    }
+    ui.add_space(4.0);
+    for row in PALETTE.chunks(6) {
+        ui.horizontal(|ui| {
+            for &(c, name) in row {
+                let col = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                let border = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+                if ui.add(egui::Button::new("").fill(col)
+                    .stroke(egui::Stroke::new(1.0, border))
+                    .min_size(egui::vec2(20.0, 20.0))
+                    .corner_radius(3.0))
+                    .on_hover_text(name).clicked()
+                {
+                    ed.apply_fmt_color(Some(c));
+                    egui::Popup::close_id(ui.ctx(), popup_id);
+                }
+            }
+        });
+    }
+}
+
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     let is_dark = ui.visuals().dark_mode;
     let theme = if is_dark { ThemeMode::Dark } else { ThemeMode::Light };
@@ -98,6 +133,38 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     if fmt_btn(ui, egui::RichText::new("S").strikethrough().size(13.0), ed.fmt_state_strike(), theme, "Strikethrough") { ed.apply_fmt_toggle_strike(); }
                     if fmt_btn(ui, egui::RichText::new("x\u{00B2}").size(11.0), ed.fmt_state_sup(), theme, "Superscript") { ed.apply_fmt_toggle_sup(); }
                     if fmt_btn(ui, egui::RichText::new("x\u{2082}").size(11.0), ed.fmt_state_sub(), theme, "Subscript") { ed.apply_fmt_toggle_sub(); }
+                    ui.separator();
+                    let is_bullet = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListBullet).unwrap_or(false);
+                    let is_num = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListOrdered).unwrap_or(false);
+                    if fmt_btn(ui, "\u{2022}", is_bullet, theme, "Bullet List") { ed.apply_style_toggle(ParaStyle::ListBullet); }
+                    if fmt_btn(ui, "1.", is_num, theme, "Numbered List") { ed.apply_style_toggle(ParaStyle::ListOrdered); }
+                    if act_btn(ui, "\u{2014}", theme, "Insert Horizontal Rule") {
+                        ed.push_undo();
+                        let idx = ed.focused_para;
+                        ed.paras.insert(idx + 1, DocParagraph::with_style(ParaStyle::HRule));
+                        if idx + 2 >= ed.paras.len() { ed.paras.push(DocParagraph::new()); }
+                        ed.focused_para = idx + 2;
+                        ed.pending_focus = Some(ed.focused_para);
+                        ed.sync_texts(); ed.dirty = true;
+                    }
+                    ui.separator();
+                    let cur_col = ed.cur_fmt.color.map(|c| egui::Color32::from_rgb(c[0],c[1],c[2]))
+                        .unwrap_or(if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22,22,22) });
+                    let color_btn = ui.scope(|ui| {
+                        let s = ui.style_mut();
+                        s.visuals.widgets.inactive.bg_fill = if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 };
+                        s.visuals.widgets.hovered.bg_fill = if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 };
+                        ui.add(egui::Button::new(egui::RichText::new("A").size(13.0).color(cur_col)).min_size(egui::vec2(24.0, 26.0)))
+                    }).inner.on_hover_text("Text color");
+                    let color_popup_id = color_btn.id;
+                    { let r = color_btn.rect; ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(r.min.x+2.0, r.max.y-4.0), egui::vec2(r.width()-4.0, 3.0)), 1.0, cur_col); }
+                    egui::Popup::from_toggle_button_response(&color_btn)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            ui.set_min_width(140.0);
+                            render_color_palette(ui, ed, is_dark, color_popup_id);
+                        });
+                    let _ = color_popup_id;
                     ui.separator();
                     let cur_align = ed.paras.get(ed.focused_para).map(|p| p.align).unwrap_or_default();
                     for a in Align::all() {
@@ -353,6 +420,13 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
 
     while i < ed.paras.len() {
         let para = ed.paras[i].clone();
+        if para.style == ParaStyle::HRule {
+            let h = para.space_before * ed.zoom + 12.0 + para.space_after * ed.zoom;
+            cur_y += h;
+            if cur_y >= mt + page_content_h { cur_y = mt; }
+            i += 1;
+            continue;
+        }
         let wrap_w = (cw - para.indent_left * ed.zoom).max(40.0);
         let h = measure_para_total_height(ctx, &para, font, bs, wrap_w, ed.zoom, is_dark);
         let remaining = mt + page_content_h - cur_y;
@@ -421,6 +495,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         ed.para_heights.resize(n, 0.0);
         for i in 0..n {
             let p = &ed.paras[i];
+            if p.style == ParaStyle::HRule { ed.para_heights[i] = p.space_before * ed.zoom + 12.0 + p.space_after * ed.zoom; continue; }
             let indent = p.indent_left * ed.zoom;
             let wrap_w = (cw - indent).max(40.0);
             let job = build_layout_job(&p.spans, &p.text, p, font, bs, wrap_w, is_dark, ed.zoom);
@@ -447,6 +522,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let char_w = (bs * 0.55).max(1.0);
     let mut text_change: Option<(usize, String)> = None;
     let mut merge_up: Option<usize> = None;
+    let mut merge_down: Option<usize> = None;
     let mut new_selection: Option<(usize, usize, usize)> = None;
     let mut pending_focus_next: Option<usize> = None;
 
@@ -535,6 +611,21 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             }
 
             if near_view {
+                if para.style == ParaStyle::HRule {
+                    let rule_col = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+                    let mid_y = text_y + text_h / 2.0;
+                    painter.rect_filled(
+                        egui::Rect::from_min_size(egui::pos2(pm.x + ml, mid_y - 1.0), egui::vec2(cw, 2.0)),
+                        1.0, rule_col,
+                    );
+                    if let Some((from, to)) = cross_sel {
+                        if i >= from.para && i <= to.para {
+                            let hl_rect = egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(cw, text_h));
+                            painter.rect_filled(hl_rect, 2.0, egui::Color32::from_rgba_unmultiplied(66, 133, 244, 100));
+                        }
+                    }
+                    continue;
+                }
                 if i == focused {
                     painter.rect_filled(
                         egui::Rect::from_min_size(
@@ -584,7 +675,9 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         );
                     }
                     ParaStyle::ListOrdered => {
-                        let num = para.list_num.unwrap_or((i + 1) as u32);
+                        let num = para.list_num.unwrap_or_else(|| {
+                            ed.paras[..i].iter().rev().take_while(|p| p.style == ParaStyle::ListOrdered).count() as u32 + 1
+                        });
                         painter.text(
                             egui::pos2(edit_x - 4.0, text_y),
                             egui::Align2::RIGHT_TOP,
@@ -615,13 +708,16 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
             if i == focused {
                 let id = ed.para_ids[i];
-                let at_start = egui::TextEdit::load_state(ctx, id)
-                    .and_then(|s| s.cursor.char_range())
-                    .map(|cr| cr.primary.index == 0 && cr.secondary.index == 0)
-                    .unwrap_or(false);
+                let state = egui::TextEdit::load_state(ctx, id);
+                let cr = state.as_ref().and_then(|s| s.cursor.char_range());
+                let at_start = cr.map(|cr| cr.primary.index == 0 && cr.secondary.index == 0).unwrap_or(false);
+                let at_end = cr.map(|cr| {
+                    let len = ed.para_texts[i].chars().count();
+                    cr.primary.index == len && cr.secondary.index == len
+                }).unwrap_or(false);
 
-                let should_handle = at_start && (ed.paras[i].indent_left > 0.0 || i > 0);
-                if should_handle && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
+                let should_handle_bksp = at_start && (ed.paras[i].indent_left > 0.0 || i > 0);
+                if should_handle_bksp && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
                     if ed.paras[i].indent_left > 0.0 {
                         ed.push_undo();
                         ed.paras[i].indent_left = (ed.paras[i].indent_left - 18.0).max(0.0);
@@ -632,7 +728,14 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
                     continue;
                 }
+
+                if at_end && i + 1 < ed.paras.len() && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Delete)) {
+                    merge_down = Some(i);
+                    continue;
+                }
             }
+
+            if ed.paras[i].style == ParaStyle::HRule { continue; }
 
             let para_clone = ed.paras[i].clone();
             let spans_clone: Vec<DocSpan> = ed.paras[i].spans.clone();
@@ -766,21 +869,53 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); ed.pending_focus = None; }
     if let Some(sel) = new_selection { ed.last_selection = Some(sel); }
-
     if let Some(mu) = merge_up {
         if mu > 0 && mu < ed.paras.len() {
             ed.push_undo();
-            let prev_len = ed.paras[mu - 1].text.len();
-            merge_paragraphs(&mut ed.paras, mu - 1);
-            ed.focused_para = mu - 1;
-            ed.pending_focus = Some(mu - 1);
-            ed.sync_texts();
-            let id = ed.para_ids[mu - 1];
-            let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
-            let cc = egui::text::CCursor::new(prev_len);
-            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
-            egui::TextEdit::store_state(ctx, id, state);
-            ed.dirty = true;
+            if ed.paras[mu - 1].style == ParaStyle::HRule {
+                ed.paras.remove(mu - 1);
+                ed.focused_para = mu - 1;
+                ed.pending_focus = Some(mu - 1);
+                ed.sync_texts();
+                ed.dirty = true;
+                ed.heights_dirty = true;
+            } else {
+                let prev_len = ed.paras[mu - 1].text.len();
+                merge_paragraphs(&mut ed.paras, mu - 1);
+                ed.focused_para = mu - 1;
+                ed.pending_focus = Some(mu - 1);
+                ed.sync_texts();
+                let id = ed.para_ids[mu - 1];
+                let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                let cc = egui::text::CCursor::new(prev_len);
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
+                egui::TextEdit::store_state(ctx, id, state);
+                ed.dirty = true;
+                ed.heights_dirty = true;
+            }
+        }
+    }
+
+    if let Some(md) = merge_down {
+        if md + 1 < ed.paras.len() {
+            ed.push_undo();
+            if ed.paras[md + 1].style == ParaStyle::HRule {
+                ed.paras.remove(md + 1);
+                ed.sync_texts();
+                ed.dirty = true;
+                ed.heights_dirty = true;
+            } else {
+                let prev_len = ed.paras[md].text.len();
+                merge_paragraphs(&mut ed.paras, md);
+                ed.sync_texts();
+                let id = ed.para_ids[md];
+                let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                let cc = egui::text::CCursor::new(prev_len);
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
+                egui::TextEdit::store_state(ctx, id, state);
+                ed.dirty = true;
+                ed.heights_dirty = true;
+            }
         }
     }
 

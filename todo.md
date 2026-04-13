@@ -109,17 +109,15 @@
 - [ ] Add .odt file compatibility
 - [ ] Add way to create comments
 - [ ] Increase indent and decrease indent buttons
-- [ ] Bulleted lists
-- [ ] Horizontal line
 - [ ] Checklists
 - [ ] Tables
 - [ ] Images
 - [ ] Links
 - [ ] Highlighting
-- [ ] Text color
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Header and footers
+- [ ] Clean up toolbar
 
 ### CONVERTER: Img 2 Img
 

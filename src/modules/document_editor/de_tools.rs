@@ -20,7 +20,7 @@ impl FontChoice {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ParaStyle {
     #[default] Normal, H1, H2, H3, H4, H5, H6,
-    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered,
+    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, HRule,
 }
 impl ParaStyle {
     pub fn label(self) -> &'static str {
@@ -30,6 +30,7 @@ impl ParaStyle {
             Self::H6 => "Heading 6", Self::Title => "Title", Self::Subtitle => "Subtitle",
             Self::BlockQuote => "Block Quote", Self::Code => "Code Block",
             Self::ListBullet => "Bullet List", Self::ListOrdered => "Numbered List",
+            Self::HRule => "Horizontal Rule",
         }
     }
     pub fn all() -> &'static [ParaStyle] {
@@ -43,8 +44,8 @@ impl ParaStyle {
     }
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
-    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title => 8.0, _ => 0.0 } }
-    pub fn space_after(self) -> f32 { match self { Self::H1|Self::H2 => 8.0, Self::H3|Self::H4 => 6.0, _ => 6.0 } }
+    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
+    pub fn space_after(self) -> f32 { match self { Self::H1|Self::H2 => 8.0, Self::H3|Self::H4|Self::HRule => 8.0, _ => 6.0 } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered => 18.0, Self::BlockQuote => 24.0, _ => 0.0 } }
     pub fn outline_depth(self) -> Option<u8> {
         match self { Self::Title|Self::Subtitle => Some(0), Self::H1 => Some(1), Self::H2 => Some(2), Self::H3 => Some(3), Self::H4 => Some(4), Self::H5 => Some(5), Self::H6 => Some(6), _ => None }
@@ -53,7 +54,8 @@ impl ParaStyle {
         match self { Self::Normal => "Normal", Self::H1 => "Heading1", Self::H2 => "Heading2", Self::H3 => "Heading3",
             Self::H4 => "Heading4", Self::H5 => "Heading5", Self::H6 => "Heading6",
             Self::Title => "Title", Self::Subtitle => "Subtitle", Self::BlockQuote => "Quote",
-            Self::Code => "CodeBlock", Self::ListBullet => "ListBullet", Self::ListOrdered => "ListNumber" }
+            Self::Code => "CodeBlock", Self::ListBullet => "ListBullet", Self::ListOrdered => "ListNumber",
+            Self::HRule => "HRule" }
     }
     pub fn from_docx_id(s: &str) -> Self {
         match s {
@@ -400,6 +402,10 @@ fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").rep
 fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:body>\n");
     for para in paras {
+        if para.style == ParaStyle::HRule {
+            out.push_str("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"auto\"/></w:pBdr></w:pPr></w:p>\n");
+            continue;
+        }
         out.push_str("<w:p>\n<w:pPr>\n");
         if para.style != ParaStyle::Normal { out.push_str(&format!("<w:pStyle w:val=\"{}\"/>\n", para.style.docx_id())); }
         if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>\n", para.align.docx_val())); }
@@ -473,13 +479,16 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
     let mut cur_para: Option<DocParagraph> = None; let mut cur_fmt = SpanFmt::default();
     let mut cur_run_text = String::new();
     let mut in_run = false; let mut in_rpr = false; let mut in_ppr = false; let mut in_t = false;
+    let mut in_pbdr = false; let mut has_hborder = false;
 
     loop {
         match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(ref e) => {
                 match e.local_name().as_ref() {
-                    b"p" => { cur_para = Some(DocParagraph::new()); in_ppr = false; }
+                    b"p" => { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; }
                     b"pPr" => in_ppr = true,
+                    b"pBdr" => if in_ppr { in_pbdr = true; },
+                    b"bottom" => if in_pbdr { has_hborder = true; },
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
@@ -496,13 +505,14 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
+                    b"bottom" => { if in_pbdr && in_ppr { has_hborder = true; } }
                     b"b" => { if in_rpr { cur_fmt.bold = true; } }
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
                     b"strike" => { if in_rpr { cur_fmt.strike = true; } }
                     b"vertAlign" => { if in_rpr { match get_attr(e, b"val").as_deref() { Some("subscript") => cur_fmt.sub = true, Some("superscript") => cur_fmt.sup = true, _ => {} } } }
                     b"sz" => { if in_rpr { cur_fmt.size_hp = get_attr(e, b"val").and_then(|v| v.parse().ok()); } }
-                    b"color" => { if in_rpr { if let Some(v) = get_attr(e, b"val") { if v != "auto" && v.len() == 6 { if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); } } } } }
+                    b"color" => { if in_rpr { if let Some(v) = get_attr(e, b"val") { if v != "auto" && v != "000000" && v.len() == 6 { if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); } } } } }
                     b"pgSz" => { if let Some(v) = get_attr(e, b"w") { layout.width = v.parse::<f32>().unwrap_or(12240.0)/20.0; } if let Some(v) = get_attr(e, b"h") { layout.height = v.parse::<f32>().unwrap_or(15840.0)/20.0; } }
                     b"pgMar" => { if let Some(v) = get_attr(e, b"top") { layout.margin_top = v.parse::<f32>().unwrap_or(1440.0)/20.0; } if let Some(v) = get_attr(e, b"bottom") { layout.margin_bot = v.parse::<f32>().unwrap_or(1440.0)/20.0; } if let Some(v) = get_attr(e, b"left") { layout.margin_left = v.parse::<f32>().unwrap_or(1800.0)/20.0; } if let Some(v) = get_attr(e, b"right") { layout.margin_right = v.parse::<f32>().unwrap_or(1800.0)/20.0; } }
                     _ => {}
@@ -510,8 +520,9 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
             }
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
-                    b"p" => { if let Some(p) = cur_para.take() { paras.push(p); } }
+                    b"p" => { if let Some(mut p) = cur_para.take() { if has_hborder && p.text.trim().is_empty() { p.style = ParaStyle::HRule; } paras.push(p); } has_hborder = false; }
                     b"pPr" => in_ppr = false,
+                    b"pBdr" => in_pbdr = false,
                     b"r" => {
                         in_run = false;
                         if let Some(ref mut para) = cur_para {
