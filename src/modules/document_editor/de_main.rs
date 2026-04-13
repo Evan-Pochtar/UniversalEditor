@@ -121,6 +121,23 @@ impl DocumentEditor {
         self.doc_sel.map(|[a, b]| a.para != b.para).unwrap_or(false)
     }
 
+    pub(super) fn collect_sel_text(&self, from: DocPos, to: DocPos) -> String {
+        if from.para == to.para {
+            let len = self.paras[from.para].text.len();
+            let s = from.byte.min(len); let e = to.byte.min(len);
+            return self.paras[from.para].text[s..e].to_string();
+        }
+        let mut parts = Vec::new();
+        parts.push(self.paras[from.para].text[from.byte.min(self.paras[from.para].text.len())..].to_string());
+        for i in (from.para + 1)..to.para {
+            if i < self.paras.len() { parts.push(self.paras[i].text.clone()); }
+        }
+        if to.para < self.paras.len() {
+            parts.push(self.paras[to.para].text[..to.byte.min(self.paras[to.para].text.len())].to_string());
+        }
+        parts.join("\n")
+    }
+
     pub(super) fn delete_sel(&mut self) {
         let (from, to) = match self.norm_sel() { Some(r) => r, None => return };
         self.push_undo();

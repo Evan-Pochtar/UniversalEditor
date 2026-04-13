@@ -57,6 +57,7 @@
 
 - [ ] Doesn't load bullet points properly
 - [ ] Doesn't load horizontal lines properly
+- [ ] Cannot highlight and scroll at the same time
 
 ### Other Bugs
 

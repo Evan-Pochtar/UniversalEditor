@@ -7,6 +7,66 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
+fn selection_rects_for_galley(
+    galley: &egui::Galley,
+    text: &str,
+    start_byte: usize,
+    end_byte: usize,
+) -> Vec<egui::Rect> {
+    let start_byte = start_byte.min(text.len());
+    let end_byte = end_byte.min(text.len());
+    let start_char = text[..start_byte].chars().count();
+    let end_char = text[..end_byte].chars().count();
+
+    let mut rects = Vec::new();
+    let mut char_pos = 0usize;
+
+    for row in &galley.rows {
+        let row_start = char_pos;
+        let glyph_count = row.glyphs.len();
+        let row_end = char_pos + glyph_count;
+
+        if start_char < row_end && end_char > row_start {
+            let local_start = start_char.saturating_sub(row_start).min(glyph_count);
+            let local_end = (end_char - row_start).min(glyph_count);
+
+            let x0 = if local_start == 0 {
+                row.rect().min.x
+            } else {
+                row.glyphs.get(local_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+            };
+
+            let x1 = if local_end >= glyph_count {
+                row.rect().max.x
+            } else {
+                row.glyphs.get(local_end).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+            };
+
+            if x1 >= x0 {
+                rects.push(egui::Rect::from_min_max(
+                    egui::pos2(x0, row.rect().min.y),
+                    egui::pos2(x1.max(x0 + 4.0), row.rect().max.y),
+                ));
+            }
+        }
+
+        char_pos = row_end;
+        if row.ends_with_newline { char_pos += 1; }
+    }
+
+    // Show at least a cursor-width rect for empty or fully-selected paragraphs
+    if rects.is_empty() && start_byte == 0 && end_byte >= text.len() {
+        if let Some(row) = galley.rows.first() {
+            rects.push(egui::Rect::from_min_max(
+                egui::pos2(row.rect().min.x, row.rect().min.y),
+                egui::pos2(row.rect().min.x + 8.0, row.rect().max.y),
+            ));
+        }
+    }
+
+    rects
+}
+
 fn render_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
     const PALETTE: &[([u8; 3], &str)] = &[
         ([0,0,0], "Black"), ([68,68,68], "Dark Gray"), ([102,102,102], "Gray"),
@@ -65,25 +125,30 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
 
 fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
     if ed.has_cross_sel() {
-        let consumed = ctx.input_mut(|i| {
-            let del = i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::Delete);
-            if del {
-                i.events.retain(|e| !matches!(e,
-                    egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } |
-                    egui::Event::Key { key: egui::Key::Delete, pressed: true, .. }
-                ));
-            }
-            del
+        let del = ctx.input_mut(|i| {
+            let d = i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::Delete);
+            if d { i.events.retain(|e| !matches!(e, egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } | egui::Event::Key { key: egui::Key::Delete, pressed: true, .. })); }
+            d
         });
-        if consumed { ed.delete_sel(); return; }
+        if del { ed.delete_sel(); return; }
 
-        let typed: Vec<String> = ctx.input(|i| i.events.iter().filter_map(|e| {
-            if let egui::Event::Text(t) = e { Some(t.clone()) } else { None }
-        }).collect());
-        if !typed.is_empty() { ed.delete_sel(); }
+        let (do_copy, do_cut) = ctx.input_mut(|i| {
+            let c = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+            let x = i.events.iter().any(|e| matches!(e, egui::Event::Cut));
+            if c || x { i.events.retain(|e| !matches!(e, egui::Event::Copy | egui::Event::Cut)); }
+            (c, x)
+        });
+        if do_copy || do_cut {
+            if let Some((from, to)) = ed.norm_sel() { ctx.copy_text(ed.collect_sel_text(from, to)); }
+            if do_cut { ed.delete_sel(); return; }
+        }
+
+        let has_text = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_))));
+        if has_text { ed.delete_sel(); }
     }
 
     ctx.input_mut(|i| {
+        if !ed.has_cross_sel() && i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))) { ed.push_undo(); }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::Z) { ed.undo(); }
         if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z) || i.consume_key(egui::Modifiers::CTRL, egui::Key::Y) { ed.redo(); }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::S) { let _ = ed.save(); }
@@ -231,15 +296,8 @@ fn compute_page_layout(ed: &DocumentEditor) -> ComputedPageLayout {
     let mut cur_page = 0;
 
     for i in 0..n {
-        let mut h = ed
-            .para_heights
-            .get(i)
-            .copied()
-            .unwrap_or(ed.base_size * ed.zoom * 1.8);
-
-        if h <= 0.0 {
-            h = ed.base_size * ed.zoom * 1.2;
-        }
+        let mut h = ed.para_heights.get(i).copied().unwrap_or(ed.base_size * ed.zoom * 1.8);
+        if h <= 0.0 { h = ed.base_size * ed.zoom * 1.2; }
 
         if cur_y > mt && cur_y + h > mt + page_content_h {
             cur_page += 1;
@@ -250,38 +308,10 @@ fn compute_page_layout(ed: &DocumentEditor) -> ComputedPageLayout {
         para_page[i] = cur_page;
         para_content_y[i] = cur_y;
         cur_y += h;
-        if h > page_content_h {
-            cur_y = mt + page_content_h;
-        }
+        if h > page_content_h { cur_y = mt + page_content_h; }
     }
 
-    ComputedPageLayout {
-        para_page,
-        para_content_y,
-        page_tops,
-    }
-}
-
-fn approx_byte(text: &str, rel_x: f32, char_w: f32) -> usize {
-    let idx = (rel_x / char_w.max(1.0)) as usize;
-    text.char_indices().nth(idx).map(|(b, _)| b).unwrap_or(text.len())
-}
-
-fn draw_cross_sel_for_para(painter: &egui::Painter, from: DocPos, to: DocPos, pi: usize, rect: egui::Rect, text: &str, char_w: f32) {
-    if pi < from.para || pi > to.para { return; }
-    let byte_to_x = |byte: usize| -> f32 {
-        let n = text[..byte.min(text.len())].chars().count();
-        (rect.min.x + n as f32 * char_w).clamp(rect.min.x, rect.max.x)
-    };
-    let x0 = if pi == from.para { byte_to_x(from.byte) } else { rect.min.x };
-    let x1 = if pi == to.para { byte_to_x(to.byte) } else { rect.max.x };
-    if x0 < x1 {
-        painter.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(x0, rect.min.y), egui::pos2(x1, rect.max.y)),
-            2.0,
-            egui::Color32::from_rgba_unmultiplied(66, 133, 244, 100),
-        );
-    }
+    ComputedPageLayout { para_page, para_content_y, page_tops }
 }
 
 fn measure_para_total_height(
@@ -304,13 +334,8 @@ fn split_spans_at_byte(spans: &[DocSpan], split_byte: usize) -> (Vec<DocSpan>, V
     let mut pos = 0usize;
 
     for s in spans {
-        if s.len == 0 {
-            continue;
-        }
-
-        let start = pos;
-        let end = pos + s.len;
-
+        if s.len == 0 { continue; }
+        let (start, end) = (pos, pos + s.len);
         if end <= split_byte {
             left.push(s.clone());
         } else if start >= split_byte {
@@ -318,15 +343,9 @@ fn split_spans_at_byte(spans: &[DocSpan], split_byte: usize) -> (Vec<DocSpan>, V
         } else {
             let left_len = split_byte - start;
             let right_len = end - split_byte;
-
-            if left_len > 0 {
-                left.push(DocSpan { len: left_len, fmt: s.fmt.clone() });
-            }
-            if right_len > 0 {
-                right.push(DocSpan { len: right_len, fmt: s.fmt.clone() });
-            }
+            if left_len > 0 { left.push(DocSpan { len: left_len, fmt: s.fmt.clone() }); }
+            if right_len > 0 { right.push(DocSpan { len: right_len, fmt: s.fmt.clone() }); }
         }
-
         pos = end;
     }
 
@@ -335,26 +354,17 @@ fn split_spans_at_byte(spans: &[DocSpan], split_byte: usize) -> (Vec<DocSpan>, V
 
 fn split_para_at_byte(src: &DocParagraph, split_byte: usize) -> (DocParagraph, DocParagraph) {
     let split_byte = split_byte.min(src.text.len());
-
     let (left_spans, right_spans) = split_spans_at_byte(&src.spans, split_byte);
 
     let mut left = src.clone();
     left.text = src.text[..split_byte].to_string();
-    left.spans = if left_spans.is_empty() {
-        vec![DocSpan { len: 0, fmt: SpanFmt::default() }]
-    } else {
-        left_spans
-    };
+    left.spans = if left_spans.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] } else { left_spans };
     left.space_after = 0.0;
     merge_adjacent(&mut left);
 
     let mut right = src.clone();
     right.text = src.text[split_byte..].to_string();
-    right.spans = if right_spans.is_empty() {
-        vec![DocSpan { len: 0, fmt: SpanFmt::default() }]
-    } else {
-        right_spans
-    };
+    right.spans = if right_spans.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] } else { right_spans };
     right.space_before = 0.0;
     merge_adjacent(&mut right);
 
@@ -373,37 +383,18 @@ fn find_split_byte_fit(
 ) -> usize {
     let mut char_bytes: Vec<usize> = para.text.char_indices().map(|(b, _)| b).collect();
     char_bytes.push(para.text.len());
+    if char_bytes.len() <= 2 { return para.text.len(); }
 
-    if char_bytes.len() <= 2 {
-        return para.text.len();
-    }
-
-    let mut lo = 1usize;
-    let mut hi = char_bytes.len() - 1;
-    let mut best = char_bytes[1];
-
+    let (mut lo, mut hi, mut best) = (1usize, char_bytes.len() - 1, char_bytes[1]);
     while lo <= hi {
         let mid = (lo + hi) / 2;
         let split = char_bytes[mid];
-
-        if split == 0 || split >= para.text.len() {
-            break;
-        }
-
+        if split == 0 || split >= para.text.len() { break; }
         let (left, _) = split_para_at_byte(para, split);
         let h = measure_para_total_height(ctx, &left, base_font, base_size, wrap_w, zoom, is_dark);
-
-        if h <= max_total_h + 0.5 {
-            best = split;
-            lo = mid + 1;
-        } else {
-            if mid == 0 {
-                break;
-            }
-            hi = mid.saturating_sub(1);
-        }
+        if h <= max_total_h + 0.5 { best = split; lo = mid + 1; }
+        else { if mid == 0 { break; } hi = mid.saturating_sub(1); }
     }
-
     best
 }
 
@@ -534,6 +525,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let focus_bg = if is_dark { egui::Color32::from_rgba_unmultiplied(59,130,246,10) } else { egui::Color32::from_rgba_unmultiplied(59,130,246,5) };
     let bullet_col = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
     let code_left = if is_dark { ColorPalette::AMBER_500 } else { ColorPalette::AMBER_600 };
+    let sel_color = ctx.style().visuals.selection.bg_fill;
 
     let focused = ed.focused_para;
     let find_hl: Option<(usize, usize, usize)> = if ed.find_cursor < ed.find_results.len() { Some(ed.find_results[ed.find_cursor]) } else { None };
@@ -577,8 +569,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let space_b = para.space_before * ed.zoom;
             let text_y = pm.y + content_y + space_b;
             let text_h = total_h - space_b - para.space_after * ed.zoom;
-            let abs_top = pm.y + content_y;
-            let near_view = !(abs_top + total_h < vp.min.y - page_h * 0.5 || abs_top > vp.max.y + page_h * 0.5);
+            let scroll_local_top = pt + content_y;
+            let near_view = !(scroll_local_top + total_h < vp.min.y - page_h * 0.5 || scroll_local_top > vp.max.y + page_h * 0.5);
 
             let (edit_x, edit_w) = if matches!(para.align, Align::Left) {
                 (pm.x + ml + indent, wrap_w)
@@ -590,9 +582,13 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 egui::vec2(edit_w, text_h.max(bs * 1.2)),
             );
 
-            if let Some(pp) = ptr {
-                if edit_rect.expand(2.0).contains(pp) {
-                    let byte = approx_byte(&ed.paras[i].text, pp.x - edit_rect.min.x, char_w);
+           if let Some(pp) = ptr {
+            if edit_rect.expand(2.0).contains(pp) {
+                let job = build_layout_job(&ed.paras[i].spans, &ed.paras[i].text, &ed.paras[i], font, bs, wrap_w, is_dark, ed.zoom);
+                let galley = ctx.fonts_mut(|f| f.layout_job(job));
+                let rel = pp - egui::pos2(edit_x, text_y);
+                let cursor = galley.cursor_from_pos(rel);
+                let byte = char_to_byte(&ed.paras[i].text, cursor.index);
                     if btn_pressed {
                         let pos = DocPos { para: i, byte };
                         ed.doc_sel = if shift {
@@ -620,20 +616,19 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     );
                     if let Some((from, to)) = cross_sel {
                         if i >= from.para && i <= to.para {
-                            let hl_rect = egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(cw, text_h));
-                            painter.rect_filled(hl_rect, 2.0, egui::Color32::from_rgba_unmultiplied(66, 133, 244, 100));
+                            painter.rect_filled(
+                                egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(cw, text_h.max(4.0))),
+                                0.0, sel_color,
+                            );
                         }
                     }
                     continue;
                 }
+
                 if i == focused {
                     painter.rect_filled(
-                        egui::Rect::from_min_size(
-                            egui::pos2(pm.x + ml, text_y - 2.0),
-                            egui::vec2(cw, text_h + 4.0),
-                        ),
-                        2.0,
-                        focus_bg,
+                        egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y - 2.0), egui::vec2(cw, text_h + 4.0)),
+                        2.0, focus_bg,
                     );
                 }
 
@@ -641,49 +636,34 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     ParaStyle::BlockQuote => {
                         painter.rect_filled(
                             egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(cw, text_h)),
-                            0.0,
-                            bq_bg,
+                            0.0, bq_bg,
                         );
                         painter.rect_filled(
                             egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(3.0, text_h)),
-                            1.0,
-                            ColorPalette::BLUE_500,
+                            1.0, ColorPalette::BLUE_500,
                         );
                     }
                     ParaStyle::Code => {
                         painter.rect_filled(
                             egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(cw, text_h)),
                             3.0,
-                            if is_dark {
-                                egui::Color32::from_rgb(24, 24, 30)
-                            } else {
-                                egui::Color32::from_rgb(244, 244, 248)
-                            },
+                            if is_dark { egui::Color32::from_rgb(24, 24, 30) } else { egui::Color32::from_rgb(244, 244, 248) },
                         );
                         painter.rect_filled(
                             egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y), egui::vec2(3.0, text_h)),
-                            1.0,
-                            code_left,
+                            1.0, code_left,
                         );
                     }
                     ParaStyle::ListBullet => {
-                        let by = text_y + text_h / 2.0;
-                        painter.circle_filled(
-                            egui::pos2(edit_x - 8.0 * ed.zoom, by),
-                            2.5 * ed.zoom,
-                            bullet_col,
-                        );
+                        painter.circle_filled(egui::pos2(edit_x - 8.0 * ed.zoom, text_y + text_h / 2.0), 2.5 * ed.zoom, bullet_col);
                     }
                     ParaStyle::ListOrdered => {
                         let num = para.list_num.unwrap_or_else(|| {
                             ed.paras[..i].iter().rev().take_while(|p| p.style == ParaStyle::ListOrdered).count() as u32 + 1
                         });
                         painter.text(
-                            egui::pos2(edit_x - 4.0, text_y),
-                            egui::Align2::RIGHT_TOP,
-                            format!("{}.", num),
-                            egui::FontId::proportional(bs * para.style.size_scale() * 0.9),
-                            bullet_col,
+                            egui::pos2(edit_x - 4.0, text_y), egui::Align2::RIGHT_TOP,
+                            format!("{}.", num), egui::FontId::proportional(bs * para.style.size_scale() * 0.9), bullet_col,
                         );
                     }
                     _ => {}
@@ -695,14 +675,35 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         let hw = ((fe - fs) as f32 * char_w).max(4.0);
                         painter.rect_filled(
                             egui::Rect::from_min_size(egui::pos2(hx, text_y), egui::vec2(hw, text_h)),
-                            2.0,
-                            egui::Color32::from_rgba_unmultiplied(255, 210, 0, 90),
+                            2.0, egui::Color32::from_rgba_unmultiplied(255, 210, 0, 90),
                         );
                     }
                 }
 
+                // Precise cross-paragraph selection highlighting using galley glyph positions
                 if let Some((from, to)) = cross_sel {
-                    draw_cross_sel_for_para(&painter, from, to, i, edit_rect, &ed.paras[i].text, char_w);
+                    if i >= from.para && i <= to.para {
+                        let start_byte = if i == from.para { from.byte } else { 0 };
+                        let end_byte = if i == to.para { to.byte } else { para.text.len() };
+
+                        let job = build_layout_job(&para.spans, &para.text, para, font, bs, wrap_w, is_dark, ed.zoom);
+                        let galley = ctx.fonts_mut(|f| f.layout_job(job));
+
+                        // Compute alignment offset so highlight matches visual text position
+                        let align_offset = match para.align {
+                            Align::Center => ((edit_w - galley.rect.width()) / 2.0).max(0.0),
+                            Align::Right  => (edit_w - galley.rect.width()).max(0.0),
+                            _ => 0.0,
+                        };
+                        let base_x = edit_x + align_offset;
+
+                        for rect in selection_rects_for_galley(&galley, &para.text, start_byte, end_byte) {
+                            painter.rect_filled(
+                                rect.translate(egui::vec2(base_x, text_y)),
+                                0.0, sel_color,
+                            );
+                        }
+                    }
                 }
             }
 
@@ -744,23 +745,12 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let dark_snap = is_dark;
             let zoom_snap = ed.zoom;
             let mut layouter = move |lui: &egui::Ui, s: &dyn egui::TextBuffer, _ww: f32| {
-                let job = build_layout_job(
-                    &spans_clone,
-                    s.as_str(),
-                    &para_clone,
-                    base_font_snap,
-                    base_size_snap,
-                    wrap_w,
-                    dark_snap,
-                    zoom_snap,
-                );
+                let job = build_layout_job(&spans_clone, s.as_str(), &para_clone, base_font_snap, base_size_snap, wrap_w, dark_snap, zoom_snap);
                 lui.fonts_mut(|f| f.layout_job(job))
             };
 
             let id = ed.para_ids[i];
-            if ed.pending_focus == Some(i) {
-                ctx.memory_mut(|m| m.request_focus(id));
-            }
+            if ed.pending_focus == Some(i) { ctx.memory_mut(|m| m.request_focus(id)); }
             let text_ref = &mut ed.para_texts[i];
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit_rect));
             let output = egui::TextEdit::multiline(text_ref)
@@ -772,39 +762,34 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 .layouter(&mut layouter)
                 .show(&mut child);
 
+            if ed.has_cross_sel() {
+                if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
+                    if let Some(cr) = state.cursor.char_range() {
+                        if cr.primary != cr.secondary {
+                            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cr.primary)));
+                            egui::TextEdit::store_state(ctx, id, state);
+                        }
+                    }
+                }
+            }
+
             let has_focus = output.response.has_focus();
             if has_focus && ed.focused_para != i {
                 ed.focused_para = i;
                 ed.line_spacing_input = ed.paras[i].line_height;
             }
             if has_focus {
-                let mut b = false;
-                let mut it = false;
-                let mut u = false;
-                let mut h: u8 = 0;
+                let mut b = false; let mut it = false; let mut u = false; let mut h: u8 = 0;
                 let mut tab_delta: Option<f32> = None;
 
                 ctx.input_mut(|inp| {
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::B) { b = true; }
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::I) { it = true; }
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::U) { u = true; }
-
-                    if inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) {
-                        tab_delta = Some(-18.0);
-                    } else if inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
-                        tab_delta = Some(18.0);
-                    }
-
-                    for (key, level) in [
-                        (egui::Key::Num1, 1u8),
-                        (egui::Key::Num2, 2),
-                        (egui::Key::Num3, 3),
-                        (egui::Key::Num4, 4),
-                        (egui::Key::Num5, 5),
-                    ] {
-                        if inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::ALT, key) {
-                            h = level;
-                        }
+                    if inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) { tab_delta = Some(-18.0); }
+                    else if inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab) { tab_delta = Some(18.0); }
+                    for (key, level) in [(egui::Key::Num1,1u8),(egui::Key::Num2,2),(egui::Key::Num3,3),(egui::Key::Num4,4),(egui::Key::Num5,5)] {
+                        if inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::ALT, key) { h = level; }
                     }
                 });
 
@@ -812,23 +797,14 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 if it { ed.apply_fmt_toggle_italic(); }
                 if u { ed.apply_fmt_toggle_underline(); }
                 if h > 0 {
-                    let style = match h {
-                        1 => ParaStyle::H1,
-                        2 => ParaStyle::H2,
-                        3 => ParaStyle::H3,
-                        4 => ParaStyle::H4,
-                        _ => ParaStyle::H5,
-                    };
+                    let style = match h { 1 => ParaStyle::H1, 2 => ParaStyle::H2, 3 => ParaStyle::H3, 4 => ParaStyle::H4, _ => ParaStyle::H5 };
                     ed.apply_style_toggle(style);
                 }
-
                 if let Some(delta) = tab_delta {
                     ed.push_undo();
                     let saved_state = egui::TextEdit::load_state(ctx, id);
                     ed.indent_para(i, delta);
-                    if let Some(state) = saved_state {
-                        egui::TextEdit::store_state(ctx, id, state);
-                    }
+                    if let Some(state) = saved_state { egui::TextEdit::store_state(ctx, id, state); }
                 }
 
                 if let Some(state) = egui::TextEdit::load_state(ctx, id) {
@@ -841,34 +817,23 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         if si == ei {
                             let fmt = para_fmt_at(&ed.paras[i], sb);
                             let c = &mut ed.cur_fmt;
-                            c.bold = fmt.bold;
-                            c.italic = fmt.italic;
-                            c.underline = fmt.underline;
-                            c.strike = fmt.strike;
-                            c.sub = fmt.sub;
-                            c.sup = fmt.sup;
+                            c.bold = fmt.bold; c.italic = fmt.italic; c.underline = fmt.underline;
+                            c.strike = fmt.strike; c.sub = fmt.sub; c.sup = fmt.sup;
                         }
                     }
                 }
             }
 
-            if ed.pending_focus == Some(i) {
-                pending_focus_next = Some(i);
-            }
-
-            if output.response.changed() {
-                text_change = Some((i, ed.para_texts[i].clone()));
-            }
-
+            if ed.pending_focus == Some(i) { pending_focus_next = Some(i); }
+            if output.response.changed() { text_change = Some((i, ed.para_texts[i].clone())); }
             let new_h = output.galley.size().y;
-            if (new_h - text_h).abs() > 0.5 {
-                ed.heights_dirty = true;
-            }
+            if (new_h - text_h).abs() > 0.5 { ed.heights_dirty = true; }
         }
     });
 
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); ed.pending_focus = None; }
     if let Some(sel) = new_selection { ed.last_selection = Some(sel); }
+
     if let Some(mu) = merge_up {
         if mu > 0 && mu < ed.paras.len() {
             ed.push_undo();
@@ -876,9 +841,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 ed.paras.remove(mu - 1);
                 ed.focused_para = mu - 1;
                 ed.pending_focus = Some(mu - 1);
-                ed.sync_texts();
-                ed.dirty = true;
-                ed.heights_dirty = true;
+                ed.sync_texts(); ed.dirty = true; ed.heights_dirty = true;
             } else {
                 let prev_len = ed.paras[mu - 1].text.len();
                 merge_paragraphs(&mut ed.paras, mu - 1);
@@ -890,8 +853,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 let cc = egui::text::CCursor::new(prev_len);
                 state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
                 egui::TextEdit::store_state(ctx, id, state);
-                ed.dirty = true;
-                ed.heights_dirty = true;
+                ed.dirty = true; ed.heights_dirty = true;
             }
         }
     }
@@ -901,9 +863,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             ed.push_undo();
             if ed.paras[md + 1].style == ParaStyle::HRule {
                 ed.paras.remove(md + 1);
-                ed.sync_texts();
-                ed.dirty = true;
-                ed.heights_dirty = true;
+                ed.sync_texts(); ed.dirty = true; ed.heights_dirty = true;
             } else {
                 let prev_len = ed.paras[md].text.len();
                 merge_paragraphs(&mut ed.paras, md);
@@ -913,8 +873,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 let cc = egui::text::CCursor::new(prev_len);
                 state.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
                 egui::TextEdit::store_state(ctx, id, state);
-                ed.dirty = true;
-                ed.heights_dirty = true;
+                ed.dirty = true; ed.heights_dirty = true;
             }
         }
     }

@@ -247,3 +247,7 @@
 - **DOCUMENT EDITOR**: No longer creates non-editable newlines between text when loading documents
 - **DOCUMENT EDITOR**: Backspace now no longer removes the cursor on empty documents
 - **DOCUMENT EDITOR**: No longer puts very long lines with over a page of text on separate pages
+- **DOCUMENT EDITOR**: Fixed both text highlighting and multi-line highlighting appearing at the same time
+- **DOCUMENT EDITOR**: Can now undo after pasting text
+- **DOCUMENT EDITOR**: Multi-line highlight now works on all pages, not just the first few
+- **DOCUMENT EDITOR**: Multi-line highlighting now no longer makes vertical selections while moving mouse diagonally.
