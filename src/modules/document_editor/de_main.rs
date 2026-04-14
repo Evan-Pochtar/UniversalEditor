@@ -50,10 +50,10 @@ impl DocumentEditor {
 
     pub fn load(path: PathBuf) -> Self {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        let (paras, layout) = if ext == "docx" {
-            load_docx(&path).unwrap_or_else(|_| (vec![DocParagraph::new()], PageLayout::default()))
-        } else {
-            (load_txt_as_doc(&path).unwrap_or_else(|_| vec![DocParagraph::new()]), PageLayout::default())
+        let (paras, layout) = match ext.as_str() {
+            "docx" | "doc" => load_docx(&path).unwrap_or_else(|_| (vec![DocParagraph::new()], PageLayout::default())),
+            "odt" => load_odt(&path).unwrap_or_else(|_| (vec![DocParagraph::new()], PageLayout::default())),
+            _ => (load_txt_as_doc(&path).unwrap_or_else(|_| vec![DocParagraph::new()]), PageLayout::default()),
         };
         let mut s = Self::make(paras, Some(path), layout);
         s.sync_texts(); s
@@ -387,8 +387,11 @@ impl DocumentEditor {
 
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        if ext == "docx" { save_docx(&path, &self.paras, &self.layout)?; }
-        else { let t: String = self.paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
+        match ext.as_str() {
+            "docx" | "doc" => save_docx(&path, &self.paras, &self.layout)?,
+            "odt" => save_odt(&path, &self.paras, &self.layout)?,
+            _ => { let t: String = self.paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
+        }
         self.file_path = Some(path); self.dirty = false; Ok(())
     }
 }
@@ -403,7 +406,11 @@ impl EditorModule for DocumentEditor {
         if let Some(p) = self.file_path.clone() { self.save_impl(p) } else { self.save_as() }
     }
     fn save_as(&mut self) -> Result<(), String> {
-        if let Some(path) = rfd::FileDialog::new().add_filter("Word Document", &["docx"]).add_filter("Text", &["txt"]).save_file() { self.save_impl(path) }
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("Word Document", &["docx"])
+            .add_filter("OpenDocument Text", &["odt"])
+            .add_filter("Text", &["txt"])
+            .save_file() { self.save_impl(path) }
         else { Err("Cancelled".to_string()) }
     }
     fn get_menu_contributions(&self) -> MenuContribution {

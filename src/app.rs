@@ -1006,8 +1006,9 @@ impl UniversalEditor {
                             ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
                             ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
                             ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
+                            ("W", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export to DOCX or ODT.", ColorPalette::GREEN_500),
                             ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
-                            ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_500),
+                            ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_600),
                             ("A", "Archive Converter", "Convert structured data between ZIP, TAR, TAR.GZ, TAR.BZ2, and 7z archive formats with compression level settings.", ColorPalette::AMBER_600),
                         ].iter().enumerate() {
                             let col = &mut cols[i % 2];

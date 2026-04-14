@@ -557,3 +557,262 @@ pub fn load_txt_as_doc(path: &PathBuf) -> Result<Vec<DocParagraph>, String> {
     if paras.is_empty() { paras.push(DocParagraph::new()); }
     Ok(paras)
 }
+
+const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
+
+#[derive(Clone, Default)]
+struct OdtStyle { bold:bool, italic:bool, underline:bool, strike:bool, size_hp:Option<u32>, color:Option<[u8;3]>, align:Align, parent:String }
+
+fn odt_attr(e: &quick_xml::events::BytesStart, k: &[u8]) -> Option<String> {
+    e.attributes().filter_map(|a| a.ok()).find(|a| a.key.local_name().as_ref()==k).and_then(|a| std::str::from_utf8(&a.value).ok().map(String::from))
+}
+
+fn odt_parse_units(v: &str) -> f32 {
+    let v = v.trim();
+    if let Some(n) = v.strip_suffix("cm") { n.parse::<f32>().unwrap_or(0.0) * 28.3465 }
+    else if let Some(n) = v.strip_suffix("mm") { n.parse::<f32>().unwrap_or(0.0) * 2.83465 }
+    else if let Some(n) = v.strip_suffix("in") { n.parse::<f32>().unwrap_or(0.0) * 72.0 }
+    else if let Some(n) = v.strip_suffix("pt") { n.parse::<f32>().unwrap_or(0.0) }
+    else { v.parse::<f32>().unwrap_or(0.0) }
+}
+
+fn odt_apply_text_props(e: &quick_xml::events::BytesStart, s: &mut OdtStyle) {
+    if let Some(v) = odt_attr(e, b"font-weight") { s.bold = v == "bold"; }
+    if let Some(v) = odt_attr(e, b"font-style") { s.italic = v == "italic"; }
+    if let Some(v) = odt_attr(e, b"text-underline-style") { s.underline = v != "none"; }
+    if let Some(v) = odt_attr(e, b"text-line-through-style") { s.strike = v != "none"; }
+    if let Some(v) = odt_attr(e, b"font-size") { let p = odt_parse_units(&v); if p > 0.0 { s.size_hp = Some((p*2.0).round() as u32); } }
+    if let Some(c) = odt_attr(e, b"color") { let h = c.trim_start_matches('#'); if h.len()==6 { if let (Ok(r),Ok(g),Ok(b)) = (u8::from_str_radix(&h[0..2],16),u8::from_str_radix(&h[2..4],16),u8::from_str_radix(&h[4..6],16)) { s.color=Some([r,g,b]); } } }
+}
+
+fn odt_resolve_span(name: &str, map: &std::collections::HashMap<String, OdtStyle>) -> SpanFmt {
+    let mut fmt = SpanFmt::default();
+    let mut cur = name.to_string();
+    for _ in 0..6 {
+        match map.get(&cur) {
+            Some(s) => {
+                if s.bold { fmt.bold = true; } if s.italic { fmt.italic = true; }
+                if s.underline { fmt.underline = true; } if s.strike { fmt.strike = true; }
+                if fmt.size_hp.is_none() { fmt.size_hp = s.size_hp; }
+                if fmt.color.is_none() { fmt.color = s.color; }
+                if s.parent.is_empty() { break; } else { cur = s.parent.clone(); }
+            }
+            None => break,
+        }
+    }
+    fmt
+}
+
+fn odt_resolve_para(name: &str, map: &std::collections::HashMap<String, OdtStyle>, outline: u8) -> (ParaStyle, Align) {
+    if outline > 0 { return (match outline { 1=>ParaStyle::H1,2=>ParaStyle::H2,3=>ParaStyle::H3,4=>ParaStyle::H4,5=>ParaStyle::H5,_=>ParaStyle::H6 }, Align::Left); }
+    let mut cur = name.to_string();
+    let mut align = Align::Left;
+    for _ in 0..8 {
+        match cur.as_str() {
+            "Heading_20_1"|"Heading 1"|"Heading1" => return (ParaStyle::H1, align),
+            "Heading_20_2"|"Heading 2"|"Heading2" => return (ParaStyle::H2, align),
+            "Heading_20_3"|"Heading 3"|"Heading3" => return (ParaStyle::H3, align),
+            "Heading_20_4"|"Heading 4"|"Heading4" => return (ParaStyle::H4, align),
+            "Heading_20_5"|"Heading 5"|"Heading5" => return (ParaStyle::H5, align),
+            "Heading_20_6"|"Heading 6"|"Heading6" => return (ParaStyle::H6, align),
+            "Title" => return (ParaStyle::Title, align),
+            "Subtitle" => return (ParaStyle::Subtitle, align),
+            "Quotations"|"Quotation"|"BlockText"|"Quotation_20_Cont" => return (ParaStyle::BlockQuote, align),
+            "Preformatted_20_Text"|"Code"|"Source_20_Code" => return (ParaStyle::Code, align),
+            "List_20_Bullet"|"List Bullet"|"List_20_Bullet_20_2" => return (ParaStyle::ListBullet, align),
+            "List_20_Number"|"List Number"|"List_20_Number_20_2" => return (ParaStyle::ListOrdered, align),
+            _ => {}
+        }
+        match map.get(&cur) {
+            Some(s) => { if s.align != Align::Left { align = s.align; } if s.parent.is_empty() { break; } else { cur = s.parent.clone(); } }
+            None => break,
+        }
+    }
+    (ParaStyle::Normal, align)
+}
+
+fn para_to_odt_style(s: ParaStyle) -> &'static str {
+    match s {
+        ParaStyle::Normal=>"Standard", ParaStyle::H1=>"Heading_20_1", ParaStyle::H2=>"Heading_20_2",
+        ParaStyle::H3=>"Heading_20_3", ParaStyle::H4=>"Heading_20_4", ParaStyle::H5=>"Heading_20_5",
+        ParaStyle::H6=>"Heading_20_6", ParaStyle::Title=>"Title", ParaStyle::Subtitle=>"Subtitle",
+        ParaStyle::BlockQuote=>"Quotations", ParaStyle::Code=>"Preformatted_20_Text",
+        ParaStyle::ListBullet=>"List_20_Bullet", ParaStyle::ListOrdered=>"List_20_Number",
+        ParaStyle::HRule=>"Standard",
+    }
+}
+
+fn fmt_to_odt_id(fmt: &SpanFmt) -> String {
+    let mut s = String::from("T");
+    if fmt.bold { s.push('B'); } if fmt.italic { s.push('I'); }
+    if fmt.underline { s.push('U'); } if fmt.strike { s.push('K'); }
+    if fmt.sup { s.push('P'); } if fmt.sub { s.push('D'); }
+    if let Some(sz) = fmt.size_hp { s.push_str(&sz.to_string()); }
+    if let Some(c) = fmt.color { s.push_str(&format!("{:02x}{:02x}{:02x}", c[0],c[1],c[2])); }
+    s
+}
+
+fn build_odt_styles(layout: &PageLayout) -> String {
+    let cm = |pt: f32| format!("{:.3}cm", pt / 28.3465);
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"><office:automatic-styles><style:page-layout style:name=\"pm1\"><style:page-layout-properties fo:page-width=\"{}\" fo:page-height=\"{}\" fo:margin-top=\"{}\" fo:margin-bottom=\"{}\" fo:margin-left=\"{}\" fo:margin-right=\"{}\"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/></office:master-styles></office:document-styles>",
+        cm(layout.width), cm(layout.height), cm(layout.margin_top), cm(layout.margin_bot), cm(layout.margin_left), cm(layout.margin_right))
+}
+
+fn build_odt_content(paras: &[DocParagraph]) -> String {
+    let mut span_styles: std::collections::BTreeMap<String, SpanFmt> = Default::default();
+    for p in paras {
+        for s in &p.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } }
+    }
+    let ns = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"";
+    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content {}><office:automatic-styles>", ns);
+    for (id, fmt) in &span_styles {
+        out.push_str(&format!("<style:style style:name=\"{}\" style:family=\"text\"><style:text-properties", id));
+        if fmt.bold { out.push_str(" fo:font-weight=\"bold\""); }
+        if fmt.italic { out.push_str(" fo:font-style=\"italic\""); }
+        if fmt.underline { out.push_str(" style:text-underline-style=\"solid\" style:text-underline-width=\"auto\" style:text-underline-color=\"font-color\""); }
+        if fmt.strike { out.push_str(" style:text-line-through-style=\"solid\""); }
+        if fmt.sup { out.push_str(" style:text-position=\"super 58%\""); }
+        if fmt.sub { out.push_str(" style:text-position=\"sub 58%\""); }
+        if let Some(sz) = fmt.size_hp { out.push_str(&format!(" fo:font-size=\"{}pt\"", sz as f32 / 2.0)); }
+        if let Some(c) = fmt.color { out.push_str(&format!(" fo:color=\"#{:02X}{:02X}{:02X}\"", c[0],c[1],c[2])); }
+        out.push_str("/></style:style>");
+    }
+    out.push_str("</office:automatic-styles><office:body><office:text>");
+    for para in paras {
+        if para.style == ParaStyle::HRule { out.push_str("<text:p text:style-name=\"Standard\"><text:s/></text:p>"); continue; }
+        let sname = para_to_odt_style(para.style);
+        let is_h = matches!(para.style, ParaStyle::H1|ParaStyle::H2|ParaStyle::H3|ParaStyle::H4|ParaStyle::H5|ParaStyle::H6);
+        let align_str = match para.align { Align::Center=>"center", Align::Right=>"end", Align::Justify=>"justify", _=>"" };
+        if is_h {
+            let lvl = match para.style { ParaStyle::H1=>1,ParaStyle::H2=>2,ParaStyle::H3=>3,ParaStyle::H4=>4,ParaStyle::H5=>5,_=>6 };
+            out.push_str(&format!("<text:h text:style-name=\"{}\" text:outline-level=\"{}\">", sname, lvl));
+        } else if !align_str.is_empty() {
+            out.push_str(&format!("<text:p text:style-name=\"{}\" fo:text-align=\"{}\">", sname, align_str));
+        } else {
+            out.push_str(&format!("<text:p text:style-name=\"{}\">", sname));
+        }
+        let mut pos = 0;
+        for span in &para.spans {
+            if span.len == 0 { pos += span.len; continue; }
+            if pos >= para.text.len() { break; }
+            let end = (pos + span.len).min(para.text.len());
+            let txt = &para.text[pos..end]; pos = end;
+            if txt.is_empty() { continue; }
+            let esc = xml_esc(txt);
+            if span.fmt == SpanFmt::default() { out.push_str(&esc); }
+            else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+        }
+        if is_h { out.push_str("</text:h>"); } else { out.push_str("</text:p>"); }
+    }
+    out.push_str("</office:text></office:body></office:document-content>");
+    out
+}
+
+fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
+    use quick_xml::{Reader, events::Event};
+    fn push_text(ps: &mut Option<(DocParagraph, Vec<(SpanFmt, String)>)>, ss: &mut Vec<(SpanFmt, String)>, text: &str) {
+        if text.is_empty() { return; }
+        if let Some(sp) = ss.last_mut() { sp.1.push_str(text); return; }
+        if let Some((_, chunks)) = ps.as_mut() {
+            match chunks.last_mut() {
+                Some((f, t)) if *f == SpanFmt::default() => t.push_str(text),
+                _ => chunks.push((SpanFmt::default(), text.to_string())),
+            }
+        }
+    }
+    let mut smap: std::collections::HashMap<String, OdtStyle> = Default::default();
+    let mut paras: Vec<DocParagraph> = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+    let (mut in_auto, mut in_body) = (false, false);
+    let mut cur_sty: Option<(String, OdtStyle)> = None;
+    let mut para_state: Option<(DocParagraph, Vec<(SpanFmt, String)>)> = None;
+    let mut span_stack: Vec<(SpanFmt, String)> = Vec::new();
+    loop {
+        match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(ref e) => {
+                let local_name = e.local_name();
+                let tag = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
+                match tag {
+                    "automatic-styles" => in_auto = true,
+                    "body" => in_body = true,
+                    "style" if in_auto => { cur_sty = Some((odt_attr(e, b"name").unwrap_or_default(), OdtStyle { parent: odt_attr(e, b"parent-style-name").unwrap_or_default(), ..Default::default() })); }
+                    "text-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { odt_apply_text_props(e, s); } }
+                    "paragraph-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { if let Some(v) = odt_attr(e, b"text-align") { s.align = match v.as_str() { "center"=>Align::Center,"right"|"end"=>Align::Right,"justify"=>Align::Justify,_=>Align::Left }; } } }
+                    "p" | "h" if in_body => {
+                        let sname = odt_attr(e, b"style-name").unwrap_or_default();
+                        let outline: u8 = if tag=="h" { odt_attr(e, b"outline-level").and_then(|v| v.parse().ok()).unwrap_or(1) } else { 0 };
+                        let (ps, align) = odt_resolve_para(&sname, &smap, outline);
+                        let mut p = DocParagraph::with_style(ps); p.align = align;
+                        para_state = Some((p, Vec::new())); span_stack.clear();
+                    }
+                    "span" if para_state.is_some() => { span_stack.push((odt_resolve_span(&odt_attr(e, b"style-name").unwrap_or_default(), &smap), String::new())); }
+                    _ => {}
+                }
+            }
+            Event::Empty(ref e) => {
+                let local_name = e.local_name();
+                let tag = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
+                match tag {
+                    "text-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { odt_apply_text_props(e, s); } }
+                    "paragraph-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { if let Some(v) = odt_attr(e, b"text-align") { s.align = match v.as_str() { "center"=>Align::Center,"right"|"end"=>Align::Right,"justify"=>Align::Justify,_=>Align::Left }; } } }
+                    "line-break" => push_text(&mut para_state, &mut span_stack, "\n"),
+                    "s" => { let n = odt_attr(e, b"c").and_then(|v| v.parse().ok()).unwrap_or(1usize); push_text(&mut para_state, &mut span_stack, &" ".repeat(n)); }
+                    "tab" => push_text(&mut para_state, &mut span_stack, "\t"),
+                    _ => {}
+                }
+            }
+            Event::End(ref e) => {
+                let local_name = e.local_name();
+                let tag = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
+                match tag {
+                    "automatic-styles" => in_auto = false,
+                    "style" if in_auto => { if let Some((n, s)) = cur_sty.take() { smap.insert(n, s); } }
+                    "p" | "h" if in_body => {
+                        while let Some((fmt, text)) = span_stack.pop() { if !text.is_empty() { if let Some((_, chunks)) = para_state.as_mut() { chunks.push((fmt, text)); } } }
+                        if let Some((mut p, chunks)) = para_state.take() {
+                            for (fmt, text) in &chunks {
+                                let len = text.len(); p.text.push_str(text);
+                                if p.spans.last().map(|s: &DocSpan| &s.fmt == fmt).unwrap_or(false) { p.spans.last_mut().unwrap().len += len; }
+                                else { if p.spans.last().map(|s| s.len==0).unwrap_or(false) { p.spans.pop(); } p.spans.push(DocSpan { len, fmt: fmt.clone() }); }
+                            }
+                            if p.spans.is_empty() { p.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+                            paras.push(p);
+                        }
+                    }
+                    "span" => { if let Some((fmt, text)) = span_stack.pop() { if !text.is_empty() { if let Some((_, chunks)) = para_state.as_mut() { chunks.push((fmt, text)); } } } }
+                    _ => {}
+                }
+            }
+            Event::Text(ref e) => { if para_state.is_some() { if let Ok(s) = std::str::from_utf8(e.as_ref()) { push_text(&mut para_state, &mut span_stack, s); } } }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if paras.is_empty() { paras.push(DocParagraph::new()); }
+    Ok((paras, PageLayout::default()))
+}
+
+pub fn load_odt(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut arch = zip::ZipArchive::new(file).map_err(|_| "Not a valid ODT".to_string())?;
+    let content = { let mut e = arch.by_name("content.xml").map_err(|_| "Missing content.xml".to_string())?; let mut s = String::new(); e.read_to_string(&mut s).map_err(|e| e.to_string())?; s };
+    parse_odt_xml(&content)
+}
+
+pub fn save_odt(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let deflated = zip::write::SimpleFileOptions::default();
+    zip.start_file("mimetype", stored).map_err(|e| e.to_string())?;
+    zip.write_all(b"application/vnd.oasis.opendocument.text").map_err(|e| e.to_string())?;
+    zip.start_file("META-INF/manifest.xml", deflated).map_err(|e| e.to_string())?;
+    zip.write_all(ODT_MANIFEST.as_bytes()).map_err(|e| e.to_string())?;
+    zip.start_file("styles.xml", deflated).map_err(|e| e.to_string())?;
+    zip.write_all(build_odt_styles(layout).as_bytes()).map_err(|e| e.to_string())?;
+    zip.start_file("content.xml", deflated).map_err(|e| e.to_string())?;
+    zip.write_all(build_odt_content(paras).as_bytes()).map_err(|e| e.to_string())?;
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}

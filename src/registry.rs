@@ -57,7 +57,7 @@ pub static SCREENS: &[ScreenDef] = &[
         description: "Write and format documents, export as DOCX",
         color: ColorPalette::GREEN_500,
         sidebar_letter: "D",
-        accepted_extensions: &["docx", "doc"],
+        accepted_extensions: &["docx", "doc", "odt"],
         create: CreateModule::DocEditor,
     },
 ];

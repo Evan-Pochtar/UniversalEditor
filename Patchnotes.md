@@ -237,6 +237,8 @@
 - **DOCUMENT EDITOR**: Added Horizontal Rule
 - **DOCUMENT EDITOR**: Added ability to change color of text
 - **DOCUMENT EDITOR**: Added numbered and non-numbered lists
+- **DOCUMENT EDITOR**: Added document editor to the about modal within the main menu
+- **DOCUMENT EDITOR**: Document editor now supports .odt files
 - **JSON EDITOR**: Added hover cursor effects
 - **JSON EDITOR**: Added File Renaming, Opening file in converter, and Open File Location by right clicking file name in file information bar
 - **TEXT EDITOR**: Added hover cursor effects

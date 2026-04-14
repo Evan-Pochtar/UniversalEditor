@@ -58,6 +58,7 @@
 - [ ] Doesn't load bullet points properly
 - [ ] Doesn't load horizontal lines properly
 - [ ] Cannot highlight and scroll at the same time
+- [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
 
 ### Other Bugs
 
@@ -103,11 +104,9 @@
 
 ### Document Editor
 
-- [ ] Add to the about modal
 - [ ] Spell check
 - [ ] Grammar Check
 - [ ] Document Templates
-- [ ] Add .odt file compatibility
 - [ ] Add way to create comments
 - [ ] Increase indent and decrease indent buttons
 - [ ] Checklists

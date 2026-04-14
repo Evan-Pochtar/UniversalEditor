@@ -264,6 +264,8 @@
 - [x] Bulleted lists
 - [x] Horizontal line
 - [x] Text color
+- [x] Add .odt file compatibility
+- [x] Add to the about modal
 
 ### CONVERTER: Img 2 Img
 
