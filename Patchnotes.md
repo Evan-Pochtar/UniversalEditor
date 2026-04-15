@@ -253,3 +253,4 @@
 - **DOCUMENT EDITOR**: Can now undo after pasting text
 - **DOCUMENT EDITOR**: Multi-line highlight now works on all pages, not just the first few
 - **DOCUMENT EDITOR**: Multi-line highlighting now no longer makes vertical selections while moving mouse diagonally.
+- **DOCUMENT EDITOR**: Now loads bullet points properly for both docx and odt files

@@ -43,10 +43,12 @@
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Undoing all changes does not remove "modified" file information status
+- [ ] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
 
 ### Image Editor Bugs
 
 - [ ] Brush, fill, etc. sometimes select image instead of applying
+- [ ] Zooming in and out while moving image/text desyncs it from the cursor
 
 ### Json Editor Bugs
 
@@ -55,10 +57,10 @@
 
 ### Document Editor Bugs
 
-- [ ] Doesn't load bullet points properly
 - [ ] Doesn't load horizontal lines properly
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
+- [ ] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
 
 ### Other Bugs
 
@@ -119,7 +121,7 @@
 - [ ] Header and footers
 - [ ] Clean up toolbar
 
-### CONVERTER: Img 2 Img
+### CONVERTERS
 
 - [ ] Keyboard Shortcuts
 

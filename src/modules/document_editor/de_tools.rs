@@ -63,8 +63,9 @@ impl ParaStyle {
             "Heading3"|"Heading 3" => Self::H3, "Heading4"|"Heading 4" => Self::H4,
             "Heading5"|"Heading 5" => Self::H5, "Heading6"|"Heading 6" => Self::H6,
             "Title" => Self::Title, "Subtitle" => Self::Subtitle, "Quote"|"BlockText" => Self::BlockQuote,
-            "CodeBlock"|"Code" => Self::Code, "ListBullet"|"ListBullet2" => Self::ListBullet,
-            "ListNumber"|"ListNumber2" => Self::ListOrdered, _ => Self::Normal,
+            "CodeBlock"|"Code" => Self::Code,
+            "ListBullet"|"ListBullet2"|"List Bullet"|"List Bullet 2"|"ListParagraph" => Self::ListBullet,
+            "ListNumber"|"ListNumber2"|"List Number"|"List Number 2" => Self::ListOrdered, _ => Self::Normal,
         }
     }
 }
@@ -468,11 +469,53 @@ fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
 pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), String> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut arch = zip::ZipArchive::new(file).map_err(|_| "Not a valid DOCX".to_string())?;
+    let num_map = parse_docx_numbering(&mut arch);
     let xml = { let mut e = arch.by_name("word/document.xml").map_err(|_| "Missing document.xml".to_string())?; let mut s = String::new(); e.read_to_string(&mut s).map_err(|e| e.to_string())?; s };
-    parse_docx_xml(&xml)
+    parse_docx_xml(&xml, &num_map)
 }
 
-fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
+fn parse_docx_numbering(arch: &mut zip::ZipArchive<std::fs::File>) -> std::collections::HashMap<u32, bool> {
+    let xml = match arch.by_name("word/numbering.xml") {
+        Ok(mut e) => { let mut s = String::new(); let _ = e.read_to_string(&mut s); s }
+        Err(_) => return Default::default(),
+    };
+    use quick_xml::{Reader, events::Event};
+    let mut reader = Reader::from_str(&xml);
+    reader.config_mut().trim_text(true);
+    let mut abstract_fmt: std::collections::HashMap<u32, bool> = Default::default();
+    let mut num_to_abstract: std::collections::HashMap<u32, u32> = Default::default();
+    let mut cur_abstract: Option<u32> = None;
+    let mut in_num = false;
+    let mut cur_num: Option<u32> = None;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Eof) | Err(_) => break,
+            Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
+                b"abstractNum" => cur_abstract = get_attr(e, b"abstractNumId").and_then(|v| v.parse().ok()),
+                b"num" => { in_num = true; cur_num = get_attr(e, b"numId").and_then(|v| v.parse().ok()); }
+                _ => {}
+            },
+            Ok(Event::Empty(ref e)) => match e.local_name().as_ref() {
+                b"numFmt" => if let Some(aid) = cur_abstract {
+                    abstract_fmt.entry(aid).or_insert_with(|| get_attr(e, b"val").map_or(true, |v| !matches!(v.as_str(), "decimal"|"lowerLetter"|"upperLetter"|"lowerRoman"|"upperRoman")));
+                },
+                b"abstractNumId" if in_num => if let (Some(nid), Some(aid)) = (cur_num, get_attr(e, b"val").and_then(|v| v.parse().ok())) {
+                    num_to_abstract.insert(nid, aid);
+                },
+                _ => {}
+            },
+            Ok(Event::End(ref e)) => match e.local_name().as_ref() {
+                b"abstractNum" => cur_abstract = None,
+                b"num" => { in_num = false; cur_num = None; }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    num_to_abstract.into_iter().filter_map(|(nid, aid)| abstract_fmt.get(&aid).map(|&b| (nid, b))).collect()
+}
+
+fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, bool>) -> Result<(Vec<DocParagraph>, PageLayout), String> {
     use quick_xml::{Reader, events::Event};
     let mut reader = Reader::from_str(xml); reader.config_mut().trim_text(false);
     let mut paras: Vec<DocParagraph> = Vec::new(); let mut layout = PageLayout::default();
@@ -480,6 +523,7 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
     let mut cur_run_text = String::new();
     let mut in_run = false; let mut in_rpr = false; let mut in_ppr = false; let mut in_t = false;
     let mut in_pbdr = false; let mut has_hborder = false;
+    let mut in_numpr = false; let mut pending_num_id: Option<u32> = None;
 
     loop {
         match reader.read_event().map_err(|e| e.to_string())? {
@@ -488,6 +532,7 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
                     b"p" => { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; }
                     b"pPr" => in_ppr = true,
                     b"pBdr" => if in_ppr { in_pbdr = true; },
+                    b"numPr" => if in_ppr { in_numpr = true; },
                     b"bottom" => if in_pbdr { has_hborder = true; },
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
@@ -506,6 +551,7 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
                     b"bottom" => { if in_pbdr && in_ppr { has_hborder = true; } }
+                    b"numId" => { if in_numpr { pending_num_id = get_attr(e, b"val").and_then(|v| v.parse().ok()); } }
                     b"b" => { if in_rpr { cur_fmt.bold = true; } }
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
@@ -521,7 +567,15 @@ fn parse_docx_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> 
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
                     b"p" => { if let Some(mut p) = cur_para.take() { if has_hborder && p.text.trim().is_empty() { p.style = ParaStyle::HRule; } paras.push(p); } has_hborder = false; }
-                    b"pPr" => in_ppr = false,
+                    b"pPr" => {
+                        in_ppr = false;
+                        if let (Some(nid), Some(ref mut p)) = (pending_num_id.take(), cur_para.as_mut()) {
+                            let is_bullet = num_map.get(&nid).copied().unwrap_or(true);
+                            p.style = if is_bullet { ParaStyle::ListBullet } else { ParaStyle::ListOrdered };
+                            p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent();
+                        }
+                    }
+                    b"numPr" => in_numpr = false,
                     b"pBdr" => in_pbdr = false,
                     b"r" => {
                         in_run = false;
@@ -728,6 +782,10 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
     let mut cur_sty: Option<(String, OdtStyle)> = None;
     let mut para_state: Option<(DocParagraph, Vec<(SpanFmt, String)>)> = None;
     let mut span_stack: Vec<(SpanFmt, String)> = Vec::new();
+    let mut list_style_map: std::collections::HashMap<String, bool> = Default::default();
+    let mut cur_list_style: Option<String> = None;
+    let mut list_stack: Vec<bool> = Vec::new();
+    let mut in_list_item = false;
     loop {
         match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(ref e) => {
@@ -737,12 +795,21 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "automatic-styles" => in_auto = true,
                     "body" => in_body = true,
                     "style" if in_auto => { cur_sty = Some((odt_attr(e, b"name").unwrap_or_default(), OdtStyle { parent: odt_attr(e, b"parent-style-name").unwrap_or_default(), ..Default::default() })); }
+                    "list-style" if in_auto => { cur_list_style = odt_attr(e, b"name"); }
                     "text-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { odt_apply_text_props(e, s); } }
                     "paragraph-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { if let Some(v) = odt_attr(e, b"text-align") { s.align = match v.as_str() { "center"=>Align::Center,"right"|"end"=>Align::Right,"justify"=>Align::Justify,_=>Align::Left }; } } }
+                    "list" if in_body => {
+                        let sname = odt_attr(e, b"style-name").unwrap_or_default();
+                        list_stack.push(list_style_map.get(&sname).copied().unwrap_or(true));
+                    }
+                    "list-item" if in_body => in_list_item = true,
                     "p" | "h" if in_body => {
                         let sname = odt_attr(e, b"style-name").unwrap_or_default();
                         let outline: u8 = if tag=="h" { odt_attr(e, b"outline-level").and_then(|v| v.parse().ok()).unwrap_or(1) } else { 0 };
-                        let (ps, align) = odt_resolve_para(&sname, &smap, outline);
+                        let (mut ps, align) = odt_resolve_para(&sname, &smap, outline);
+                        if in_list_item && !matches!(ps, ParaStyle::ListBullet | ParaStyle::ListOrdered) {
+                            ps = if list_stack.last().copied().unwrap_or(true) { ParaStyle::ListBullet } else { ParaStyle::ListOrdered };
+                        }
                         let mut p = DocParagraph::with_style(ps); p.align = align;
                         para_state = Some((p, Vec::new())); span_stack.clear();
                     }
@@ -756,6 +823,8 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                 match tag {
                     "text-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { odt_apply_text_props(e, s); } }
                     "paragraph-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { if let Some(v) = odt_attr(e, b"text-align") { s.align = match v.as_str() { "center"=>Align::Center,"right"|"end"=>Align::Right,"justify"=>Align::Justify,_=>Align::Left }; } } }
+                    "list-level-style-bullet" => if let Some(ref n) = cur_list_style { list_style_map.entry(n.clone()).or_insert(true); }
+                    "list-level-style-number" => if let Some(ref n) = cur_list_style { list_style_map.entry(n.clone()).or_insert(false); }
                     "line-break" => push_text(&mut para_state, &mut span_stack, "\n"),
                     "s" => { let n = odt_attr(e, b"c").and_then(|v| v.parse().ok()).unwrap_or(1usize); push_text(&mut para_state, &mut span_stack, &" ".repeat(n)); }
                     "tab" => push_text(&mut para_state, &mut span_stack, "\t"),
@@ -768,6 +837,9 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                 match tag {
                     "automatic-styles" => in_auto = false,
                     "style" if in_auto => { if let Some((n, s)) = cur_sty.take() { smap.insert(n, s); } }
+                    "list-style" => cur_list_style = None,
+                    "list" => { list_stack.pop(); }
+                    "list-item" => in_list_item = false,
                     "p" | "h" if in_body => {
                         while let Some((fmt, text)) = span_stack.pop() { if !text.is_empty() { if let Some((_, chunks)) = para_state.as_mut() { chunks.push((fmt, text)); } } }
                         if let Some((mut p, chunks)) = para_state.take() {
