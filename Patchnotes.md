@@ -244,6 +244,7 @@
 - **TEXT EDITOR**: Added hover cursor effects
 - **GENERAL**: Improved look of settings and patch notes modal
 - **GENERAL**: New way to show more than 3 screens and converters on main menu (for future additions)
+- **GENERAL**: Adding two new fonts, Open Sans and Google Sans
 
 #### Debugging
 - **DOCUMENT EDITOR**: No longer creates non-editable newlines between text when loading documents

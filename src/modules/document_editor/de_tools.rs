@@ -3,18 +3,22 @@ use std::{io::{Read, Write}, path::PathBuf};
 use crate::style::ColorPalette;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum FontChoice { #[default] Ubuntu, Roboto }
+pub enum FontChoice { #[default] Ubuntu, Roboto, GoogleSans, OpenSans }
 impl FontChoice {
-    pub fn label(self) -> &'static str { match self { Self::Ubuntu => "Ubuntu", Self::Roboto => "Roboto" } }
+    pub fn label(self) -> &'static str { match self { Self::Ubuntu => "Ubuntu", Self::Roboto => "Roboto", Self::GoogleSans => "Google Sans", Self::OpenSans => "Open Sans" } }
     pub fn egui_family(self, bold: bool, italic: bool) -> egui::FontFamily {
         egui::FontFamily::Name(match (self, bold, italic) {
             (Self::Ubuntu, true, true) => "Ubuntu-BoldItalic", (Self::Ubuntu, true, _) => "Ubuntu-Bold",
             (Self::Ubuntu, _, true) => "Ubuntu-Italic", (Self::Ubuntu, _, _) => "Ubuntu",
             (Self::Roboto, true, true) => "Roboto-BoldItalic", (Self::Roboto, true, _) => "Roboto-Bold",
             (Self::Roboto, _, true) => "Roboto-Italic", (Self::Roboto, _, _) => "Roboto",
+            (Self::GoogleSans, true, true) => "GoogleSans-BoldItalic", (Self::GoogleSans, true, _) => "GoogleSans-Bold",
+            (Self::GoogleSans, _, true) => "GoogleSans-Italic", (Self::GoogleSans, _, _) => "GoogleSans",
+            (Self::OpenSans, true, true) => "OpenSans-BoldItalic", (Self::OpenSans, true, _) => "OpenSans-Bold",
+            (Self::OpenSans, _, true) => "OpenSans-Italic", (Self::OpenSans, _, _) => "OpenSans",
         }.into())
     }
-    pub fn all() -> &'static [FontChoice] { &[Self::Ubuntu, Self::Roboto] }
+    pub fn all() -> &'static [FontChoice] { &[Self::Ubuntu, Self::Roboto, Self::GoogleSans, Self::OpenSans] }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

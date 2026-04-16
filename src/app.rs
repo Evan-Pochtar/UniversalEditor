@@ -780,7 +780,7 @@ impl UniversalEditor {
             });
             let (div, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
             ui.painter().rect_filled(div, 0.0, if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 });
-            egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(450.0).auto_shrink([false, true]).show(ui, |ui| {
                 egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 28, top: 16, bottom: 20 }).show(ui, |ui| {
                     match self.settings_tab {
                         SettingsTab::General => {
@@ -811,15 +811,33 @@ impl UniversalEditor {
                             ui.label(egui::RichText::new("TYPOGRAPHY").size(11.0).color(muted));
                             ui.add_space(10.0);
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Default Font").size(14.0).color(text));
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.selectable_label(self.default_font == "Roboto", "Roboto").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.default_font = "Roboto".to_string(); prefs_changed = true; }
-                                    if ui.selectable_label(self.default_font == "Ubuntu", "Ubuntu").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.default_font = "Ubuntu".to_string(); prefs_changed = true; }
-                                });
+                                ui.label(egui::RichText::new("Default Font:").size(14.0).color(text));
+                            });
+                            ui.add_space(4.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
+                                for (name, label) in &[("Ubuntu", "Ubuntu"), ("Roboto", "Roboto"), ("GoogleSans", "Google Sans"), ("OpenSans", "Open Sans")] {
+                                    let sel = self.default_font == *name;
+                                    let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(28,52,100) } else { ColorPalette::BLUE_100 }, if is_dark { egui::Color32::WHITE } else { ColorPalette::BLUE_700 }) }
+                                        else { (if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 }, text) };
+                                    let stroke = egui::Stroke::new(1.0, if sel { ColorPalette::BLUE_500 } else { if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_300 } });
+                                    if ui.scope(|ui| {
+                                        let s = ui.style_mut();
+                                        s.visuals.widgets.inactive.bg_fill = fill;
+                                        s.visuals.widgets.inactive.weak_bg_fill = fill;
+                                        s.visuals.widgets.inactive.bg_stroke = stroke;
+                                        s.visuals.widgets.hovered.bg_fill = fill.linear_multiply(1.1);
+                                        s.visuals.widgets.hovered.weak_bg_fill = fill.linear_multiply(1.1);
+                                        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::BLUE_400);
+                                        ui.add(egui::Button::new(egui::RichText::new(*label).size(13.0).color(tc)).min_size(egui::vec2(0.0, 28.0)))
+                                    }).inner.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        self.default_font = name.to_string(); prefs_changed = true;
+                                    }
+                                }
                             });
                             ui.add_space(6.0);
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Default Font Size").size(14.0).color(text));
+                                ui.label(egui::RichText::new("Default Font Size:").size(14.0).color(text));
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if ui.add(egui::DragValue::new(&mut self.default_font_size).range(8.0..=72.0).speed(0.5).suffix(" pt")).changed() { prefs_changed = true; }
                                 });
@@ -1006,7 +1024,7 @@ impl UniversalEditor {
                             ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
                             ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
                             ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
-                            ("W", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export to DOCX or ODT.", ColorPalette::GREEN_500),
+                            ("W", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export.", ColorPalette::GREEN_500),
                             ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
                             ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_600),
                             ("A", "Archive Converter", "Convert structured data between ZIP, TAR, TAR.GZ, TAR.BZ2, and 7z archive formats with compression level settings.", ColorPalette::AMBER_600),
@@ -1034,7 +1052,7 @@ impl UniversalEditor {
                         ("Keyboard shortcuts", "Comprehensive shortcuts across all modules."),
                         ("Undo / Redo", "Multi-level history in the Image and JSON editors."),
                         ("Drag-and-drop", "Drop files onto converters or the image canvas."),
-                        ("Custom fonts", "Ubuntu and Roboto shipped; selectable in Settings."),
+                        ("Custom fonts", "Ubuntu, Roboto, and Google/Open Sans shipped; selectable in Settings."),
                     ] {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
@@ -1080,6 +1098,35 @@ impl UniversalEditor {
                     let sep = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
                     ui.allocate_rect(sep, egui::Sense::hover());
                     ui.painter().rect_filled(sep, 0.0, card_border);
+                    ui.add_space(14.0);
+
+                    section(ui, "FONTS & LICENSES");
+                    egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(6.0)
+                        .inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 10 })
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("All bundled typefaces are licensed under the SIL Open Font License, Version 1.1.").size(12.0).color(text_col));
+                            ui.add_space(8.0);
+                            for &(name, copyright) in &[
+                                ("Ubuntu", "Copyright 2010-2011 Canonical Ltd. Ubuntu is a registered trademark of Canonical Ltd."),
+                                ("Roboto", "Copyright 2011 Google LLC."),
+                                ("Google Sans", "Copyright 2016 Google LLC."),
+                                ("Open Sans", "Copyright 2020 The Open Sans Project Authors."),
+                            ] {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.label(egui::RichText::new(name).size(12.0).strong().color(title_col));
+                                    ui.label(egui::RichText::new(copyright).size(11.5).color(muted_col));
+                                });
+                                ui.add_space(3.0);
+                            }
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new("The SIL OFL allows the fonts to be used, studied, modified, and redistributed freely, provided that derivative works are not sold by themselves and that this license and copyright notice are retained. Full license text: https://openfontlicense.org").size(11.0).color(muted_col).italics());
+                        });
+                    ui.add_space(6.0);
+
+                    let sep2 = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
+                    ui.allocate_rect(sep2, egui::Sense::hover());
+                    ui.painter().rect_filled(sep2, 0.0, card_border);
                     ui.add_space(14.0);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(format!("Universal Editor  v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(muted_col));

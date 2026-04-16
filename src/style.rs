@@ -11,6 +11,14 @@ pub(crate) static FONT_RB_REG: &[u8] = include_bytes!("../assets/Roboto/Roboto-R
 pub(crate) static FONT_RB_BLD: &[u8] = include_bytes!("../assets/Roboto/Roboto-Bold.ttf");
 pub(crate) static FONT_RB_ITL: &[u8] = include_bytes!("../assets/Roboto/Roboto-Italic.ttf");
 pub(crate) static FONT_RB_BLD_ITL: &[u8] = include_bytes!("../assets/Roboto/Roboto-BoldItalic.ttf");
+pub(crate) static FONT_GS_REG: &[u8] = include_bytes!("../assets/Google_Sans/GoogleSans-Regular.ttf");
+pub(crate) static FONT_GS_BLD: &[u8] = include_bytes!("../assets/Google_Sans/GoogleSans-Bold.ttf");
+pub(crate) static FONT_GS_ITL: &[u8] = include_bytes!("../assets/Google_Sans/GoogleSans-Italic.ttf");
+pub(crate) static FONT_GS_BLD_ITL: &[u8] = include_bytes!("../assets/Google_Sans/GoogleSans-BoldItalic.ttf");
+pub(crate) static FONT_OS_REG: &[u8] = include_bytes!("../assets/Open_Sans/OpenSans-Regular.ttf");
+pub(crate) static FONT_OS_BLD: &[u8] = include_bytes!("../assets/Open_Sans/OpenSans-Bold.ttf");
+pub(crate) static FONT_OS_ITL: &[u8] = include_bytes!("../assets/Open_Sans/OpenSans-Italic.ttf");
+pub(crate) static FONT_OS_BLD_ITL: &[u8] = include_bytes!("../assets/Open_Sans/OpenSans-BoldItalic.ttf");
 
 pub fn register_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
@@ -23,6 +31,14 @@ pub fn register_fonts(ctx: &egui::Context) {
         ("Roboto-Bold", FONT_RB_BLD),
         ("Roboto-Italic", FONT_RB_ITL),
         ("Roboto-BoldItalic", FONT_RB_BLD_ITL),
+        ("GoogleSans", FONT_GS_REG),
+        ("GoogleSans-Bold", FONT_GS_BLD),
+        ("GoogleSans-Italic", FONT_GS_ITL),
+        ("GoogleSans-BoldItalic", FONT_GS_BLD_ITL),
+        ("OpenSans", FONT_OS_REG),
+        ("OpenSans-Bold", FONT_OS_BLD),
+        ("OpenSans-Italic", FONT_OS_ITL),
+        ("OpenSans-BoldItalic", FONT_OS_BLD_ITL),
     ];
     for (name, bytes) in entries {
         fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());

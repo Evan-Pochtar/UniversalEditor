@@ -72,12 +72,17 @@ impl TextEditor {
                 ui.separator();
                 ui.label("Font:");
                 ui.vertical(|ui: &mut egui::Ui| {
-                    let is_roboto = matches!(&self.font_family, egui::FontFamily::Name(n) if n.as_ref() == "Roboto");
+                    let font_label = match self.font_family {
+                        egui::FontFamily::Name(ref n) => match n.as_ref() { "Roboto" => "Roboto", "GoogleSans" => "Google Sans", "OpenSans" => "Open Sans", _ => "Ubuntu" },
+                        _ => "Ubuntu",
+                    };
                     egui::ComboBox::from_id_salt("font_fam")
-                        .selected_text(if is_roboto { "Roboto" } else { "Ubuntu" })
+                        .selected_text(font_label)
                         .show_ui(ui, |ui: &mut egui::Ui| {
                             ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Ubuntu".into()), "Ubuntu");
                             ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Roboto".into()), "Roboto");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("GoogleSans".into()), "Google Sans");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("OpenSans".into()), "Open Sans");
                         });
                 });
 
@@ -1255,6 +1260,8 @@ impl TextEditor {
     fn bold_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Bold".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-Bold".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-Bold".into()),
             _ => egui::FontFamily::Name("Ubuntu-Bold".into()),
         }
     }
@@ -1262,6 +1269,8 @@ impl TextEditor {
     fn italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Italic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-Italic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-Italic".into()),
             _ => egui::FontFamily::Name("Ubuntu-Italic".into()),
         }
     }
@@ -1269,6 +1278,8 @@ impl TextEditor {
     fn bold_italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-BoldItalic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-BoldItalic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-BoldItalic".into()),
             _ => egui::FontFamily::Name("Ubuntu-BoldItalic".into()),
         }
     }
