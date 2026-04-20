@@ -148,6 +148,7 @@
 ## V0.0.6
 
 #### Features
+
 - **GENERAL**: Added right click context menu in "Recent Files" section of the sidebar
 - **GENERAL**: Allow for right click, open with universal_editor on windows
 - **JSON EDITOR**: Added Line numbers to the text view
@@ -162,6 +163,7 @@
 - **IMG EDITOR**: Renamed "Pan" tool to "Select/Pan" tool
 
 #### Debugging
+
 - **TEXT EDITOR**: Bolding formatting no longer makes divider line before typing
 - **JSON EDITOR**: Fixed lag on large sized files within text view
 - **JSON EDITOR**: Scroll "bounce" issue with large files on small display screens fixed
@@ -188,6 +190,7 @@
 ## V0.0.7
 
 #### Features
+
 - **IMG EDITOR**: Improved quality of edited and exported imported images/text
 - **IMG EDITOR**: "Place Image" renamed to "Import to Canvas" and moved to top bar under "File"
 - **IMG EDITOR**: Improved paper and rough texture in the brush settings
@@ -203,6 +206,7 @@
 - **GENERAL**: Removed FPS counter to improve performance
 
 #### Debugging
+
 - **JSON EDITOR**: Newlines no longer display on string preview in the tree view
 - **IMG EDITOR**: Jpeg and JPG's now load the same into the canvas
 - **IMG EDITOR**: "Fit" now properly fits the screen to small canvases
@@ -229,6 +233,7 @@
 ## V0.0.8
 
 #### Features
+
 - **ARCHIVE CONVERTER**: First prototype of the archive converter
 - **ARCHIVE CONVERTER**: Now works with .7z files for both converting and input
 - **DOCUMENT EDITOR**: First prototype of the document editor
@@ -247,6 +252,7 @@
 - **GENERAL**: Adding two new fonts, Open Sans and Google Sans
 
 #### Debugging
+
 - **DOCUMENT EDITOR**: No longer creates non-editable newlines between text when loading documents
 - **DOCUMENT EDITOR**: Backspace now no longer removes the cursor on empty documents
 - **DOCUMENT EDITOR**: No longer puts very long lines with over a page of text on separate pages
@@ -255,3 +261,4 @@
 - **DOCUMENT EDITOR**: Multi-line highlight now works on all pages, not just the first few
 - **DOCUMENT EDITOR**: Multi-line highlighting now no longer makes vertical selections while moving mouse diagonally.
 - **DOCUMENT EDITOR**: Now loads bullet points properly for both docx and odt files
+- **DOCUMENT EDITOR**: Tabbing at the start of a paragraph no longer indents the whole paragraph, only the first line

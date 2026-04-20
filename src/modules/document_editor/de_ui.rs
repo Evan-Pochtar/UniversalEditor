@@ -7,17 +7,11 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
-fn selection_rects_for_galley(
-    galley: &egui::Galley,
-    text: &str,
-    start_byte: usize,
-    end_byte: usize,
-) -> Vec<egui::Rect> {
+fn selection_rects_for_galley(galley: &egui::Galley,text: &str,start_byte: usize,end_byte: usize) -> Vec<egui::Rect> {
     let start_byte = start_byte.min(text.len());
     let end_byte = end_byte.min(text.len());
     let start_char = text[..start_byte].chars().count();
     let end_char = text[..end_byte].chars().count();
-
     let mut rects = Vec::new();
     let mut char_pos = 0usize;
 
@@ -35,7 +29,6 @@ fn selection_rects_for_galley(
             } else {
                 row.glyphs.get(local_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
             };
-
             let x1 = if local_end >= glyph_count {
                 row.rect().max.x
             } else {
@@ -43,10 +36,7 @@ fn selection_rects_for_galley(
             };
 
             if x1 >= x0 {
-                rects.push(egui::Rect::from_min_max(
-                    egui::pos2(x0, row.rect().min.y),
-                    egui::pos2(x1.max(x0 + 4.0), row.rect().max.y),
-                ));
+                rects.push(egui::Rect::from_min_max(egui::pos2(x0, row.rect().min.y), egui::pos2(x1.max(x0 + 4.0), row.rect().max.y)));
             }
         }
 
@@ -54,13 +44,9 @@ fn selection_rects_for_galley(
         if row.ends_with_newline { char_pos += 1; }
     }
 
-    // Show at least a cursor-width rect for empty or fully-selected paragraphs
     if rects.is_empty() && start_byte == 0 && end_byte >= text.len() {
         if let Some(row) = galley.rows.first() {
-            rects.push(egui::Rect::from_min_max(
-                egui::pos2(row.rect().min.x, row.rect().min.y),
-                egui::pos2(row.rect().min.x + 8.0, row.rect().max.y),
-            ));
+            rects.push(egui::Rect::from_min_max(egui::pos2(row.rect().min.x, row.rect().min.y), egui::pos2(row.rect().min.x + 8.0, row.rect().max.y)));
         }
     }
 
@@ -369,6 +355,64 @@ fn split_para_at_byte(src: &DocParagraph, split_byte: usize) -> (DocParagraph, D
     merge_adjacent(&mut right);
 
     (left, right)
+}
+
+fn adjust_paragraph_indent(ed: &mut DocumentEditor, idx: usize, delta: f32) {
+    if idx >= ed.paras.len() { return; }
+    ed.paras[idx].indent_left = (ed.paras[idx].indent_left + delta).max(0.0);
+}
+
+fn handle_tab_edit(ed: &mut DocumentEditor, ctx: &egui::Context, idx: usize, id: egui::Id, shift: bool, cur_fmt: &SpanFmt) -> bool {
+    if idx >= ed.paras.len() { return false; }
+    let Some(mut state) = egui::TextEdit::load_state(ctx, id) else { return false; };
+    let Some(cr) = state.cursor.char_range() else { return false; };
+
+    let old_text = ed.para_texts.get(idx).cloned().unwrap_or_default();
+    let si = cr.primary.index.min(cr.secondary.index);
+    let ei = cr.primary.index.max(cr.secondary.index);
+    let mut new_text = old_text.clone();
+    let mut new_cursor = si;
+
+    if shift {
+        if si != ei {
+            let s = char_to_byte(&old_text, si);
+            let e = char_to_byte(&old_text, ei);
+            if old_text[s..e].starts_with('\t') {
+                new_text.replace_range(s..s + '\t'.len_utf8(), "");
+            } else if old_text[s..e].ends_with('\t') {
+                let tab_start = e.saturating_sub('\t'.len_utf8());
+                new_text.replace_range(tab_start..e, "");
+                new_cursor = si;
+            } else {
+                return false;
+            }
+        } else if si > 0 {
+            let prev = char_to_byte(&old_text, si - 1);
+            let cur = char_to_byte(&old_text, si);
+            if &old_text[prev..cur] == "\t" {
+                new_text.replace_range(prev..cur, "");
+                new_cursor = si - 1;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    } else {
+        let s = char_to_byte(&old_text, si);
+        let e = char_to_byte(&old_text, ei);
+        new_text.replace_range(s..e, "\t");
+        new_cursor = si + 1;
+    }
+
+    ed.push_undo();
+    rebuild_spans(&mut ed.paras[idx], new_text.clone(), cur_fmt);
+    ed.para_texts[idx] = new_text;
+    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(new_cursor))));
+    egui::TextEdit::store_state(ctx, id, state);
+    ed.dirty = true;
+    ed.heights_dirty = true;
+    true
 }
 
 fn find_split_byte_fit(
@@ -680,16 +724,12 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
                 }
 
-                // Precise cross-paragraph selection highlighting using galley glyph positions
                 if let Some((from, to)) = cross_sel {
                     if i >= from.para && i <= to.para {
                         let start_byte = if i == from.para { from.byte } else { 0 };
                         let end_byte = if i == to.para { to.byte } else { para.text.len() };
-
                         let job = build_layout_job(&para.spans, &para.text, para, font, bs, wrap_w, is_dark, ed.zoom);
                         let galley = ctx.fonts_mut(|f| f.layout_job(job));
-
-                        // Compute alignment offset so highlight matches visual text position
                         let align_offset = match para.align {
                             Align::Center => ((edit_w - galley.rect.width()) / 2.0).max(0.0),
                             Align::Right  => (edit_w - galley.rect.width()).max(0.0),
@@ -751,6 +791,14 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
             let id = ed.para_ids[i];
             if ed.pending_focus == Some(i) { ctx.memory_mut(|m| m.request_focus(id)); }
+            let tab_keys = if i == focused {
+                ctx.input_mut(|inp| (
+                    inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab),
+                    inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab),
+                    inp.consume_key(egui::Modifiers::CTRL, egui::Key::M),
+                    inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::M),
+                ))
+            } else { (false, false, false, false) };
             let text_ref = &mut ed.para_texts[i];
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit_rect));
             let output = egui::TextEdit::multiline(text_ref)
@@ -780,14 +828,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             }
             if has_focus {
                 let mut b = false; let mut it = false; let mut u = false; let mut h: u8 = 0;
-                let mut tab_delta: Option<f32> = None;
 
                 ctx.input_mut(|inp| {
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::B) { b = true; }
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::I) { it = true; }
                     if inp.consume_key(egui::Modifiers::CTRL, egui::Key::U) { u = true; }
-                    if inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) { tab_delta = Some(-18.0); }
-                    else if inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab) { tab_delta = Some(18.0); }
                     for (key, level) in [(egui::Key::Num1,1u8),(egui::Key::Num2,2),(egui::Key::Num3,3),(egui::Key::Num4,4),(egui::Key::Num5,5)] {
                         if inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::ALT, key) { h = level; }
                     }
@@ -800,11 +845,23 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     let style = match h { 1 => ParaStyle::H1, 2 => ParaStyle::H2, 3 => ParaStyle::H3, 4 => ParaStyle::H4, _ => ParaStyle::H5 };
                     ed.apply_style_toggle(style);
                 }
-                if let Some(delta) = tab_delta {
+                if tab_keys.2 || tab_keys.3 {
+                    let delta = if tab_keys.2 { 18.0f32 } else { -18.0 };
                     ed.push_undo();
-                    let saved_state = egui::TextEdit::load_state(ctx, id);
-                    ed.indent_para(i, delta);
-                    if let Some(state) = saved_state { egui::TextEdit::store_state(ctx, id, state); }
+                    if ed.has_cross_sel() {
+                        if let Some((from, to)) = ed.norm_sel() {
+                            for pi in from.para..=to.para.min(ed.paras.len().saturating_sub(1)) {
+                                ed.paras[pi].indent_left = (ed.paras[pi].indent_left + delta).max(0.0);
+                            }
+                        }
+                    } else {
+                        adjust_paragraph_indent(ed, i, delta);
+                    }
+                    ed.dirty = true;
+                    ed.heights_dirty = true;
+                }
+                if (tab_keys.0 || tab_keys.1) && !ed.has_cross_sel() {
+                    let _ = handle_tab_edit(ed, ctx, i, id, tab_keys.1, &cur_fmt);
                 }
 
                 if let Some(state) = egui::TextEdit::load_state(ctx, id) {

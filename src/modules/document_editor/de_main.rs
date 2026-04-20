@@ -269,11 +269,6 @@ impl DocumentEditor {
         self.paras[self.focused_para].align = align; self.dirty = true;
     }
 
-    pub(super) fn indent_para(&mut self, idx: usize, delta: f32) {
-        self.paras[idx].indent_left = (self.paras[idx].indent_left + delta).max(0.0).min(200.0);
-        self.dirty = true; self.heights_dirty = true;
-    }
-
     pub(super) fn apply_fmt_toggle_bold(&mut self) {
         if let Some((pi, s, e)) = self.last_selection {
             if s != e && pi < self.paras.len() {

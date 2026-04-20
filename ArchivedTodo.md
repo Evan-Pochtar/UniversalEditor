@@ -149,6 +149,8 @@
 - [x] When highlighting, and then moving the mouse diagonally down to the right of a large paragraph, selects "vertically"
 - [x] When highlighting, highlighting a small portion of a line or paragraph highlights the WHOLE paragraph visually. However, when copy and pasting, it copies only the section where it was meant to be highlighted.
 - [x] Doesn't load bullet points properly
+- [x] Tab/indent currently indents the whole paragraph, not just the first line
+- [x] Tabbing in the middle of a paragraph indents instead of adding empty space
 
 ### Other Bugs
 

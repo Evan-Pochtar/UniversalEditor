@@ -58,9 +58,17 @@
 ### Document Editor Bugs
 
 - [ ] Doesn't load horizontal lines properly
-- [ ] Cannot highlight and scroll at the same time
-- [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
-- [ ] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
+- [ ] Highlighting
+  - [ ] Cannot highlight and scroll at the same time
+  - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
+  - [ ] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
+- [ ] Page Break
+  - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
+  - [ ] Sometimes page breaks cut a paragraph in the middle of a word
+- [ ] Tab/Indent
+  - [ ] Undoing a tab/indent moves cursor one character too far
+  - [ ] Cannot tab/indent with multi-line highlights
+  - [ ] Cannot tab/indent multiple lines at once, removes the lines instead
 
 ### Other Bugs
 
@@ -111,6 +119,7 @@
 - [ ] Document Templates
 - [ ] Add way to create comments
 - [ ] Increase indent and decrease indent buttons
+- [ ] Different font's per line/text instead of changing the whole file to one font
 - [ ] Checklists
 - [ ] Tables
 - [ ] Images
@@ -120,6 +129,8 @@
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Clean up toolbar
+- [ ] Up and down arrow keys to navigate lines
+- [ ] Shift tab should remove indent
 
 ### CONVERTERS
 
