@@ -61,7 +61,6 @@
 - [ ] Highlighting
   - [ ] Cannot highlight and scroll at the same time
   - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
-  - [ ] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
 - [ ] Page Break
   - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word
@@ -129,7 +128,6 @@
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Clean up toolbar
-- [ ] Up and down arrow keys to navigate lines
 - [ ] Shift tab should remove indent
 
 ### CONVERTERS

@@ -780,16 +780,90 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
             let para_clone = ed.paras[i].clone();
             let spans_clone: Vec<DocSpan> = ed.paras[i].spans.clone();
+            let para_clone_layouter = para_clone.clone();
+            let spans_clone_layouter = spans_clone.clone();
             let base_size_snap = bs;
             let base_font_snap = font;
             let dark_snap = is_dark;
             let zoom_snap = ed.zoom;
             let mut layouter = move |lui: &egui::Ui, s: &dyn egui::TextBuffer, _ww: f32| {
-                let job = build_layout_job(&spans_clone, s.as_str(), &para_clone, base_font_snap, base_size_snap, wrap_w, dark_snap, zoom_snap);
+                let job = build_layout_job(&spans_clone_layouter, s.as_str(), &para_clone_layouter, base_font_snap, base_size_snap, wrap_w, dark_snap, zoom_snap);
                 lui.fonts_mut(|f| f.layout_job(job))
             };
 
             let id = ed.para_ids[i];
+            if i == focused && !shift {
+                let no_modifiers = ctx.input(|inp| inp.modifiers.is_none());
+                let up_pressed = ctx.input(|inp| inp.key_pressed(egui::Key::ArrowUp)) && no_modifiers;
+                let down_pressed = ctx.input(|inp| inp.key_pressed(egui::Key::ArrowDown)) && no_modifiers;
+                if (up_pressed && i > 0) || (down_pressed && i + 1 < ed.paras.len()) {
+                    if let Some(state) = egui::TextEdit::load_state(ctx, id) {
+                        if let Some(cr) = state.cursor.char_range() {
+                            let job = build_layout_job(&spans_clone, &para_clone.text, &para_clone, base_font_snap, base_size_snap, wrap_w, dark_snap, zoom_snap);
+                            let galley = ctx.fonts_mut(|f| f.layout_job(job));
+                            let mut cur_x_local = 0.0;
+                            let mut is_top = false; let mut is_bottom = false;
+                            let mut char_pos = 0usize;
+                            for (row_idx, row) in galley.rows.iter().enumerate() {
+                                let row_start = char_pos;
+                                let glyph_count = row.glyphs.len();
+                                let row_end = char_pos + glyph_count;
+                                if cr.primary.index >= row_start && cr.primary.index < row_end {
+                                    let local_index = cr.primary.index - row_start;
+                                    cur_x_local = if local_index == 0 {
+                                        row.rect().min.x
+                                    } else {
+                                        row.glyphs.get(local_index).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+                                    };
+                                    is_top = row_idx == 0; is_bottom = row_idx == galley.rows.len() - 1;
+                                    break;
+                                }
+                                char_pos = row_end;
+                                if row.ends_with_newline { char_pos += 1; }
+                            }
+                            
+                            let mut nav_to = None;
+                            if up_pressed && is_top {
+                                ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp));
+                                let mut t = i.saturating_sub(1);
+                                while t > 0 && ed.paras[t].style == ParaStyle::HRule { t -= 1; }
+                                if ed.paras[t].style != ParaStyle::HRule { nav_to = Some((t, true)); }
+                            } else if down_pressed && is_bottom {
+                                ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
+                                let mut t = i + 1;
+                                while t + 1 < ed.paras.len() && ed.paras[t].style == ParaStyle::HRule { t += 1; }
+                                if t < ed.paras.len() && ed.paras[t].style != ParaStyle::HRule { nav_to = Some((t, false)); }
+                            }
+                            
+                            if let Some((target_i, to_bottom)) = nav_to {
+                                let cur_x_abs = edit_x + cur_x_local;
+                                let target_para = &ed.paras[target_i];
+                                let target_wrap_w = (cw - target_para.indent_left * ed.zoom).max(40.0);
+                                let target_job = build_layout_job(&target_para.spans, &target_para.text, target_para, font, bs, target_wrap_w, is_dark, ed.zoom);
+                                let target_galley = ctx.fonts_mut(|f| f.layout_job(target_job));
+                                let target_edit_x = if matches!(target_para.align, Align::Left) { pm.x + ml + target_para.indent_left * ed.zoom } else { pm.x + ml };
+                                let target_x_local = cur_x_abs - target_edit_x;
+                                let target_row_idx = if to_bottom { target_galley.rows.len().saturating_sub(1) } else { 0 };
+                                if let Some(row) = target_galley.rows.get(target_row_idx) {
+                                    let pos = egui::pos2(target_x_local, row.rect().center().y);
+                                    let new_gcursor = target_galley.cursor_from_pos(pos.to_vec2());
+                                    let target_id = ed.para_ids[target_i];
+                                    let mut target_state = egui::TextEdit::load_state(ctx, target_id).unwrap_or_default();
+                                    target_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(new_gcursor.index))));
+                                    egui::TextEdit::store_state(ctx, target_id, target_state);
+                                    ed.pending_focus = Some(target_i); pending_focus_next = Some(target_i);
+                                } else {
+                                    let target_id = ed.para_ids[target_i];
+                                    let mut target_state = egui::TextEdit::load_state(ctx, target_id).unwrap_or_default();
+                                    target_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0))));
+                                    egui::TextEdit::store_state(ctx, target_id, target_state);
+                                    ed.pending_focus = Some(target_i); pending_focus_next = Some(target_i);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if ed.pending_focus == Some(i) { ctx.memory_mut(|m| m.request_focus(id)); }
             let tab_keys = if i == focused {
                 ctx.input_mut(|inp| (

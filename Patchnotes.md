@@ -253,6 +253,7 @@
 
 #### Debugging
 
+- **TEXT EDITOR**: Last character of lines/paragraphs is no longer a different color when highlighting (dark mode)
 - **DOCUMENT EDITOR**: No longer creates non-editable newlines between text when loading documents
 - **DOCUMENT EDITOR**: Backspace now no longer removes the cursor on empty documents
 - **DOCUMENT EDITOR**: No longer puts very long lines with over a page of text on separate pages
@@ -262,3 +263,4 @@
 - **DOCUMENT EDITOR**: Multi-line highlighting now no longer makes vertical selections while moving mouse diagonally.
 - **DOCUMENT EDITOR**: Now loads bullet points properly for both docx and odt files
 - **DOCUMENT EDITOR**: Tabbing at the start of a paragraph no longer indents the whole paragraph, only the first line
+- **DOCUMENT EDITOR**: Multi-line Highlighting and in line highlighting are now the same

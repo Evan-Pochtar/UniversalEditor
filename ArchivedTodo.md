@@ -151,6 +151,7 @@
 - [x] Doesn't load bullet points properly
 - [x] Tab/indent currently indents the whole paragraph, not just the first line
 - [x] Tabbing in the middle of a paragraph indents instead of adding empty space
+- [x] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
 
 ### Other Bugs
 
@@ -269,6 +270,7 @@
 - [x] Text color
 - [x] Add .odt file compatibility
 - [x] Add to the about modal
+- [x] Up and down arrow keys to navigate lines
 
 ### CONVERTER: Img 2 Img
 
