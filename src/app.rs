@@ -1,8 +1,9 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter, archive_converter::ArchiveConverter};
 use crate::modules::image_editor::ie_cache;
+use crate::modules::doc_edit::DocumentEditor;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -137,6 +138,7 @@ pub struct UniversalEditor {
     rename_target: Option<PathBuf>,
     rename_buffer: String,
     cache_entries: Option<Vec<ie_cache::CacheEntry>>,
+    open_cache_path: Option<PathBuf>,
 }
 
 fn open_file_location(path: &PathBuf) {
@@ -245,7 +247,7 @@ impl UniversalEditor {
             recent_file_tx: tx, recent_file_rx: rx,
             path_replace_tx: replace_tx, path_replace_rx: replace_rx,
             patch_notes, patch_notes_page: 0, rename_target: None, rename_buffer: String::new(),
-            cache_entries: None,
+            cache_entries: None, open_cache_path: None,
         }
     }
 
@@ -262,6 +264,7 @@ impl UniversalEditor {
             if let Some(e) = m.as_any().downcast_ref::<TextEditor>() { return e.is_dirty(); }
             if let Some(e) = m.as_any().downcast_ref::<ImageEditor>() { return e.is_dirty(); }
             if let Some(e) = m.as_any().downcast_ref::<JsonEditor>() { return e.is_dirty() || e.is_text_modified(); }
+            if let Some(e) = m.as_any().downcast_ref::<DocumentEditor>() { return e.is_dirty(); }
         }
         false
     }
@@ -288,8 +291,10 @@ impl UniversalEditor {
                 Box::new(e)
             }
             CreateModule::JsonEditor => Box::new(if let Some(p) = path { JsonEditor::load(p) } else { JsonEditor::new_empty() }),
+            CreateModule::DocEditor => { Box::new(if let Some(p) = path { DocumentEditor::load(p) } else { DocumentEditor::new_empty() }) }
             CreateModule::ImageConverter => Box::new(ImageConverter::new()),
             CreateModule::DataConverter => Box::new(DataConverter::new()),
+            CreateModule::ArchiveConverter => Box::new(ArchiveConverter::new()),
         }
     }
 
@@ -652,11 +657,11 @@ impl UniversalEditor {
                         ui.label(egui::RichText::new("A modular suite for text and media").size(14.0).color(sub_col));
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if style::ghost_button(ui, "About", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowAbout); }
+                        if style::main_menu_modal_button(ui, "About", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowAbout); }
                         ui.add_space(4.0);
-                        if style::ghost_button(ui, "Patch Notes", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowPatchNotes); }
+                        if style::main_menu_modal_button(ui, "Patch Notes", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowPatchNotes); }
                         ui.add_space(4.0);
-                        if style::ghost_button(ui, "Settings", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowSettings); }
+                        if style::main_menu_modal_button(ui, "Settings", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowSettings); }
                     });
                 });
             });
@@ -670,7 +675,7 @@ impl UniversalEditor {
 
             ui.add_space(36.0);
             egui::Frame::new().inner_margin(margin).show(ui, |ui| {
-                style::home_section_header(ui, "Quick Start", theme);
+                style::main_menu_section_header(ui, "Quick Start", theme);
                 ui.add_space(12.0);
                 let mut open_new = false; let open_file = false;
                 ui.columns(2, |cols| {
@@ -681,22 +686,43 @@ impl UniversalEditor {
                 if open_file { action = Some(HomeAction::OpenFile); }
 
                 ui.add_space(32.0);
-                style::home_section_header(ui, "Editors", theme);
+                style::main_menu_section_header(ui, "Editors", theme);
                 ui.add_space(12.0);
-                ui.columns(3, |cols| {
-                    for (i, s) in registry::SCREENS.iter().enumerate() {
-                        if i < 3 && style::tool_card(&mut cols[i], s.name, s.description, s.color, theme).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::OpenScreen(s.id)); }
+                {
+                    let screens = registry::SCREENS;
+                    let rows = (screens.len() + 2) / 3;
+                    for r in 0..rows {
+                        ui.columns(3, |cols| {
+                            for c in 0..3usize {
+                                let idx = r * 3 + c;
+                                if let Some(s) = screens.get(idx) {
+                                    if style::tool_card(&mut cols[c], s.name, s.description, s.color, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::OpenScreen(s.id)); }
+                                } else {
+                                    style::tool_card_placeholder(&mut cols[c], "More Coming Soon", theme);
+                                }
+                            }
+                        });
                     }
-                });
+                }
                 ui.add_space(32.0);
-                style::home_section_header(ui, "Converters", theme);
+                style::main_menu_section_header(ui, "Converters", theme);
                 ui.add_space(12.0);
-                ui.columns(3, |cols| {
-                    for (i, c) in registry::CONVERTERS.iter().enumerate() {
-                        if i < 3 && style::tool_card(&mut cols[i], c.name, c.description, c.color, theme).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::OpenConverter(c.id)); }
+                {
+                    let converters = registry::CONVERTERS;
+                    let rows = (converters.len() + 2) / 3;
+                    for r in 0..rows {
+                        ui.columns(3, |cols| {
+                            for c in 0..3usize {
+                                let idx = r * 3 + c;
+                                if let Some(cv) = converters.get(idx) {
+                                    if style::tool_card(&mut cols[c], cv.name, cv.description, cv.color, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::OpenConverter(cv.id)); }
+                                } else {
+                                    style::tool_card_placeholder(&mut cols[c], "More Coming Soon", theme);
+                                }
+                            }
+                        });
                     }
-                    for i in registry::CONVERTERS.len()..3 { style::tool_card_placeholder(&mut cols[i], "More Coming Soon", theme); }
-                });
+                }
             });
         });
 
@@ -721,171 +747,185 @@ impl UniversalEditor {
 
     fn render_settings_modal(&mut self, ctx: &egui::Context) {
         if !self.show_settings { return; }
-        style::draw_modal_overlay(ctx, "settings_overlay", 160);
-        let is_dark = matches!(self.theme_mode, ThemeMode::Dark);
-        let (bg, border, muted, text) = if is_dark {
-            (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200)
-        } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_400, ColorPalette::GRAY_700)
-        };
-        let mut sys_clicked = false; let mut light_clicked = false; let mut dark_clicked = false; let mut prefs_changed = false;
-        let mut open = self.show_settings;
+        let theme = self.theme_mode;
+        let is_dark = matches!(theme, ThemeMode::Dark);
+        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::GRAY_400, ColorPalette::GRAY_700) };
 
-        let response = egui::Window::new("Settings")
-            .collapsible(false).resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .min_width(400.0)
-            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
-            .open(&mut open).order(egui::Order::Tooltip)
-            .show(ctx, |ui| {
+        if self.cache_entries.is_none() {
+            let mut entries = ie_cache::list_caches();
+            for e in entries.iter() {
+                if !std::path::Path::new(&e.src_path).exists() { let _ = std::fs::remove_dir_all(&e.cache_dir); }
+            }
+            entries.retain(|e| std::path::Path::new(&e.src_path).exists());
+            self.cache_entries = Some(entries);
+        }
+
+        let mut hdr_close = false;
+        let mut sys_c = false; let mut light_c = false; let mut dark_c = false;
+        let mut prefs_changed = false;
+        let mut to_delete: Option<usize> = None;
+
+        let outside = style::main_menu_modal(ctx, "settings_mw", theme, 440.0, |ui| {
+            if style::main_menu_modal_header(ui, "Settings", "", theme) { hdr_close = true; }
+            egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 10, bottom: 4 }).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::JsonEditor, "Json Editor"), (SettingsTab::Cache, "Layer Cache")] {
-                        let selected = self.settings_tab == *tab;
-                        let (fill, tc) = if selected { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
-                        if ui.add(egui::Button::new(egui::RichText::new(*label).size(13.0).color(tc)).fill(fill).corner_radius(6.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.settings_tab = *tab; }
+                    for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::Cache, "Image Editor"), (SettingsTab::JsonEditor, "JSON Editor")] {
+                        let sel = self.settings_tab == *tab;
+                        let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
+                        if ui.add(egui::Button::new(egui::RichText::new(*label).size(12.0).color(tc)).fill(fill).corner_radius(6.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.settings_tab = *tab; }
                         ui.add_space(4.0);
                     }
                 });
-                ui.add_space(16.0); ui.separator(); ui.add_space(16.0);
-                match self.settings_tab {
-                    SettingsTab::General => {
-                        ui.label(egui::RichText::new("APPEARANCE").size(11.0).color(muted));
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Theme").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                dark_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark), "Dark").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
-                                light_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light), "Light").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
-                                sys_clicked = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
-                            });
-                        });
-                    }
-                    SettingsTab::TextEditor => {
-                        ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_toolbar_te, "").changed() { prefs_changed = true; } });
-                        });
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_file_info_te, "").changed() { prefs_changed = true; } });
-                        });
-                        ui.add_space(16.0);
-                        ui.label(egui::RichText::new("TYPOGRAPHY").size(11.0).color(muted));
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Default Font").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.selectable_label(self.default_font == "Roboto", "Roboto").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.default_font = "Roboto".to_string(); prefs_changed = true; }
-                                if ui.selectable_label(self.default_font == "Ubuntu", "Ubuntu").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.default_font = "Ubuntu".to_string(); prefs_changed = true; }
-                            });
-                        });
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Default Font Size").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(egui::DragValue::new(&mut self.default_font_size).range(8.0..=72.0).speed(0.5).suffix(" pt")).changed() { prefs_changed = true; }
-                            });
-                        });
-                    }
-                    SettingsTab::JsonEditor => {
-                        ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_file_info_je, "").changed() { prefs_changed = true; } });
-                        });
-                    }
-                    SettingsTab::Cache => {
-                        if self.cache_entries.is_none() { self.cache_entries = Some(ie_cache::list_caches()); }
-                        let entries = self.cache_entries.as_ref().map(|e| e.len()).unwrap_or(0);
-                        let total_kb: u64 = self.cache_entries.as_ref().map(|v| v.iter().map(|e| e.size_kb).sum()).unwrap_or(0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("LAYER CACHES").size(11.0).color(muted));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add_enabled(entries > 0, egui::Button::new(egui::RichText::new("Clear All").size(12.0).color(if is_dark { ColorPalette::RED_400 } else { ColorPalette::RED_600 }))).clicked() {
-                                    ie_cache::delete_all_caches();
-                                    self.cache_entries = Some(Vec::new());
-                                }
-                            });
-                        });
-                        ui.label(egui::RichText::new(format!("{} cached files  ·  {} KB total", entries, total_kb)).size(12.0).color(muted));
-                        ui.add_space(8.0);
-                        if entries == 0 {
-                            ui.label(egui::RichText::new("No layer caches stored.").size(13.0).color(muted).italics());
-                        } else {
-                            egui::ScrollArea::vertical().max_height(220.0).id_salt("cache_scroll").show(ui, |ui| {
-                                let mut to_delete: Option<usize> = None;
-                                if let Some(ref entries_vec) = self.cache_entries {
-                                    for (i, entry) in entries_vec.iter().enumerate() {
-                                        let file_name = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path);
-                                        let row_fill = if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 };
-                                        egui::Frame::new().fill(row_fill).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
-                                            ui.horizontal(|ui| {
-                                                ui.vertical(|ui| {
-                                                    ui.label(egui::RichText::new(file_name).size(13.0).color(text));
-                                                    ui.label(egui::RichText::new(&entry.src_path).size(10.0).color(muted));
-                                                });
-                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    ui.label(egui::RichText::new(format!("{} KB", entry.size_kb)).size(11.0).color(muted));
-                                                    if ui.add(egui::Button::new(egui::RichText::new("Delete").size(11.0))).clicked() { to_delete = Some(i); }
-                                                });
-                                            });
-                                        });
-                                        ui.add_space(4.0);
-                                    }
-                                }
-                                if let Some(idx) = to_delete {
-                                    if let Some(ref entries_vec) = self.cache_entries {
-                                        if let Some(entry) = entries_vec.get(idx) {
-                                            let _ = std::fs::remove_dir_all(&entry.cache_dir);
-                                        }
-                                    }
-                                    self.cache_entries = Some(ie_cache::list_caches());
-                                }
+            });
+            let (div, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+            ui.painter().rect_filled(div, 0.0, if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 });
+            egui::ScrollArea::vertical().max_height(450.0).auto_shrink([false, true]).show(ui, |ui| {
+                egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 28, top: 16, bottom: 20 }).show(ui, |ui| {
+                    match self.settings_tab {
+                        SettingsTab::General => {
+                            ui.label(egui::RichText::new("APPEARANCE").size(11.0).color(muted));
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Theme").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    dark_c = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Dark), "Dark").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+                                    light_c = ui.selectable_label(matches!(self.theme_preference, ThemePreference::Light), "Light").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+                                    sys_c = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+                                });
                             });
                         }
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Layer caches are automatically cleared if the source image is modified outside this application.").size(11.0).color(muted).italics());
+                        SettingsTab::TextEditor => {
+                            ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Show Toolbar").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_toolbar_te, "").changed() { prefs_changed = true; } });
+                            });
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_file_info_te, "").changed() { prefs_changed = true; } });
+                            });
+                            ui.add_space(16.0);
+                            ui.label(egui::RichText::new("TYPOGRAPHY").size(11.0).color(muted));
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Default Font:").size(14.0).color(text));
+                            });
+                            ui.add_space(4.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
+                                for (name, label) in &[("Ubuntu", "Ubuntu"), ("Roboto", "Roboto"), ("GoogleSans", "Google Sans"), ("OpenSans", "Open Sans")] {
+                                    let sel = self.default_font == *name;
+                                    let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(28,52,100) } else { ColorPalette::BLUE_100 }, if is_dark { egui::Color32::WHITE } else { ColorPalette::BLUE_700 }) }
+                                        else { (if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 }, text) };
+                                    let stroke = egui::Stroke::new(1.0, if sel { ColorPalette::BLUE_500 } else { if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_300 } });
+                                    if ui.scope(|ui| {
+                                        let s = ui.style_mut();
+                                        s.visuals.widgets.inactive.bg_fill = fill;
+                                        s.visuals.widgets.inactive.weak_bg_fill = fill;
+                                        s.visuals.widgets.inactive.bg_stroke = stroke;
+                                        s.visuals.widgets.hovered.bg_fill = fill.linear_multiply(1.1);
+                                        s.visuals.widgets.hovered.weak_bg_fill = fill.linear_multiply(1.1);
+                                        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::BLUE_400);
+                                        ui.add(egui::Button::new(egui::RichText::new(*label).size(13.0).color(tc)).min_size(egui::vec2(0.0, 28.0)))
+                                    }).inner.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        self.default_font = name.to_string(); prefs_changed = true;
+                                    }
+                                }
+                            });
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Default Font Size:").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add(egui::DragValue::new(&mut self.default_font_size).range(8.0..=72.0).speed(0.5).suffix(" pt")).changed() { prefs_changed = true; }
+                                });
+                            });
+                        }
+                        SettingsTab::JsonEditor => {
+                            ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Show File Info").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.checkbox(&mut self.show_file_info_je, "").changed() { prefs_changed = true; } });
+                            });
+                        }
+                        SettingsTab::Cache => {
+                            let count = self.cache_entries.as_ref().map(|v| v.len()).unwrap_or(0);
+                            let total_kb: u64 = self.cache_entries.as_ref().map(|v| v.iter().map(|e| e.size_kb).sum()).unwrap_or(0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("LAYER CACHES").size(11.0).color(muted));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add_enabled(count > 0, egui::Button::new(egui::RichText::new("Clear All").size(12.0).color(if is_dark { ColorPalette::RED_400 } else { ColorPalette::RED_600 }))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        ie_cache::delete_all_caches(); self.cache_entries = Some(Vec::new());
+                                    }
+                                });
+                            });
+                            ui.label(egui::RichText::new(format!("{} cached files  ·  {} KB total", count, total_kb)).size(12.0).color(muted));
+                            ui.add_space(8.0);
+                            if count == 0 {
+                                ui.label(egui::RichText::new("No layer caches stored.").size(13.0).color(muted).italics());
+                            } else {
+                                egui::ScrollArea::vertical().max_height(220.0).id_salt("cache_scroll").show(ui, |ui| {
+                                    if let Some(ref entries_vec) = self.cache_entries {
+                                        for (i, entry) in entries_vec.iter().enumerate() {
+                                            let fname = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path);
+                                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 }).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.label(egui::RichText::new(fname).size(13.0).color(text));
+                                                        ui.label(egui::RichText::new(&entry.src_path).size(10.0).color(muted));
+                                                    });
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        ui.label(egui::RichText::new(format!("{} KB", entry.size_kb)).size(11.0).color(muted));
+                                                        if ui.button(egui::RichText::new("Delete").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { to_delete = Some(i); }
+                                                        if ui.button(egui::RichText::new("Open").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open cache metadata in JSON Editor").clicked() {
+                                                            self.open_cache_path = Some(entry.cache_dir.join("meta.json"));
+                                                        }
+                                                    });
+                                                });
+                                            });
+                                            ui.add_space(4.0);
+                                        }
+                                    }
+                                });
+                            }
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Layer caches are automatically cleared if the source image is modified outside this application.").size(11.0).color(muted).italics());
+                        }
                     }
-                }
+                });
             });
+        });
 
-        if let Some(r) = response {
-            if ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))) { open = false; }
-        }
-        if !open { self.cache_entries = None; }
-        self.show_settings = open;
-        if sys_clicked { self.theme_preference = ThemePreference::System; self.theme_mode = match ctx.theme() { egui::Theme::Dark => ThemeMode::Dark, egui::Theme::Light => ThemeMode::Light }; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
-        if light_clicked { self.theme_preference = ThemePreference::Light; self.theme_mode = ThemeMode::Light; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
-        if dark_clicked { self.theme_preference = ThemePreference::Dark; self.theme_mode = ThemeMode::Dark; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
+        if outside || hdr_close { self.show_settings = false; self.cache_entries = None; }
+        if sys_c { self.theme_preference = ThemePreference::System; self.theme_mode = match ctx.theme() { egui::Theme::Dark => ThemeMode::Dark, egui::Theme::Light => ThemeMode::Light }; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
+        if light_c { self.theme_preference = ThemePreference::Light; self.theme_mode = ThemeMode::Light; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
+        if dark_c { self.theme_preference = ThemePreference::Dark; self.theme_mode = ThemeMode::Dark; style::apply_theme(ctx, self.theme_mode); self.save_settings(); }
         if prefs_changed { self.save_settings(); }
+        if let Some(idx) = to_delete {
+            if let Some(ref v) = self.cache_entries {
+                if let Some(e) = v.get(idx) { let _ = std::fs::remove_dir_all(&e.cache_dir); }
+            }
+            self.cache_entries = Some(ie_cache::list_caches());
+        }
     }
 
     fn render_patch_notes_modal(&mut self, ctx: &egui::Context) {
         if !self.show_patch_notes { return; }
-        style::draw_modal_overlay(ctx, "patchnotes_overlay", 160);
-        let is_dark = matches!(self.theme_mode, ThemeMode::Dark);
-        let (bg, border, muted, text, tag_bg) = if is_dark {
-            (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::ZINC_500, ColorPalette::SLATE_200, ColorPalette::MODAL_TAG_BG_DARK)
-        } else {
-            (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_700, ColorPalette::BLUE_50)
-        };
-        let mut open = self.show_patch_notes;
+        let theme = self.theme_mode;
+        let is_dark = matches!(theme, ThemeMode::Dark);
+        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::GRAY_900, ColorPalette::GRAY_700) };
+        let tag_bg = if is_dark { ColorPalette::MODAL_TAG_BG_DARK } else { ColorPalette::BLUE_50 };
         let total_pages = self.patch_notes.len().max(1);
         if self.patch_notes_page >= total_pages { self.patch_notes_page = total_pages - 1; }
+        let mut hdr_close = false;
 
-        let response = egui::Window::new("Patch Notes")
-            .collapsible(false).resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .min_width(480.0).max_width(560.0)
-            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(10.0).inner_margin(28.0))
-            .open(&mut open).order(egui::Order::Tooltip)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
+        let outside = style::main_menu_modal(ctx, "patchnotes_mw", theme, 520.0, |ui| {
+            if style::main_menu_modal_header(ui, "Patch Notes", "", theme) { hdr_close = true; }
+            egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
+                egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 28, top: 16, bottom: 8 }).show(ui, |ui| {
                     if let Some(entry) = self.patch_notes.get(self.patch_notes_page) {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(&entry.version).size(16.0).strong().color(text));
@@ -917,8 +957,7 @@ impl UniversalEditor {
                                         ui.add_space(10.0);
                                         if !note.module_tag.is_empty() {
                                             let (chip_bg, chip_text) = if is_dark { (ColorPalette::CHIP_BG_DARK, ColorPalette::BLUE_400) } else { (ColorPalette::BLUE_50, ColorPalette::BLUE_600) };
-                                            egui::Frame::new().fill(chip_bg).corner_radius(3.0)
-                                                .inner_margin(egui::Margin { left: 5, right: 5, top: 1, bottom: 1 })
+                                            egui::Frame::new().fill(chip_bg).corner_radius(3.0).inner_margin(egui::Margin { left: 5, right: 5, top: 1, bottom: 1 })
                                                 .show(ui, |ui| { ui.label(egui::RichText::new(&note.module_tag).size(11.0).color(chip_text)); });
                                             ui.add_space(4.0);
                                         }
@@ -934,7 +973,10 @@ impl UniversalEditor {
                         ui.label("No patch notes available.");
                     }
                 });
-                ui.add_space(10.0); ui.separator(); ui.add_space(10.0);
+            });
+            let (sep, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+            ui.painter().rect_filled(sep, 0.0, if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 });
+            egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 10, bottom: 10 }).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.add_enabled(self.patch_notes_page > 0, egui::Button::new("< Prev")).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.patch_notes_page -= 1; }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -943,172 +985,161 @@ impl UniversalEditor {
                     });
                 });
             });
+        });
 
-        if let Some(r) = response {
-            if ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))) { open = false; }
-        }
-        self.show_patch_notes = open;
+        if outside || hdr_close { self.show_patch_notes = false; }
     }
 
     fn render_about_modal(&mut self, ctx: &egui::Context) {
         if !self.show_about { return; }
-        style::draw_modal_overlay(ctx, "about_overlay", 160);
-        let is_dark = matches!(self.theme_mode, ThemeMode::Dark);
-        let (bg, border) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700) } else { (egui::Color32::WHITE, ColorPalette::GRAY_200) };
+        let theme = self.theme_mode;
+        let is_dark = matches!(theme, ThemeMode::Dark);
         let title_col = if is_dark { egui::Color32::WHITE } else { ColorPalette::GRAY_900 };
         let text_col = if is_dark { ColorPalette::SLATE_300 } else { ColorPalette::GRAY_700 };
         let muted_col = if is_dark { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_400 };
         let section_col = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::GRAY_500 };
         let card_bg = if is_dark { egui::Color32::from_rgb(26, 26, 32) } else { ColorPalette::GRAY_50 };
         let card_border = if is_dark { egui::Color32::from_rgb(46, 46, 54) } else { ColorPalette::GRAY_200 };
-        let tag_bg = if is_dark { ColorPalette::CHIP_BG_DARK } else { ColorPalette::BLUE_50 };
-        let tag_col = if is_dark { ColorPalette::BLUE_400 } else { ColorPalette::BLUE_600 };
-        let mut open = self.show_about; let mut close_button_clicked = false;
+        let mut hdr_close = false;
 
-        let response = egui::Window::new("about_window")
-            .title_bar(false).collapsible(false).resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .min_size(egui::vec2(640.0, 600.0)).max_width(680.0)
-            .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(12.0).inner_margin(0.0))
-            .open(&mut open).order(egui::Order::Tooltip)
-            .show(ctx, |ui| {
-                let header_bg = if is_dark { egui::Color32::from_rgb(18, 18, 24) } else { ColorPalette::GRAY_50 };
-                egui::Frame::new().fill(header_bg).inner_margin(egui::Margin { left: 28, right: 28, top: 28, bottom: 20 }).show(ui, |ui| {
-                    let (ar, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 5.0), egui::Sense::hover());
-                    let sw = ar.width() / 5.0;
-                    for (i, &col) in [ColorPalette::BLUE_500, ColorPalette::TEAL_500, ColorPalette::PURPLE_500, ColorPalette::AMBER_500, ColorPalette::GREEN_500].iter().enumerate() {
-                        ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(ar.min.x + i as f32 * sw, ar.min.y), egui::vec2(sw + 1.0, 5.0)), 0.0, col);
-                    } ui.add_space(16.0);
-                    
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label(egui::RichText::new("Universal Editor").size(26.0).strong().color(title_col));
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                egui::Frame::new().fill(tag_bg).corner_radius(4.0).inner_margin(egui::Margin { left: 7, right: 7, top: 2, bottom: 2 })
-                                    .show(ui, |ui| { ui.label(egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(tag_col)); });
-                                ui.add_space(6.0); ui.label(egui::RichText::new("Built with Rust + egui").size(11.0).color(muted_col));
-                            });
-                        });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                            let close_btn = egui::Button::new(egui::RichText::new("×").size(32.0).color(text_col)).frame(false);
-                            if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { close_button_clicked = true; }
-                        });
-                    });
-                    
-                    ui.add_space(8.0);
+        let outside = style::main_menu_modal(ctx, "about_mw", theme, 640.0, |ui| {
+            ui.set_min_height(600.0);
+            if style::main_menu_modal_header(ui, "Universal Editor", &format!("v{}  ·  Built with Rust + egui", env!("CARGO_PKG_VERSION")), theme) { hdr_close = true; }
+
+            egui::ScrollArea::vertical().max_height(880.0).auto_shrink([false, true]).show(ui, |ui| {
+                egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 28, top: 16, bottom: 4 }).show(ui, |ui| {
                     ui.label(egui::RichText::new("A lightweight, modular desktop suite for editing text, images, and structured data, all in one place.").size(13.0).color(text_col));
-                });
+                    ui.add_space(16.0);
 
-                let (div, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-                ui.painter().rect_filled(div, 0.0, card_border);
-
-                egui::ScrollArea::vertical().max_height(760.0).auto_shrink([false, true]).show(ui, |ui| {
-                    egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 28, top: 20, bottom: 4 }).show(ui, |ui| {
-                        let section = |ui: &mut egui::Ui, label: &str| {
-                            ui.add_space(4.0);
-                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 })
-                                .inner_margin(egui::Margin { left: 16, right: 16, top: 4, bottom: 4 })
-                                .show(ui, |ui| { ui.label(egui::RichText::new(label).size(10.0).color(section_col).strong()); });
-                        };
-
-                        section(ui, "MODULES");
-                        ui.columns(2, |cols| {
-                            for (i, &(letter, name, desc, accent)) in [
-                                ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
-                                ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
-                                ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
-                                ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
-                                ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_500),
-                            ].iter().enumerate() {
-                                let col = &mut cols[i % 2];
-                                egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(8.0).inner_margin(14.0).show(col, |ui| {
-                                    ui.horizontal(|ui| {
-                                        let (br, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
-                                        ui.painter().rect_filled(br, 6.0, accent.linear_multiply(if is_dark { 0.25 } else { 0.12 }));
-                                        ui.painter().text(br.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(13.0).into(), accent);
-                                        ui.add_space(8.0);
-                                        ui.label(egui::RichText::new(name).size(13.0).strong().color(title_col));
-                                    });
-                                    ui.add_space(6.0);
-                                    ui.label(egui::RichText::new(desc).size(11.5).color(text_col));
-                                });
-                                col.add_space(8.0);
-                            }
-                        });
-
-                        section(ui, "FEATURES AT A GLANCE");
-                        for &(feat, detail) in &[
-                            ("Dark & Light themes", "Full system theme detection plus manual override."),
-                            ("Recent files", "Persistent history with quick-open and rename support."),
-                            ("Keyboard shortcuts", "Comprehensive shortcuts across all modules."),
-                            ("Undo / Redo", "Multi-level history in the Image and JSON editors."),
-                            ("Drag-and-drop", "Drop files onto converters or the image canvas."),
-                            ("Custom fonts", "Ubuntu and Roboto shipped; selectable in Settings."),
-                        ] {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 0.0;
-                                ui.painter().circle_filled(egui::pos2(ui.cursor().min.x + 5.0, ui.cursor().min.y + 8.0), 2.5, ColorPalette::BLUE_500);
-                                ui.add_space(14.0); 
-                                ui.label(egui::RichText::new(format!("{}:", feat)).size(12.5).strong().color(title_col));
-                                ui.label(egui::RichText::new(format!(" {}", detail)).size(12.0).color(text_col));
-                            }); ui.add_space(4.0);
-                        }
-
-                        section(ui, "ARCHITECTURE");
-                        for &(heading, body) in &[
-                            ("Kernel & module model", "A persistent shell handles windowing, GPU-accelerated rendering, global theming, and the sidebar registry. Individual editors are mounted on demand, switching modules does not spawn a new process or reload application state."),
-                            ("Rope-backed text", "The text editor stores content as a balanced tree of chunks rather than a contiguous string, giving constant-time insertions and deletions anywhere in a file regardless of its size."),
-                            ("Image handling", "Image I/O is handled through the image crate, compiled with only the format features actually used to keep the binary lean. No operation blocks the main thread, and memory usage stays flat regardless of file size."),
-                            ("Design system", "Styling is driven by a central ColorPalette and ThemeMode enum, similar to a CSS design token file. Every button, modal, sidebar, and overlay pulls from the same palette. Ubuntu and Roboto fonts are compiled directly into the binary, no system fonts required."),
-                        ] {
-                            egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(6.0)
-                                .inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 10 })
-                                .show(ui, |ui| {
-                                    ui.label(egui::RichText::new(heading).size(12.5).strong().color(title_col));
-                                    ui.add_space(3.0);
-                                    ui.label(egui::RichText::new(body).size(12.0).color(text_col));
-                                });
-                            ui.add_space(6.0);
-                        }
-
-                        section(ui, "PROJECT GOALS");
-                        for &(goal, desc, accent) in &[
-                            ("Modularity", "Adding a new editor requires defining a single struct and registering it, no changes to the shell. Helpers, UI components, and styling primitives are shared across modules rather than duplicated.", ColorPalette::BLUE_500),
-                            ("Performance", "The Rope structure, lazy image decoding, and GPU-direct rendering keep the application fast. No operation blocks the main thread, and memory usage stays flat regardless of open file size.", ColorPalette::TEAL_500),
-                            ("Modern design", "Custom typography, a Tailwind-like color system, consistent spacing, and smooth interactions on par with web-based tools, without the overhead of a browser engine.", ColorPalette::PURPLE_500),
-                        ] {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing.x = 0.0;
-                                ui.painter().circle_filled(egui::pos2(ui.cursor().min.x + 5.0, ui.cursor().min.y + 8.0), 2.5, accent);
-                                ui.add_space(14.0);
-                                ui.label(egui::RichText::new(format!("{}:", goal)).size(12.5).strong().color(title_col));
-                                ui.label(egui::RichText::new(format!(" {}", desc)).size(12.0).color(text_col));
-                            }); ui.add_space(5.0);
-                        }
-
-                        let sep = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
-                        ui.allocate_rect(sep, egui::Sense::hover());
-                        ui.painter().rect_filled(sep, 0.0, card_border);
-                        ui.add_space(14.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("Universal Editor  v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(muted_col));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(egui::RichText::new("Built with Rust, egui & eframe").size(11.0).color(muted_col));
-                            });
-                        });
+                    let section = |ui: &mut egui::Ui, label: &str| {
                         ui.add_space(4.0);
+                        egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 })
+                            .inner_margin(egui::Margin { left: 16, right: 16, top: 4, bottom: 4 })
+                            .show(ui, |ui| { ui.label(egui::RichText::new(label).size(10.0).color(section_col).strong()); });
+                    };
+
+                    section(ui, "MODULES");
+                    ui.columns(2, |cols| {
+                        for (i, &(letter, name, desc, accent)) in [
+                            ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
+                            ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
+                            ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
+                            ("W", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export.", ColorPalette::GREEN_500),
+                            ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
+                            ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_600),
+                            ("A", "Archive Converter", "Convert structured data between ZIP, TAR, TAR.GZ, TAR.BZ2, and 7z archive formats with compression level settings.", ColorPalette::AMBER_600),
+                        ].iter().enumerate() {
+                            let col = &mut cols[i % 2];
+                            egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(8.0).inner_margin(14.0).show(col, |ui| {
+                                ui.horizontal(|ui| {
+                                    let (br, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
+                                    ui.painter().rect_filled(br, 6.0, accent.linear_multiply(if is_dark { 0.25 } else { 0.12 }));
+                                    ui.painter().text(br.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(13.0).into(), accent);
+                                    ui.add_space(8.0);
+                                    ui.label(egui::RichText::new(name).size(13.0).strong().color(title_col));
+                                });
+                                ui.add_space(6.0);
+                                ui.label(egui::RichText::new(desc).size(11.5).color(text_col));
+                            });
+                            col.add_space(8.0);
+                        }
                     });
+
+                    section(ui, "FEATURES AT A GLANCE");
+                    for &(feat, detail) in &[
+                        ("Dark & Light themes", "Full system theme detection plus manual override."),
+                        ("Recent files", "Persistent history with quick-open and rename support."),
+                        ("Keyboard shortcuts", "Comprehensive shortcuts across all modules."),
+                        ("Undo / Redo", "Multi-level history in the Image and JSON editors."),
+                        ("Drag-and-drop", "Drop files onto converters or the image canvas."),
+                        ("Custom fonts", "Ubuntu, Roboto, and Google/Open Sans shipped; selectable in Settings."),
+                    ] {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            ui.painter().circle_filled(egui::pos2(ui.cursor().min.x + 5.0, ui.cursor().min.y + 8.0), 2.5, ColorPalette::BLUE_500);
+                            ui.add_space(14.0);
+                            ui.label(egui::RichText::new(format!("{}:", feat)).size(12.5).strong().color(title_col));
+                            ui.label(egui::RichText::new(format!(" {}", detail)).size(12.0).color(text_col));
+                        }); ui.add_space(4.0);
+                    }
+
+                    section(ui, "ARCHITECTURE");
+                    for &(heading, body) in &[
+                        ("Kernel & module model", "A persistent shell handles windowing, GPU-accelerated rendering, global theming, and the sidebar registry. Individual editors are mounted on demand, switching modules does not spawn a new process or reload application state."),
+                        ("Rope-backed text", "The text editor stores content as a balanced tree of chunks rather than a contiguous string, giving constant-time insertions and deletions anywhere in a file regardless of its size."),
+                        ("Image handling", "Image I/O is handled through the image crate, compiled with only the format features actually used to keep the binary lean. No operation blocks the main thread, and memory usage stays flat regardless of file size."),
+                        ("Design system", "Styling is driven by a central ColorPalette and ThemeMode enum, similar to a CSS design token file. Every button, modal, sidebar, and overlay pulls from the same palette. Ubuntu and Roboto fonts are compiled directly into the binary, no system fonts required."),
+                    ] {
+                        egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(6.0)
+                            .inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 10 })
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new(heading).size(12.5).strong().color(title_col));
+                                ui.add_space(3.0);
+                                ui.label(egui::RichText::new(body).size(12.0).color(text_col));
+                            });
+                        ui.add_space(6.0);
+                    }
+
+                    section(ui, "PROJECT GOALS");
+                    for &(goal, desc, accent) in &[
+                        ("Modularity", "Adding a new editor requires defining a single struct and registering it, no changes to the shell. Helpers, UI components, and styling primitives are shared across modules rather than duplicated.", ColorPalette::BLUE_500),
+                        ("Performance", "The Rope structure, lazy image decoding, and GPU-direct rendering keep the application fast. No operation blocks the main thread, and memory usage stays flat regardless of open file size.", ColorPalette::TEAL_500),
+                        ("Modern design", "Custom typography, a Tailwind-like color system, consistent spacing, and smooth interactions on par with web-based tools, without the overhead of a browser engine.", ColorPalette::PURPLE_500),
+                    ] {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            ui.painter().circle_filled(egui::pos2(ui.cursor().min.x + 5.0, ui.cursor().min.y + 8.0), 2.5, accent);
+                            ui.add_space(14.0);
+                            ui.label(egui::RichText::new(format!("{}:", goal)).size(12.5).strong().color(title_col));
+                            ui.label(egui::RichText::new(format!(" {}", desc)).size(12.0).color(text_col));
+                        }); ui.add_space(5.0);
+                    }
+
+                    let sep = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
+                    ui.allocate_rect(sep, egui::Sense::hover());
+                    ui.painter().rect_filled(sep, 0.0, card_border);
+                    ui.add_space(14.0);
+
+                    section(ui, "FONTS & LICENSES");
+                    egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(6.0)
+                        .inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 10 })
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("All bundled typefaces are licensed under the SIL Open Font License, Version 1.1.").size(12.0).color(text_col));
+                            ui.add_space(8.0);
+                            for &(name, copyright) in &[
+                                ("Ubuntu", "Copyright 2010-2011 Canonical Ltd. Ubuntu is a registered trademark of Canonical Ltd."),
+                                ("Roboto", "Copyright 2011 Google LLC."),
+                                ("Google Sans", "Copyright 2016 Google LLC."),
+                                ("Open Sans", "Copyright 2020 The Open Sans Project Authors."),
+                            ] {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.label(egui::RichText::new(name).size(12.0).strong().color(title_col));
+                                    ui.label(egui::RichText::new(copyright).size(11.5).color(muted_col));
+                                });
+                                ui.add_space(3.0);
+                            }
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new("The SIL OFL allows the fonts to be used, studied, modified, and redistributed freely, provided that derivative works are not sold by themselves and that this license and copyright notice are retained. Full license text: https://openfontlicense.org").size(11.0).color(muted_col).italics());
+                        });
+                    ui.add_space(6.0);
+
+                    let sep2 = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 1.0));
+                    ui.allocate_rect(sep2, egui::Sense::hover());
+                    ui.painter().rect_filled(sep2, 0.0, card_border);
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("Universal Editor  v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(muted_col));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new("Built with Rust, egui & eframe").size(11.0).color(muted_col));
+                        });
+                    });
+                    ui.add_space(4.0);
                 });
             });
+        });
 
-        if close_button_clicked {
-            open = false;
-        }
-        if let Some(r) = response {
-            if ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))) { open = false; }
-        }
-        self.show_about = open;
+        if outside || hdr_close { self.show_about = false; }
     }
 }
 
@@ -1121,6 +1152,13 @@ impl eframe::App for UniversalEditor {
 
         while let Ok(path) = self.recent_file_rx.try_recv() { self.recent_files.add_file(path); }
         while let Ok((old, new)) = self.path_replace_rx.try_recv() { self.recent_files.remove_file(&old); self.recent_files.add_file(new); }
+
+        if let Some(path) = self.open_cache_path.take() {
+            self.show_settings = false;
+            self.cache_entries = None;
+            self.save_image_cache_if_needed();
+            self.active_module = Some(Box::new(JsonEditor::load(path)));
+        }
 
         if let Some(PendingAction::Exit) = &self.pending_action {
             if !self.show_unsaved_dialog { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
@@ -1144,6 +1182,13 @@ impl eframe::App for UniversalEditor {
             if let Some(module) = &mut self.active_module { module.ui(ui, ctx, show_toolbar, show_fi); }
             else { self.landing_page(ui); }
         });
+
+        let converter_path = self.active_module.as_mut().and_then(|m| m.take_converter_path());
+        if let Some(path) = converter_path {
+            let mut converter = crate::modules::data_converter::DataConverter::new();
+            converter.add_files_pub(vec![path]);
+            self.switch_to_module(Box::new(converter));
+        }
 
         if self.show_unsaved_dialog { ctx.set_cursor_icon(egui::CursorIcon::Default); }
     }

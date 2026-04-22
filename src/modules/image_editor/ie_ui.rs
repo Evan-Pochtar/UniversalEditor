@@ -85,14 +85,14 @@ impl ImageEditor {
                         Tool::Text => {
                             ui.label(egui::RichText::new("Font:").size(12.0).color(label_col));
                             egui::ComboBox::from_id_salt("text_font_pick")
-                                .selected_text(self.text_font_name.clone()).width(90.0)
+                                .selected_text(self.text_font_name.clone()).width(100.0)
                                 .show_ui(ui, |ui| {
-                                    for f in &["Ubuntu", "Roboto"] {
-                                        if ui.selectable_label(self.text_font_name == *f, *f).clicked() {
-                                            self.text_font_name = f.to_string();
+                                    for (name, label) in &[("Ubuntu", "Ubuntu"), ("Roboto", "Roboto"), ("GoogleSans", "Google Sans"), ("OpenSans", "Open Sans")] {
+                                        if ui.selectable_label(self.text_font_name == *name, *label).clicked() {
+                                            self.text_font_name = name.to_string();
                                             if let Some(id) = self.selected_text {
                                                 if let Some(layer) = self.text_layers.iter_mut().find(|l: &&mut TextLayer| l.id == id) {
-                                                    layer.font_name = f.to_string();
+                                                    layer.font_name = name.to_string();
                                                 }
                                             }
                                         }

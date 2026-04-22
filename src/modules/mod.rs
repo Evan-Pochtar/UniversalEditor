@@ -6,11 +6,14 @@ pub mod text_editor;
 pub mod image_editor;
 pub mod converters;
 pub mod helpers;
+pub mod document_editor;
 
+pub mod doc_edit { pub use super::document_editor::DocumentEditor; }
 pub mod json_edit {pub use super::json_editor::JsonEditor; }
 pub mod image_edit { pub use super::image_editor::ImageEditor; }
 pub mod image_converter { pub use super::converters::image_converter::ImageConverter; }
 pub mod data_converter { pub use super::converters::data_converter::DataConverter; }
+pub mod archive_converter { pub use super::converters::archive_converter::ArchiveConverter; }
 pub mod image_export { pub use super::helpers::image_export::{ExportFormat, export_image}; }
 pub mod text_edit { pub use super::text_editor::TextEditor; }
 
@@ -39,4 +42,5 @@ pub trait EditorModule {
     fn as_any(&self) -> &dyn Any;
     fn get_menu_contributions(&self) -> MenuContribution { MenuContribution::default() }
     fn handle_menu_action(&mut self, action: MenuAction) -> bool { let _ = action; false }
+    fn take_converter_path(&mut self) -> Option<std::path::PathBuf> { None }
 }

@@ -10,6 +10,7 @@
   - [x] Settings per page
   - [x] Way to go back to main menu
   - [x] Add About Page
+  - [x] Add way to show more than 3 converters and screen (either scrollbar or list vertically)
 - [x] Sidebar
   - [x] Recent Activity
   - [x] Converter/Screen List
@@ -20,17 +21,20 @@
 - [x] Allow for right click, open with universal_editor on windows
 - [x] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [x] Add way to differentiate between same name files in "recent files" list
+- [x] Improve look of patch notes and settings modal
 
 ## Screens
 
-- [x] Txt, Md
-- [x] Img Processing
-- [x] JSON Processing
+- [x] Text Editor (.txt, .md)
+- [x] Image Editor (.jpg, .jpeg, .png, .webp, .bmp, .tiff, .ico)
+- [x] JSON Processing (.json)
+- [x] Document Editor (.docx, .doc, .odt)
 
 ## Converters
 
 - [x] Img to Img of diff type
 - [x] Data Format Converter (.json, .yaml, .toml, .xml, .csv)
+- [x] Archive Converter (.zip, .tar.gz, .7z, .bz2)
 
 ## Debugging
 
@@ -135,6 +139,19 @@
 - [x] Long numbers turn into scientific value, and save as scientific value instead of staying as the long number
 - [x] Can't ctrl+s save
 - [x] Saving does not update "modified" file information value
+
+### Document Editor Bugs
+
+- [x] When loading a preexisting doc/docx, changing zoom changes font, font isn't static
+- [x] Highlight has two different highlights
+- [x] Paste does not allow for undoing
+- [x] Multiline highlight doesn't seem to work on pages that aren't the first page
+- [x] When highlighting, and then moving the mouse diagonally down to the right of a large paragraph, selects "vertically"
+- [x] When highlighting, highlighting a small portion of a line or paragraph highlights the WHOLE paragraph visually. However, when copy and pasting, it copies only the section where it was meant to be highlighted.
+- [x] Doesn't load bullet points properly
+- [x] Tab/indent currently indents the whole paragraph, not just the first line
+- [x] Tabbing in the middle of a paragraph indents instead of adding empty space
+- [x] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
 
 ### Other Bugs
 
@@ -243,6 +260,17 @@
 - [x] Give the ability to show/hide file information
 - [x] Create JSON styling file, move out of ui file
 - [x] Add line numbers to text view
+- [x] Change cursor when hovering over buttons/navigation
+
+### Document Editor
+
+- [x] Allow changing font per line not the whole document at once
+- [x] Bulleted lists
+- [x] Horizontal line
+- [x] Text color
+- [x] Add .odt file compatibility
+- [x] Add to the about modal
+- [x] Up and down arrow keys to navigate lines
 
 ### CONVERTER: Img 2 Img
 

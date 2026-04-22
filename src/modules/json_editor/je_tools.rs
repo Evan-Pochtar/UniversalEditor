@@ -16,11 +16,8 @@ impl ValType {
         match self {
             ValType::Null => "null".into(),
             ValType::Bool(b) => if *b { "true" } else { "false" }.into(),
-            ValType::Number(n) => truncate_preview(n, 24),
-            ValType::Str(s) => {
-                let flat_str = s.replace('\n', "\\n").replace('\r', "\\r");
-                format!("\"{}\"", truncate_preview(&flat_str, 80))
-            },
+            ValType::Number(n) => n.clone(),
+            ValType::Str(s) => format!("\"{}\"", truncate_preview(s, 80)),
             ValType::Array(n) => format!("[{} item{}]", n, if *n == 1 { "" } else { "s" }),
             ValType::Object(n) => format!("{{{} key{}}}", n, if *n == 1 { "" } else { "s" }),
         }
@@ -65,11 +62,12 @@ pub enum SearchTarget { Keys, Values, Both, }
 
 pub fn path_key(path: &[String]) -> String { path.join("\x00") }
 
-pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expanded: &HashSet<String>, sort_mode: SortMode, parent_is_array: bool, out: &mut Vec<FlatNode>) {
+pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expanded: &HashSet<String>, sort_mode: SortMode, out: &mut Vec<FlatNode>) {
     let node_key = path_key(path);
     let is_expanded = expanded.contains(&node_key);
     let val_type = value_to_type(value);
     let has_children = val_type.is_container();
+    let is_array_index = key.parse::<usize>().is_ok();
 
     out.push(FlatNode {
         key: key.to_string(),
@@ -78,7 +76,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
         is_expanded,
         path: path.to_vec(),
         has_children,
-        is_array_index: parent_is_array,
+        is_array_index,
     });
 
     if !is_expanded || !has_children { return; }
@@ -90,7 +88,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
             for (k, v) in entries {
                 let mut child_path = path.to_vec();
                 child_path.push(k.clone());
-                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, false, out);
+                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, out);
             }
         }
         Value::Array(arr) => {
@@ -104,7 +102,7 @@ pub fn flatten_value(value: &Value, key: &str, depth: u32, path: &[String], expa
             for (k, v) in refs {
                 let mut child_path = path.to_vec();
                 child_path.push(k.clone());
-                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, true, out);
+                flatten_value(v, k, depth + 1, &child_path, expanded, sort_mode, out);
             }
         }
         _ => {}
@@ -116,7 +114,7 @@ pub fn build_flat(root: &Value, scope: &[String], expanded: &HashSet<String>, so
     let root_key = scope.last().map(|s| s.as_str()).unwrap_or("root");
 
     let mut out = Vec::new();
-    flatten_value(scoped, root_key, 0, scope, expanded, sort_mode, false, &mut out);
+    flatten_value(scoped, root_key, 0, scope, expanded, sort_mode, &mut out);
     out
 }
 
@@ -354,7 +352,7 @@ pub fn parse_cell_value(raw: &str) -> Value {
         _ => {
             if let Ok(n) = serde_json::from_str::<serde_json::Number>(t) { return Value::Number(n); }
             if let Ok(v) = serde_json::from_str::<Value>(t) { return v; }
-            Value::String(raw.to_string()) 
+            Value::String(t.to_string())
         }
     }
 }
@@ -364,7 +362,7 @@ pub fn parse_edit_value(raw: &str) -> Value {
     if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
         return Value::String(t[1..t.len() - 1].to_string());
     }
-    parse_cell_value(raw)
+    parse_cell_value(t)
 }
 
 pub fn expand_recursive(root: &Value, scope: &[String], path: &[String], max_depth: u32, expanded: &mut HashSet<String>,) {

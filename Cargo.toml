@@ -1,6 +1,6 @@
 [package]
 name = "universal_editor"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 build = "build.rs"
 
@@ -28,3 +28,8 @@ chrono = "0.4.42"
 dirs = "6.0"
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff", "ico", "avif"] }
 ab_glyph = "0.2.32"
+zip = { version = "2.1", features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+bzip2 = "0.4"
+sevenz-rust = "0.6"

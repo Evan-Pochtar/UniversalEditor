@@ -32,13 +32,15 @@ cargo run --release
 
 ## Current Modules
 
-| Module          | Extensions                                                        | Description                                                       |
-| --------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Text Editor     | `.txt`, `.md`                                                     | Plaintext and Markdown editing backed by a Rope data structure    |
-| Image Editor    | `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tiff`, `.gif`, `.ico` | Non-destructive image editing, cropping, and transformation       |
-| JSON Editor     | `.json`                                                           | Dual-view editor with a raw text mode and a collapsible tree view |
-| Image Converter | -                                                                 | Batch conversion between any supported image formats              |
-| Data Converter  | -                                                                 | Batch conversion between any supported data formats               |
+| Module            | Extensions                                                | Description                                                       |
+| ----------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| Text Editor       | `.txt`, `.md`                                             | Plaintext and Markdown editing backed by a Rope data structure    |
+| Image Editor      | `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tiff`, `.ico` | Non-destructive image editing, cropping, and transformation       |
+| JSON Editor       | `.json`                                                   | Dual-view editor with a raw text mode and a collapsible tree view |
+| Document Editor   | `.doc`, `.docx`                                           | Document editing with formatting, aligning, and header outlines   |
+| Image Converter   | -                                                         | Batch conversion between any supported image formats              |
+| Data Converter    | -                                                         | Batch conversion between any supported data formats               |
+| Archive Converter | -                                                         | Batch conversion between any supported archive formats            |
 
 ## More Information
 

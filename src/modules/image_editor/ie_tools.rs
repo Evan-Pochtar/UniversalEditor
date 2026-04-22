@@ -5,16 +5,16 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::thread;
 use ab_glyph::{Font as AbFont, FontRef, PxScale, ScaleFont, point};
-use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL};
+use crate::style::{FONT_UB_REG, FONT_UB_BLD, FONT_UB_ITL, FONT_RB_REG, FONT_RB_BLD, FONT_RB_ITL, FONT_GS_REG, FONT_GS_BLD, FONT_GS_ITL, FONT_OS_REG, FONT_OS_BLD, FONT_OS_ITL};
 use super::ie_helpers::{rgb_to_hsv, hsv_to_rgb, srgb_to_linear, smooth_hash_2d, brush_rand, retouch_lerp_u8};
 use super::ie_main::{
     ImageEditor, Tool, FilterPanel, TextLayer, CropState, TransformHandleSet,
     BrushShape, BrushTextureMode, RetouchMode, LayerKind, RgbaColor,
 };
 
-static FONT_CACHE: OnceLock<[FontRef<'static>; 6]> = OnceLock::new();
+static FONT_CACHE: OnceLock<[FontRef<'static>; 12]> = OnceLock::new();
 
-fn cached_fonts() -> &'static [FontRef<'static>; 6] {
+fn cached_fonts() -> &'static [FontRef<'static>; 12] {
     FONT_CACHE.get_or_init(|| [
         FontRef::try_from_slice(FONT_UB_REG).expect("ub"),
         FontRef::try_from_slice(FONT_UB_BLD).expect("ub-b"),
@@ -22,6 +22,12 @@ fn cached_fonts() -> &'static [FontRef<'static>; 6] {
         FontRef::try_from_slice(FONT_RB_REG).expect("rb"),
         FontRef::try_from_slice(FONT_RB_BLD).expect("rb-b"),
         FontRef::try_from_slice(FONT_RB_ITL).expect("rb-i"),
+        FontRef::try_from_slice(FONT_GS_REG).expect("gs"),
+        FontRef::try_from_slice(FONT_GS_BLD).expect("gs-b"),
+        FontRef::try_from_slice(FONT_GS_ITL).expect("gs-i"),
+        FontRef::try_from_slice(FONT_OS_REG).expect("os"),
+        FontRef::try_from_slice(FONT_OS_BLD).expect("os-b"),
+        FontRef::try_from_slice(FONT_OS_ITL).expect("os-i"),
     ])
 }
 
@@ -355,6 +361,8 @@ impl ImageEditor {
         let fonts = cached_fonts();
         let font: &FontRef = match (tl.font_name.as_str(), tl.bold, tl.italic) {
             ("Roboto", true, _) => &fonts[4], ("Roboto", _, true) => &fonts[5], ("Roboto", ..) => &fonts[3],
+            ("GoogleSans", true, _) => &fonts[7], ("GoogleSans", _, true) => &fonts[8], ("GoogleSans", ..) => &fonts[6],
+            ("OpenSans", true, _) => &fonts[10], ("OpenSans", _, true) => &fonts[11], ("OpenSans", ..) => &fonts[9],
             (_, true, _) => &fonts[1], (_, _, true) => &fonts[2], _ => &fonts[0],
         };
         let wrap_w = tl.box_width.unwrap_or(f32::MAX);

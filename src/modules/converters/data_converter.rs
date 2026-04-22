@@ -7,29 +7,18 @@ use std::{
 };
 use crate::style::{ColorPalette, ThemeMode};
 use crate::modules::EditorModule;
+use super::converter_style::{panel_colors, label_col, format_btn_colors, drop_zone_colors, error_panel_colors};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DataFormat { Json, Yaml, Toml, Xml, Csv }
-
 impl DataFormat {
-    pub fn all() -> &'static [DataFormat] {
-        &[Self::Json, Self::Yaml, Self::Toml, Self::Xml, Self::Csv]
-    }
-
+    pub fn all() -> &'static [DataFormat] { &[Self::Json, Self::Yaml, Self::Toml, Self::Xml, Self::Csv] }
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Json => "JSON", Self::Yaml => "YAML", Self::Toml => "TOML",
-            Self::Xml => "XML", Self::Csv => "CSV",
-        }
+        match self { Self::Json => "JSON", Self::Yaml => "YAML", Self::Toml => "TOML",Self::Xml => "XML", Self::Csv => "CSV" }
     }
-
     pub fn extension(self) -> &'static str {
-        match self {
-            Self::Json => "json", Self::Yaml => "yaml", Self::Toml => "toml",
-            Self::Xml => "xml", Self::Csv => "csv",
-        }
+        match self { Self::Json => "json", Self::Yaml => "yaml", Self::Toml => "toml", Self::Xml => "xml", Self::Csv => "csv" }
     }
-
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "json" => Some(Self::Json),
@@ -44,35 +33,18 @@ impl DataFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConversionState { Idle, Converting, Completed, Failed }
+#[derive(Debug, Clone)]
+struct ConversionProgress { state: ConversionState, current: usize, total: usize, message: String }
+impl Default for ConversionProgress { fn default() -> Self { Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() } } }
 
 #[derive(Debug, Clone)]
-struct ConversionProgress {
-    state: ConversionState,
-    current: usize,
-    total: usize,
-    message: String,
-}
-
-impl Default for ConversionProgress {
-    fn default() -> Self {
-        Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct DataFile {
-    path: PathBuf,
-    format: Option<DataFormat>,
-    size_kb: Option<u64>,
-}
-
+struct DataFile { path: PathBuf, format: Option<DataFormat>, size_kb: Option<u64> }
 impl DataFile {
     fn new(path: PathBuf) -> Self {
         let format = path.extension().and_then(|e| e.to_str()).and_then(DataFormat::from_extension);
         let size_kb = std::fs::metadata(&path).ok().map(|m| m.len() / 1024);
         Self { path, format, size_kb }
     }
-
     fn file_name(&self) -> String {
         self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string()
     }
@@ -116,46 +88,34 @@ impl DataConverter {
             }
         }
     }
-
+    pub fn add_files_pub(&mut self, paths: Vec<PathBuf>) { self.add_files(paths); }
+ 
     fn start_conversion(&mut self) {
         if self.files.is_empty() { return; }
         self.conversion_errors.lock().unwrap().clear();
-
         let output_dir = self.output_directory.clone().unwrap_or_else(|| {
             self.files[0].path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
         });
-
         let files = self.files.clone();
         let target = self.target_format;
         let pretty = self.pretty_output;
         let overwrite = self.overwrite_existing;
         let progress = Arc::clone(&self.progress);
         let errors = Arc::clone(&self.conversion_errors);
-
-        thread::spawn(move || {
-            {
+        thread::spawn(move || {{
                 let mut p = progress.lock().unwrap();
-                p.state = ConversionState::Converting;
-                p.current = 0;
-                p.total = files.len();
-                p.message = "Starting conversion...".to_string();
+                p.state = ConversionState::Converting; p.current = 0; p.total = files.len(); p.message = "Starting conversion...".to_string();
             }
-
             let (mut ok, mut fail) = (0usize, 0usize);
-
-            for (idx, file) in files.iter().enumerate() {
-                {
+            for (idx, file) in files.iter().enumerate() {{
                     let mut p = progress.lock().unwrap();
-                    p.current = idx + 1;
-                    p.message = format!("Converting {} ({}/{})", file.file_name(), idx + 1, files.len());
+                    p.current = idx + 1;p.message = format!("Converting {} ({}/{})", file.file_name(), idx + 1, files.len());
                 }
-
                 let Some(src_fmt) = file.format else {
                     errors.lock().unwrap().push(format!("{}: Unknown source format", file.file_name()));
                     fail += 1;
                     continue;
                 };
-
                 match Self::convert_file(&file.path, &output_dir, src_fmt, target, pretty, overwrite) {
                     Ok(_) => ok += 1,
                     Err(e) => {
@@ -164,29 +124,17 @@ impl DataConverter {
                     }
                 }
             }
-
             let mut p = progress.lock().unwrap();
             p.state = if fail == 0 { ConversionState::Completed } else { ConversionState::Failed };
             p.message = format!("Completed: {} succeeded, {} failed", ok, fail);
         });
     }
 
-    fn convert_file(
-        input: &PathBuf,
-        output_dir: &PathBuf,
-        from: DataFormat,
-        to: DataFormat,
-        pretty: bool,
-        overwrite: bool,
-    ) -> Result<(), String> {
+    fn convert_file(input: &PathBuf, output_dir: &PathBuf, from: DataFormat, to: DataFormat, pretty: bool, overwrite: bool) -> Result<(), String> {
         let value = Self::read_as_value(input, from)?;
-
         let stem = input.file_stem().and_then(|s| s.to_str()).ok_or("Invalid filename")?;
         let out_path = output_dir.join(format!("{}.{}", stem, to.extension()));
-        if out_path.exists() && !overwrite {
-            return Err("File exists and overwrite is disabled".to_string());
-        }
-
+        if out_path.exists() && !overwrite { return Err("File exists and overwrite is disabled".to_string()); }
         let out_file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
         let mut writer = BufWriter::new(out_file);
         Self::write_value(&mut writer, &value, to, pretty)
@@ -229,20 +177,13 @@ impl DataConverter {
     fn write_value<W: Write>(writer: &mut W, value: &serde_json::Value, fmt: DataFormat, pretty: bool) -> Result<(), String> {
         match fmt {
             DataFormat::Json => {
-                if pretty {
-                    serde_json::to_writer_pretty(writer, value).map_err(|e| e.to_string())
-                } else {
-                    serde_json::to_writer(writer, value).map_err(|e| e.to_string())
-                }
+                if pretty { serde_json::to_writer_pretty(writer, value).map_err(|e| e.to_string()) }
+                else { serde_json::to_writer(writer, value).map_err(|e| e.to_string()) }
             }
             DataFormat::Yaml => serde_yaml::to_writer(writer, value).map_err(|e| e.to_string()),
             DataFormat::Toml => {
                 let tv = json_to_toml(value)?;
-                let s = if pretty {
-                    toml::to_string_pretty(&tv).map_err(|e| e.to_string())?
-                } else {
-                    toml::to_string(&tv).map_err(|e| e.to_string())?
-                };
+                let s = if pretty { toml::to_string_pretty(&tv) } else { toml::to_string(&tv) }.map_err(|e| e.to_string())?;
                 writer.write_all(s.as_bytes()).map_err(|e| e.to_string())
             }
             DataFormat::Xml => {
@@ -252,9 +193,7 @@ impl DataConverter {
             DataFormat::Csv => {
                 let arr = value.as_array().ok_or("CSV output requires a top-level array of objects")?;
                 if arr.is_empty() { return Ok(()); }
-                let headers: Vec<String> = arr[0].as_object()
-                    .ok_or("CSV requires an array of objects")?
-                    .keys().cloned().collect();
+                let headers: Vec<String> = arr[0].as_object().ok_or("CSV requires an array of objects")?.keys().cloned().collect();
                 let mut wtr = csv::Writer::from_writer(writer);
                 wtr.write_record(&headers).map_err(|e| e.to_string())?;
                 for row in arr {
@@ -273,30 +212,23 @@ impl DataConverter {
     }
 
     fn render_header(&self, ui: &mut egui::Ui, theme: ThemeMode) {
-        let (title_color, subtitle_color) = if matches!(theme, ThemeMode::Dark) {
-            (ColorPalette::ZINC_100, ColorPalette::ZINC_400)
-        } else {
-            (ColorPalette::ZINC_900, ColorPalette::ZINC_600)
-        };
-
+        let (tc, sc) = if matches!(theme, ThemeMode::Dark) { (ColorPalette::ZINC_100, ColorPalette::ZINC_400) } else { (ColorPalette::ZINC_900, ColorPalette::ZINC_600) };
         ui.add_space(12.0);
-        ui.label(egui::RichText::new("Data Format Converter").size(24.0).color(title_color));
+        ui.label(egui::RichText::new("Data Format Converter").size(24.0).color(tc));
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Convert between JSON, YAML, TOML, XML, and CSV formats").size(13.0).color(subtitle_color));
+        ui.label(egui::RichText::new("Convert between JSON, YAML, TOML, XML, and CSV formats").size(13.0).color(sc));
         ui.add_space(12.0);
     }
 
     fn render_format_selector(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let (panel_bg, border_color, text_color) = panel_colors(theme);
-
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.label(egui::RichText::new("Target Format").size(14.0).color(text_color));
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     for &fmt in DataFormat::all() {
-                        let selected = self.target_format == fmt;
-                        let (bg, fg) = format_button_colors(selected, theme);
+                        let (bg, fg) = format_btn_colors(self.target_format == fmt, ColorPalette::GREEN_600, theme);
                         let btn = egui::Button::new(egui::RichText::new(fmt.as_str()).size(13.0).color(fg))
                             .fill(bg).stroke(egui::Stroke::NONE).corner_radius(6.0)
                             .min_size(egui::vec2(72.0, 32.0));
@@ -308,7 +240,6 @@ impl DataConverter {
 
     fn render_options(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let (panel_bg, border_color, text_color) = panel_colors(theme);
-
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -319,7 +250,6 @@ impl DataConverter {
                         }
                     });
                 });
-
                 if self.show_options {
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
@@ -333,8 +263,7 @@ impl DataConverter {
 
     fn render_output_directory(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let (panel_bg, border_color, text_color) = panel_colors(theme);
-        let label_color = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
-
+        let lc = label_col(theme);
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.label(egui::RichText::new("Output Directory").size(14.0).color(text_color));
@@ -343,16 +272,12 @@ impl DataConverter {
                     let dir_text = self.output_directory.as_ref()
                         .map(|d| d.to_string_lossy().to_string())
                         .unwrap_or_else(|| "Same as source files".to_string());
-                    ui.label(egui::RichText::new(dir_text).color(label_color));
+                    ui.label(egui::RichText::new(dir_text).color(lc));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Browse").clicked() {
-                            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                self.output_directory = Some(dir);
-                            }
+                            if let Some(dir) = rfd::FileDialog::new().pick_folder() { self.output_directory = Some(dir); }
                         }
-                        if self.output_directory.is_some() && ui.button("Clear").clicked() {
-                            self.output_directory = None;
-                        }
+                        if self.output_directory.is_some() && ui.button("Clear").clicked() { self.output_directory = None; }
                     });
                 });
             });
@@ -361,54 +286,34 @@ impl DataConverter {
     fn render_file_list(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let (panel_bg, border_color, text_color) = panel_colors(theme);
         let weak_color = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_500 } else { ColorPalette::ZINC_500 };
-
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(format!("Files ({})", self.files.len())).size(14.0).color(text_color));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !self.files.is_empty() && ui.button("Clear All").clicked() {
-                            self.files.clear();
-                        }
+                        if !self.files.is_empty() && ui.button("Clear All").clicked() { self.files.clear(); }
                         if ui.button("Add Files").clicked() {
                             if let Some(paths) = rfd::FileDialog::new()
                                 .add_filter("Data Files", &["json", "yaml", "yml", "toml", "xml", "csv"])
                                 .pick_files()
-                            {
-                                self.add_files(paths);
-                            }
+                            { self.add_files(paths); }
                         }
                     });
                 });
 
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(8.0);
+                ui.add_space(8.0); ui.separator(); ui.add_space(8.0);
 
                 if self.files.is_empty() {
-                    let drop_bg = if self.drag_hover {
-                        if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_200 }
-                    } else {
-                        if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_900 } else { egui::Color32::WHITE }
-                    };
-                    let drop_border = if self.drag_hover { ColorPalette::GREEN_500 } else {
-                        if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }
-                    };
-
+                    let (drop_bg, drop_border) = drop_zone_colors(self.drag_hover, theme);
                     let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 150.0), egui::Sense::click());
                     ui.painter().rect_filled(rect, 6.0, drop_bg);
                     ui.painter().rect_stroke(rect, 6.0, egui::Stroke::new(2.0, drop_border), egui::StrokeKind::Outside);
-                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER,
-                        "Drop files here or click to browse",
-                        egui::FontId::proportional(14.0), weak_color);
-
+                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Drop files here or click to browse", egui::FontId::proportional(14.0), weak_color);
                     if response.clicked() {
                         if let Some(paths) = rfd::FileDialog::new()
                             .add_filter("Data Files", &["json", "yaml", "yml", "toml", "xml", "csv"])
                             .pick_files()
-                        {
-                            self.add_files(paths);
-                        }
+                        { self.add_files(paths); }
                     }
                 } else {
                     let item_bg = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_900 } else { egui::Color32::WHITE };
@@ -443,9 +348,8 @@ impl DataConverter {
     fn render_progress(&self, ui: &mut egui::Ui, theme: ThemeMode) {
         let progress = self.progress.lock().unwrap();
         if progress.state == ConversionState::Idle { return; }
-
         let (panel_bg, border_color, text_color) = panel_colors(theme);
-        let progress_fill = match progress.state {
+        let fill = match progress.state {
             ConversionState::Converting => ColorPalette::GREEN_500,
             ConversionState::Completed => ColorPalette::GREEN_600,
             ConversionState::Failed => ColorPalette::RED_500,
@@ -453,7 +357,6 @@ impl DataConverter {
         };
         let progress_bg = if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_200 };
         let fraction = if progress.total > 0 { progress.current as f32 / progress.total as f32 } else { 0.0 };
-
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.label(egui::RichText::new("Conversion Progress").size(14.0).color(text_color));
@@ -461,27 +364,16 @@ impl DataConverter {
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 4.0, progress_bg);
                 let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
-                ui.painter().rect_filled(fill_rect, 4.0, progress_fill);
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER,
-                    format!("{:.0}%", fraction * 100.0), egui::FontId::proportional(12.0), egui::Color32::WHITE);
+                ui.painter().rect_filled(fill_rect, 4.0, fill);
+                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, format!("{:.0}%", fraction * 100.0), egui::FontId::proportional(12.0), egui::Color32::WHITE);
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new(&progress.message).size(12.0).color(text_color));
             });
     }
 
     fn render_errors(&self, ui: &mut egui::Ui, theme: ThemeMode) {
-        let errors_vec = {
-            let errors = self.conversion_errors.lock().unwrap();
-            if errors.is_empty() { return; }
-            errors.clone()
-        };
-
-        let (panel_bg, border_color, text_color) = if matches!(theme, ThemeMode::Dark) {
-            (ColorPalette::ZINC_800, ColorPalette::RED_900, ColorPalette::RED_300)
-        } else {
-            (ColorPalette::RED_50, ColorPalette::RED_400, ColorPalette::RED_800)
-        };
-
+        let errors_vec = { let e = self.conversion_errors.lock().unwrap(); if e.is_empty() { return; } e.clone() };
+        let (panel_bg, border_color, text_color) = error_panel_colors(theme);
         egui::Frame::new().fill(panel_bg).stroke(egui::Stroke::new(1.0, border_color))
             .corner_radius(8.0).inner_margin(16.0).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -503,50 +395,28 @@ impl DataConverter {
     fn render_action_buttons(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let is_converting = self.progress.lock().unwrap().state == ConversionState::Converting;
         let can_convert = !self.files.is_empty() && !is_converting;
-
+        let (button_bg, button_text) = if can_convert {
+            (ColorPalette::GREEN_600, egui::Color32::WHITE)
+        } else if matches!(theme, ThemeMode::Dark) {
+            (ColorPalette::ZINC_700, ColorPalette::ZINC_500)
+        } else {
+            (ColorPalette::GRAY_300, ColorPalette::GRAY_500)
+        };
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            let (button_bg, button_text) = if can_convert {
-                (ColorPalette::GREEN_600, egui::Color32::WHITE)
-            } else {
-                if matches!(theme, ThemeMode::Dark) {
-                    (ColorPalette::ZINC_700, ColorPalette::ZINC_500)
-                } else {
-                    (ColorPalette::GRAY_300, ColorPalette::GRAY_500)
-                }
-            };
-
             ui.scope(|ui| {
                 let style = ui.style_mut();
                 style.visuals.widgets.inactive.bg_fill = button_bg;
+                style.visuals.widgets.inactive.weak_bg_fill = button_bg;
+                style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
                 style.visuals.widgets.hovered.bg_fill = ColorPalette::GREEN_500;
-                style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, button_text);
-                style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, button_text);
-
-                let btn = egui::Button::new(egui::RichText::new("Convert Files").size(15.0).color(button_text))
-                    .min_size(egui::vec2(140.0, 40.0)).corner_radius(6.0);
-
-                if ui.add_enabled(can_convert, btn).clicked() { self.start_conversion(); }
+                style.visuals.widgets.hovered.weak_bg_fill = ColorPalette::GREEN_500;
+                style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                if ui.add_enabled(can_convert, egui::Button::new(egui::RichText::new("Convert Files").size(15.0).color(button_text)).min_size(egui::vec2(140.0, 40.0)).corner_radius(6.0)).clicked() {
+                    self.start_conversion();
+                }
             });
         });
-    }
-}
-
-fn panel_colors(theme: ThemeMode) -> (egui::Color32, egui::Color32, egui::Color32) {
-    if matches!(theme, ThemeMode::Dark) {
-        (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_200)
-    } else {
-        (ColorPalette::GRAY_50, ColorPalette::GRAY_300, ColorPalette::GRAY_800)
-    }
-}
-
-fn format_button_colors(selected: bool, theme: ThemeMode) -> (egui::Color32, egui::Color32) {
-    if selected {
-        (ColorPalette::GREEN_600, egui::Color32::WHITE)
-    } else if matches!(theme, ThemeMode::Dark) {
-        (ColorPalette::ZINC_700, ColorPalette::ZINC_300)
-    } else {
-        (ColorPalette::GRAY_200, ColorPalette::GRAY_800)
     }
 }
 
@@ -595,7 +465,6 @@ fn read_xml_children(reader: &mut quick_xml::Reader<&[u8]>) -> Result<serde_json
     use quick_xml::events::Event;
     let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut text = String::new();
-
     loop {
         match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(e) => {
@@ -604,12 +473,8 @@ fn read_xml_children(reader: &mut quick_xml::Reader<&[u8]>) -> Result<serde_json
                 match map.entry(tag) {
                     serde_json::map::Entry::Vacant(v) => { v.insert(child); }
                     serde_json::map::Entry::Occupied(mut o) => {
-                        if let serde_json::Value::Array(arr) = o.get_mut() {
-                            arr.push(child);
-                        } else {
-                            let prev = o.get().clone();
-                            o.insert(serde_json::Value::Array(vec![prev, child]));
-                        }
+                        if let serde_json::Value::Array(arr) = o.get_mut() { arr.push(child); }
+                        else { let prev = o.get().clone(); o.insert(serde_json::Value::Array(vec![prev, child])); }
                     }
                 }
             }
@@ -621,7 +486,6 @@ fn read_xml_children(reader: &mut quick_xml::Reader<&[u8]>) -> Result<serde_json
             _ => {}
         }
     }
-
     Ok(if map.is_empty() { serde_json::Value::String(text) } else { serde_json::Value::Object(map) })
 }
 
@@ -629,11 +493,7 @@ fn value_to_xml(value: &serde_json::Value, pretty: bool) -> Result<String, Strin
     use quick_xml::{Writer, events::*};
     use std::io::Cursor;
     let cursor = Cursor::new(Vec::<u8>::new());
-    let mut writer = if pretty {
-        Writer::new_with_indent(cursor, b' ', 2)
-    } else {
-        Writer::new(cursor)
-    };
+    let mut writer = if pretty { Writer::new_with_indent(cursor, b' ', 2) } else { Writer::new(cursor) };
     writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None))).map_err(|e| e.to_string())?;
     write_xml_node(&mut writer, "root", value)?;
     let bytes = writer.into_inner().into_inner();
@@ -648,17 +508,10 @@ fn write_xml_node<W: Write>(writer: &mut quick_xml::Writer<W>, tag: &str, value:
             for (k, v) in map { write_xml_node(writer, k, v)?; }
             writer.write_event(Event::End(BytesEnd::new(tag))).map_err(|e| e.to_string())?;
         }
-        serde_json::Value::Array(arr) => {
-            for item in arr { write_xml_node(writer, tag, item)?; }
-        }
-        serde_json::Value::Null => {
-            writer.write_event(Event::Empty(BytesStart::new(tag))).map_err(|e| e.to_string())?;
-        }
+        serde_json::Value::Array(arr) => { for item in arr { write_xml_node(writer, tag, item)?; } }
+        serde_json::Value::Null => { writer.write_event(Event::Empty(BytesStart::new(tag))).map_err(|e| e.to_string())?; }
         other => {
-            let s = match other {
-                serde_json::Value::String(s) => s.clone(),
-                v => v.to_string(),
-            };
+            let s = match other { serde_json::Value::String(s) => s.clone(), v => v.to_string() };
             writer.write_event(Event::Start(BytesStart::new(tag))).map_err(|e| e.to_string())?;
             writer.write_event(Event::Text(BytesText::new(&s))).map_err(|e| e.to_string())?;
             writer.write_event(Event::End(BytesEnd::new(tag))).map_err(|e| e.to_string())?;
@@ -669,20 +522,19 @@ fn write_xml_node<W: Write>(writer: &mut quick_xml::Writer<W>, tag: &str, value:
 
 impl EditorModule for DataConverter {
     fn as_any(&self) -> &dyn std::any::Any { self }
-
+    fn save(&mut self) -> Result<(), String> { Ok(()) }
+    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
+    fn get_title(&self) -> String { "Data Format Converter".to_string() }
+    
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
-
         ctx.input(|i| {
             if !i.raw.dropped_files.is_empty() {
-                let paths: Vec<PathBuf> = i.raw.dropped_files.iter()
-                    .filter_map(|f| f.path.clone())
-                    .collect();
+                let paths: Vec<PathBuf> = i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect();
                 self.add_files(paths);
             }
             self.drag_hover = !i.raw.hovered_files.is_empty();
         });
-
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.add_space(8.0);
             self.render_header(ui, theme);
@@ -702,11 +554,6 @@ impl EditorModule for DataConverter {
             self.render_action_buttons(ui, theme);
             ui.add_space(16.0);
         });
-
         ctx.request_repaint();
     }
-
-    fn save(&mut self) -> Result<(), String> { Ok(()) }
-    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
-    fn get_title(&self) -> String { "Data Format Converter".to_string() }
 }

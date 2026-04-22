@@ -9,21 +9,21 @@ impl TextEditor {
                 let dark = ui.visuals().dark_mode;
                 let theme = if dark { ThemeMode::Dark } else { ThemeMode::Light };
                 ui.horizontal(|ui: &mut egui::Ui| {
-                    if toolbar_action_btn(ui, egui::RichText::new("B").strong().size(12.0), theme).on_hover_text("Bold (Ctrl+B)").clicked() { self.format_bold(); }
-                    if toolbar_action_btn(ui, egui::RichText::new("I").italics().size(12.0), theme).on_hover_text("Italic (Ctrl+I)").clicked() { self.format_italic(); }
-                    if toolbar_action_btn(ui, egui::RichText::new("U").underline().size(12.0), theme).on_hover_text("Underline (Ctrl+U)").clicked() { self.format_underline(); }
-                    if toolbar_action_btn(ui, egui::RichText::new("S").strikethrough().size(12.0), theme).on_hover_text("Strikethrough (Ctrl+Shift+S)").clicked() { self.format_strikethrough(); }
-                    if toolbar_action_btn(ui, egui::RichText::new("C").monospace().size(12.0), theme).on_hover_text("Code (Ctrl+E)").clicked() { self.format_code(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("B").strong().size(12.0), theme).on_hover_text("Bold (Ctrl+B)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_bold(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("I").italics().size(12.0), theme).on_hover_text("Italic (Ctrl+I)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_italic(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("U").underline().size(12.0), theme).on_hover_text("Underline (Ctrl+U)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_underline(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("S").strikethrough().size(12.0), theme).on_hover_text("Strikethrough (Ctrl+Shift+S)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_strikethrough(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("C").monospace().size(12.0), theme).on_hover_text("Code (Ctrl+E)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_code(); }
                     ui.separator();
-                    if toolbar_action_btn(ui, "H1", theme).on_hover_text("Header 1 (Ctrl+1)").clicked() { self.format_heading(1); }
-                    if toolbar_action_btn(ui, "H2", theme).on_hover_text("Header 2 (Ctrl+2)").clicked() { self.format_heading(2); }
-                    if toolbar_action_btn(ui, "H3", theme).on_hover_text("Header 3 (Ctrl+3)").clicked() { self.format_heading(3); }
-                    if toolbar_action_btn(ui, "H4", theme).on_hover_text("Header 4 (Ctrl+4)").clicked() { self.format_heading(4); }
+                    if toolbar_action_btn(ui, "H1", theme).on_hover_text("Header 1 (Ctrl+1)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(1); }
+                    if toolbar_action_btn(ui, "H2", theme).on_hover_text("Header 2 (Ctrl+2)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(2); }
+                    if toolbar_action_btn(ui, "H3", theme).on_hover_text("Header 3 (Ctrl+3)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(3); }
+                    if toolbar_action_btn(ui, "H4", theme).on_hover_text("Header 4 (Ctrl+4)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(4); }
                     ui.separator();
-                    if toolbar_action_btn(ui, ">", theme).on_hover_text("Blockquote (Ctrl+Shift+Q)").clicked() { self.format_blockquote(); }
-                    if toolbar_action_btn(ui, "[ ]", theme).on_hover_text("Checklist Item (Ctrl+Shift+L)").clicked() { self.insert_checklist_item(); }
+                    if toolbar_action_btn(ui, ">", theme).on_hover_text("Blockquote (Ctrl+Shift+Q)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_blockquote(); }
+                    if toolbar_action_btn(ui, "[ ]", theme).on_hover_text("Checklist Item (Ctrl+Shift+L)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.insert_checklist_item(); }
                     ui.separator();
-                    let tbl_btn = toolbar_action_btn(ui, "Table", theme).on_hover_text("Insert Table");
+                    let tbl_btn = toolbar_action_btn(ui, "Table", theme).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Insert Table");
                     let tbl_popup_id = tbl_btn.id;
                     egui::Popup::from_toggle_button_response(&tbl_btn)
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -46,7 +46,7 @@ impl TextEditor {
                                     ui.painter().rect_filled(rect, 2.0, if highlighted { cell_hi } else { cell_def });
                                     ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Middle);
                                     if resp.hovered() { self.table_picker_hover = (row, col); }
-                                    if resp.clicked() {
+                                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                         self.insert_table(row + 1, col + 1);
                                         egui::Popup::close_id(ui.ctx(), tbl_popup_id);
                                     }
@@ -72,12 +72,17 @@ impl TextEditor {
                 ui.separator();
                 ui.label("Font:");
                 ui.vertical(|ui: &mut egui::Ui| {
-                    let is_roboto = matches!(&self.font_family, egui::FontFamily::Name(n) if n.as_ref() == "Roboto");
+                    let font_label = match self.font_family {
+                        egui::FontFamily::Name(ref n) => match n.as_ref() { "Roboto" => "Roboto", "GoogleSans" => "Google Sans", "OpenSans" => "Open Sans", _ => "Ubuntu" },
+                        _ => "Ubuntu",
+                    };
                     egui::ComboBox::from_id_salt("font_fam")
-                        .selected_text(if is_roboto { "Roboto" } else { "Ubuntu" })
+                        .selected_text(font_label)
                         .show_ui(ui, |ui: &mut egui::Ui| {
                             ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Ubuntu".into()), "Ubuntu");
                             ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("Roboto".into()), "Roboto");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("GoogleSans".into()), "Google Sans");
+                            ui.selectable_value(&mut self.font_family, egui::FontFamily::Name("OpenSans".into()), "Open Sans");
                         });
                 });
 
@@ -103,11 +108,11 @@ impl TextEditor {
                 );
                 file_label_resp.clone().on_hover_text("Right-click for file options");
                 file_label_resp.context_menu(|ui: &mut egui::Ui| {
-                    if ui.button("Open File Location").clicked() {
+                    if ui.button("Open File Location").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         self.open_file_location();
                         ui.close();
                     }
-                    if ui.button("Rename File").clicked() {
+                    if ui.button("Rename File").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         let current_ext = self.file_path.as_ref()
                             .and_then(|p| p.extension())
                             .and_then(|e| e.to_str())
@@ -133,7 +138,7 @@ impl TextEditor {
                         _ => None,
                     };
                     if let Some(label) = convert_label {
-                        if ui.button(label).clicked() {
+                        if ui.button(label).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             self.convert_file_extension();
                             ui.close();
                         }
@@ -171,11 +176,11 @@ impl TextEditor {
                                 });
                         });
                         ui.horizontal(|ui: &mut egui::Ui| {
-                            if ui.button("Rename").clicked() {
+                            if ui.button("Rename").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                 self.apply_rename();
                                 self.rename_modal_open = false;
                             }
-                            if ui.button("Cancel").clicked() {
+                            if ui.button("Cancel").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                 self.rename_modal_open = false;
                             }
                         });
@@ -614,7 +619,6 @@ impl TextEditor {
 
             let text_edit: egui::TextEdit<'_> = egui::TextEdit::multiline(&mut self.content).layouter(&mut layouter).lock_focus(true).frame(false);
             let response: egui::Response = ui.put(outer_rect, text_edit);
-
             if response.clicked() && ctx.input(|i: &egui::InputState| i.modifiers.ctrl || i.modifiers.command) {
                 if let Some(cursor_range) = self.last_cursor_range {
                     let chars: Vec<char> = self.content.chars().collect();
@@ -1256,6 +1260,8 @@ impl TextEditor {
     fn bold_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Bold".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-Bold".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-Bold".into()),
             _ => egui::FontFamily::Name("Ubuntu-Bold".into()),
         }
     }
@@ -1263,6 +1269,8 @@ impl TextEditor {
     fn italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-Italic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-Italic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-Italic".into()),
             _ => egui::FontFamily::Name("Ubuntu-Italic".into()),
         }
     }
@@ -1270,6 +1278,8 @@ impl TextEditor {
     fn bold_italic_family(font_family: &egui::FontFamily) -> egui::FontFamily {
         match font_family {
             egui::FontFamily::Name(n) if n.as_ref() == "Roboto" => egui::FontFamily::Name("Roboto-BoldItalic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "GoogleSans" => egui::FontFamily::Name("GoogleSans-BoldItalic".into()),
+            egui::FontFamily::Name(n) if n.as_ref() == "OpenSans" => egui::FontFamily::Name("OpenSans-BoldItalic".into()),
             _ => egui::FontFamily::Name("Ubuntu-BoldItalic".into()),
         }
     }

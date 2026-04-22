@@ -2,7 +2,7 @@ use eframe::egui::Color32;
 use crate::style::ColorPalette;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter }
+pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter, ArchiveConverter, DocEditor }
 
 pub struct ScreenDef {
     pub id: &'static str,
@@ -51,6 +51,15 @@ pub static SCREENS: &[ScreenDef] = &[
         accepted_extensions: &["json"],
         create: CreateModule::JsonEditor,
     },
+    ScreenDef {
+        id: "doc_editor",
+        name: "Document Editor",
+        description: "Write and format documents, export as DOCX",
+        color: ColorPalette::GREEN_500,
+        sidebar_letter: "D",
+        accepted_extensions: &["docx", "doc", "odt"],
+        create: CreateModule::DocEditor,
+    },
 ];
 
 pub static CONVERTERS: &[ConverterDef] = &[
@@ -69,6 +78,14 @@ pub static CONVERTERS: &[ConverterDef] = &[
         color: ColorPalette::GREEN_500,
         sidebar_letter: "D",
         create: CreateModule::DataConverter,
+    },
+    ConverterDef {
+        id: "archive_converter",
+        name: "Archive Converter",
+        description: "Convert between ZIP, TAR.GZ, TAR.BZ2, and TAR",
+        color: ColorPalette::AMBER_600,
+        sidebar_letter: "A",
+        create: CreateModule::ArchiveConverter,
     },
 ];
 
