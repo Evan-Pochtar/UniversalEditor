@@ -8,38 +8,21 @@ use crate::modules::EditorModule;
 use super::converter_style::{panel_colors, label_col, format_btn_colors, drop_zone_colors, error_panel_colors};
 
 #[derive(Debug, Clone)]
-struct ImageFile {
-    path: PathBuf,
-    format: Option<String>,
-    size_kb: Option<u64>,
-}
-
+struct ImageFile { path: PathBuf, format: Option<String>, size_kb: Option<u64>, }
 impl ImageFile {
     fn new(path: PathBuf) -> Self {
         let format = path.extension().and_then(|ext| ext.to_str()).map(|s| s.to_uppercase());
         let size_kb = std::fs::metadata(&path).ok().map(|m| m.len() / 1024);
         Self { path, format, size_kb }
     }
-
-    fn file_name(&self) -> String {
-        self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string()
-    }
+    fn file_name(&self) -> String { self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string() }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConversionState { Idle, Converting, Completed, Failed }
-
 #[derive(Debug, Clone)]
-struct ConversionProgress {
-    state: ConversionState,
-    current: usize,
-    total: usize,
-    message: String,
-}
-
-impl Default for ConversionProgress {
-    fn default() -> Self { Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() } }
-}
+struct ConversionProgress {state: ConversionState, current: usize, total: usize, message: String }
+impl Default for ConversionProgress { fn default() -> Self { Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() } } }
 
 pub struct ImageConverter {
     images: Vec<ImageFile>,
@@ -98,20 +81,13 @@ impl ImageConverter {
             }
         }
     }
-
-    fn remove_image(&mut self, index: usize) {
-        if index < self.images.len() { self.images.remove(index); }
-    }
-
+    fn remove_image(&mut self, index: usize) { if index < self.images.len() { self.images.remove(index); } }
     fn clear_images(&mut self) { self.images.clear(); }
 
     fn start_conversion(&mut self) {
         if self.images.is_empty() { return; }
         self.conversion_errors.lock().unwrap().clear();
-
-        let output_dir = self.output_directory.clone()
-            .unwrap_or_else(|| self.images[0].path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf());
-
+        let output_dir = self.output_directory.clone().unwrap_or_else(|| self.images[0].path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf());
         let images = self.images.clone();
         let target_format = self.target_format;
         let jpeg_quality = self.jpeg_quality;
@@ -125,24 +101,15 @@ impl ImageConverter {
         let progress = Arc::clone(&self.progress);
         let errors = Arc::clone(&self.conversion_errors);
         let auto_scale_ico = self.auto_scale_ico;
-
-        thread::spawn(move || {
-            {
+        thread::spawn(move || {{
                 let mut p = progress.lock().unwrap();
-                p.state = ConversionState::Converting;
-                p.current = 0;
-                p.total = images.len();
-                p.message = "Starting conversion...".to_string();
+                p.state = ConversionState::Converting; p.current = 0; p.total = images.len(); p.message = "Starting conversion...".to_string();
             }
-
             let mut success_count = 0;
             let mut fail_count = 0;
-
-            for (idx, image) in images.iter().enumerate() {
-                {
+            for (idx, image) in images.iter().enumerate() {{
                     let mut p = progress.lock().unwrap();
-                    p.current = idx + 1;
-                    p.message = format!("Converting {} ({}/{})", image.file_name(), idx + 1, images.len());
+                    p.current = idx + 1; p.message = format!("Converting {} ({}/{})", image.file_name(), idx + 1, images.len());
                 }
                 match Self::convert_image(&image.path, &output_dir, target_format, jpeg_quality, png_compression, webp_quality, overwrite, add_suffix, &suffix, auto_scale_ico, avif_quality, avif_speed) {
                     Ok(_) => success_count += 1,
@@ -152,18 +119,14 @@ impl ImageConverter {
                     }
                 }
             }
-
             let mut p = progress.lock().unwrap();
             p.state = if fail_count == 0 { ConversionState::Completed } else { ConversionState::Failed };
             p.message = format!("Completed: {} succeeded, {} failed", success_count, fail_count);
         });
     }
 
-    fn convert_image(
-        input_path: &PathBuf, output_dir: &PathBuf, target_format: ExportFormat,
-        jpeg_quality: u8, png_compression: u8, webp_quality: f32,
-        overwrite: bool, add_suffix: bool, suffix: &str,
-        auto_scale_ico: bool, avif_quality: u8, avif_speed: u8,
+    fn convert_image(input_path: &PathBuf, output_dir: &PathBuf, target_format: ExportFormat, jpeg_quality: u8, png_compression: u8, webp_quality: f32,
+        overwrite: bool, add_suffix: bool, suffix: &str, auto_scale_ico: bool, avif_quality: u8, avif_speed: u8,
     ) -> Result<(), String> {
         let img = image::open(input_path).map_err(|e| format!("Failed to open image: {}", e))?;
         let stem = input_path.file_stem().and_then(|s| s.to_str()).ok_or("Invalid filename")?;
@@ -311,7 +274,6 @@ impl ImageConverter {
             });
 
             ui.add_space(8.0); ui.separator(); ui.add_space(8.0);
-
             if self.images.is_empty() {
                 let (drop_zone_bg, drop_zone_border) = drop_zone_colors(self.drag_hover, theme);
                 let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 150.0), egui::Sense::click());
@@ -426,6 +388,9 @@ impl ImageConverter {
 
 impl EditorModule for ImageConverter {
     fn as_any(&self) -> &dyn std::any::Any { self }
+    fn save(&mut self) -> Result<(), String> { Ok(()) }
+    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
+    fn get_title(&self) -> String { "Image Converter".to_string() }
 
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
@@ -457,8 +422,4 @@ impl EditorModule for ImageConverter {
         });
         ctx.request_repaint();
     }
-
-    fn save(&mut self) -> Result<(), String> { Ok(()) }
-    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
-    fn get_title(&self) -> String { "Image Converter".to_string() }
 }

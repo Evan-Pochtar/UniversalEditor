@@ -11,7 +11,6 @@ use super::converter_style::{panel_colors, label_col, format_btn_colors, drop_zo
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArchiveFormat { Zip, TarGz, TarBz2, Tar, SevenZ }
-
 impl ArchiveFormat {
     pub fn as_str(self) -> &'static str {
         match self { Self::Zip => "ZIP", Self::TarGz => "TAR.GZ", Self::TarBz2 => "TAR.BZ2", Self::Tar => "TAR", Self::SevenZ => "7Z" }
@@ -36,17 +35,12 @@ impl ArchiveFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConvState { Idle, Converting, Done, Failed }
-
 #[derive(Clone)]
 struct Progress { state: ConvState, current: usize, total: usize, message: String }
-
-impl Default for Progress {
-    fn default() -> Self { Self { state: ConvState::Idle, current: 0, total: 0, message: String::new() } }
-}
+impl Default for Progress { fn default() -> Self { Self { state: ConvState::Idle, current: 0, total: 0, message: String::new() } } }
 
 #[derive(Clone)]
 struct ArchiveFile { path: PathBuf, format: Option<ArchiveFormat>, size_kb: Option<u64> }
-
 impl ArchiveFile {
     fn new(path: PathBuf) -> Self {
         let format = ArchiveFormat::from_path(&path);
@@ -103,7 +97,6 @@ impl ArchiveConverter {
         let overwrite = self.overwrite;
         let progress = Arc::clone(&self.progress);
         let errors = Arc::clone(&self.errors);
-
         thread::spawn(move || {
             { let mut p = progress.lock().unwrap(); p.state = ConvState::Converting; p.current = 0; p.total = files.len(); p.message = "Starting conversion...".into(); }
             let (mut ok, mut fail) = (0usize, 0usize);
@@ -130,8 +123,7 @@ impl ArchiveConverter {
         let out = out_dir.join(format!("{}.{}", stem, to.extension()));
         if out.exists() && !overwrite { return Err("File exists and overwrite is disabled".into()); }
         let tmp = std::env::temp_dir().join(format!(
-            "ue_arch_{}",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+            "ue_arch_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
         ));
         fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
         let result = Self::extract(input, from, &tmp).and_then(|_| Self::archive(&tmp, &out, to, level));
@@ -169,8 +161,7 @@ impl ArchiveConverter {
             ArchiveFormat::Zip => {
                 let mut zw = zip::ZipWriter::new(File::create(dest).map_err(|e| e.to_string())?);
                 let opts = zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated)
-                    .compression_level(Some(level as i64));
+                    .compression_method(zip::CompressionMethod::Deflated).compression_level(Some(level as i64));
                 Self::zip_dir(&mut zw, src, src, opts)?;
                 zw.finish().map(|_| ()).map_err(|e| e.to_string())
             }
@@ -419,7 +410,7 @@ impl EditorModule for ArchiveConverter {
     fn save(&mut self) -> Result<(), String> { Ok(()) }
     fn save_as(&mut self) -> Result<(), String> { Ok(()) }
     fn get_title(&self) -> String { "Archive Converter".to_string() }
-
+    
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
         ctx.input(|i| {

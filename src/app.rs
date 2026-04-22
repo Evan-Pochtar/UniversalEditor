@@ -657,11 +657,11 @@ impl UniversalEditor {
                         ui.label(egui::RichText::new("A modular suite for text and media").size(14.0).color(sub_col));
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if style::ghost_button(ui, "About", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowAbout); }
+                        if style::main_menu_modal_button(ui, "About", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowAbout); }
                         ui.add_space(4.0);
-                        if style::ghost_button(ui, "Patch Notes", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowPatchNotes); }
+                        if style::main_menu_modal_button(ui, "Patch Notes", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowPatchNotes); }
                         ui.add_space(4.0);
-                        if style::ghost_button(ui, "Settings", false, theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowSettings); }
+                        if style::main_menu_modal_button(ui, "Settings", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { action = Some(HomeAction::ShowSettings); }
                     });
                 });
             });
@@ -675,7 +675,7 @@ impl UniversalEditor {
 
             ui.add_space(36.0);
             egui::Frame::new().inner_margin(margin).show(ui, |ui| {
-                style::home_section_header(ui, "Quick Start", theme);
+                style::main_menu_section_header(ui, "Quick Start", theme);
                 ui.add_space(12.0);
                 let mut open_new = false; let open_file = false;
                 ui.columns(2, |cols| {
@@ -686,7 +686,7 @@ impl UniversalEditor {
                 if open_file { action = Some(HomeAction::OpenFile); }
 
                 ui.add_space(32.0);
-                style::home_section_header(ui, "Editors", theme);
+                style::main_menu_section_header(ui, "Editors", theme);
                 ui.add_space(12.0);
                 {
                     let screens = registry::SCREENS;
@@ -705,7 +705,7 @@ impl UniversalEditor {
                     }
                 }
                 ui.add_space(32.0);
-                style::home_section_header(ui, "Converters", theme);
+                style::main_menu_section_header(ui, "Converters", theme);
                 ui.add_space(12.0);
                 {
                     let converters = registry::CONVERTERS;

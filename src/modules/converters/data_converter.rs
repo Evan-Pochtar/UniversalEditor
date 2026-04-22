@@ -11,26 +11,14 @@ use super::converter_style::{panel_colors, label_col, format_btn_colors, drop_zo
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DataFormat { Json, Yaml, Toml, Xml, Csv }
-
 impl DataFormat {
-    pub fn all() -> &'static [DataFormat] {
-        &[Self::Json, Self::Yaml, Self::Toml, Self::Xml, Self::Csv]
-    }
-
+    pub fn all() -> &'static [DataFormat] { &[Self::Json, Self::Yaml, Self::Toml, Self::Xml, Self::Csv] }
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Json => "JSON", Self::Yaml => "YAML", Self::Toml => "TOML",
-            Self::Xml => "XML", Self::Csv => "CSV",
-        }
+        match self { Self::Json => "JSON", Self::Yaml => "YAML", Self::Toml => "TOML",Self::Xml => "XML", Self::Csv => "CSV" }
     }
-
     pub fn extension(self) -> &'static str {
-        match self {
-            Self::Json => "json", Self::Yaml => "yaml", Self::Toml => "toml",
-            Self::Xml => "xml", Self::Csv => "csv",
-        }
+        match self { Self::Json => "json", Self::Yaml => "yaml", Self::Toml => "toml", Self::Xml => "xml", Self::Csv => "csv" }
     }
-
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "json" => Some(Self::Json),
@@ -45,33 +33,18 @@ impl DataFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConversionState { Idle, Converting, Completed, Failed }
+#[derive(Debug, Clone)]
+struct ConversionProgress { state: ConversionState, current: usize, total: usize, message: String }
+impl Default for ConversionProgress { fn default() -> Self { Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() } } }
 
 #[derive(Debug, Clone)]
-struct ConversionProgress {
-    state: ConversionState,
-    current: usize,
-    total: usize,
-    message: String,
-}
-
-impl Default for ConversionProgress {
-    fn default() -> Self { Self { state: ConversionState::Idle, current: 0, total: 0, message: String::new() } }
-}
-
-#[derive(Debug, Clone)]
-struct DataFile {
-    path: PathBuf,
-    format: Option<DataFormat>,
-    size_kb: Option<u64>,
-}
-
+struct DataFile { path: PathBuf, format: Option<DataFormat>, size_kb: Option<u64> }
 impl DataFile {
     fn new(path: PathBuf) -> Self {
         let format = path.extension().and_then(|e| e.to_str()).and_then(DataFormat::from_extension);
         let size_kb = std::fs::metadata(&path).ok().map(|m| m.len() / 1024);
         Self { path, format, size_kb }
     }
-
     fn file_name(&self) -> String {
         self.path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string()
     }
@@ -115,51 +88,34 @@ impl DataConverter {
             }
         }
     }
-
-    pub fn add_files_pub(&mut self, paths: Vec<PathBuf>) {
-        self.add_files(paths);
-    }
+    pub fn add_files_pub(&mut self, paths: Vec<PathBuf>) { self.add_files(paths); }
  
-
     fn start_conversion(&mut self) {
         if self.files.is_empty() { return; }
         self.conversion_errors.lock().unwrap().clear();
-
         let output_dir = self.output_directory.clone().unwrap_or_else(|| {
             self.files[0].path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
         });
-
         let files = self.files.clone();
         let target = self.target_format;
         let pretty = self.pretty_output;
         let overwrite = self.overwrite_existing;
         let progress = Arc::clone(&self.progress);
         let errors = Arc::clone(&self.conversion_errors);
-
-        thread::spawn(move || {
-            {
+        thread::spawn(move || {{
                 let mut p = progress.lock().unwrap();
-                p.state = ConversionState::Converting;
-                p.current = 0;
-                p.total = files.len();
-                p.message = "Starting conversion...".to_string();
+                p.state = ConversionState::Converting; p.current = 0; p.total = files.len(); p.message = "Starting conversion...".to_string();
             }
-
             let (mut ok, mut fail) = (0usize, 0usize);
-
-            for (idx, file) in files.iter().enumerate() {
-                {
+            for (idx, file) in files.iter().enumerate() {{
                     let mut p = progress.lock().unwrap();
-                    p.current = idx + 1;
-                    p.message = format!("Converting {} ({}/{})", file.file_name(), idx + 1, files.len());
+                    p.current = idx + 1;p.message = format!("Converting {} ({}/{})", file.file_name(), idx + 1, files.len());
                 }
-
                 let Some(src_fmt) = file.format else {
                     errors.lock().unwrap().push(format!("{}: Unknown source format", file.file_name()));
                     fail += 1;
                     continue;
                 };
-
                 match Self::convert_file(&file.path, &output_dir, src_fmt, target, pretty, overwrite) {
                     Ok(_) => ok += 1,
                     Err(e) => {
@@ -168,7 +124,6 @@ impl DataConverter {
                     }
                 }
             }
-
             let mut p = progress.lock().unwrap();
             p.state = if fail == 0 { ConversionState::Completed } else { ConversionState::Failed };
             p.message = format!("Completed: {} succeeded, {} failed", ok, fail);
@@ -179,9 +134,7 @@ impl DataConverter {
         let value = Self::read_as_value(input, from)?;
         let stem = input.file_stem().and_then(|s| s.to_str()).ok_or("Invalid filename")?;
         let out_path = output_dir.join(format!("{}.{}", stem, to.extension()));
-        if out_path.exists() && !overwrite {
-            return Err("File exists and overwrite is disabled".to_string());
-        }
+        if out_path.exists() && !overwrite { return Err("File exists and overwrite is disabled".to_string()); }
         let out_file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
         let mut writer = BufWriter::new(out_file);
         Self::write_value(&mut writer, &value, to, pretty)
@@ -569,7 +522,10 @@ fn write_xml_node<W: Write>(writer: &mut quick_xml::Writer<W>, tag: &str, value:
 
 impl EditorModule for DataConverter {
     fn as_any(&self) -> &dyn std::any::Any { self }
-
+    fn save(&mut self) -> Result<(), String> { Ok(()) }
+    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
+    fn get_title(&self) -> String { "Data Format Converter".to_string() }
+    
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, _show_toolbar: bool, _show_file_info: bool) {
         let theme = if ui.visuals().dark_mode { ThemeMode::Dark } else { ThemeMode::Light };
         ctx.input(|i| {
@@ -600,8 +556,4 @@ impl EditorModule for DataConverter {
         });
         ctx.request_repaint();
     }
-
-    fn save(&mut self) -> Result<(), String> { Ok(()) }
-    fn save_as(&mut self) -> Result<(), String> { Ok(()) }
-    fn get_title(&self) -> String { "Data Format Converter".to_string() }
 }

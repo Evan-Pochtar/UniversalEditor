@@ -47,21 +47,7 @@ pub fn register_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub fn draw_modal_overlay(ctx: &egui::Context, id_salt: &str, alpha: u8) {
-    let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, alpha);
-    egui::Area::new(egui::Id::new(id_salt))
-        .fixed_pos(egui::pos2(0.0, 0.0))
-        .order(egui::Order::Foreground)
-        .interactable(true)
-        .show(ctx, |ui| {
-            let screen = ctx.content_rect();
-            ui.painter().rect_filled(screen, 0.0, overlay);
-            ui.allocate_rect(screen, egui::Sense::click_and_drag());
-        });
-}
-
 pub struct ColorPalette;
-
 #[allow(dead_code)]
 impl ColorPalette {
     pub const BLUE_50: egui::Color32 = egui::Color32::from_rgb(239, 246, 255);
@@ -167,9 +153,9 @@ impl ColorPalette {
     pub const CHIP_BG_DARK: egui::Color32 = egui::Color32::from_rgb(35, 40, 55);
 }
 
+// Light and Dark Mode Styling
 pub fn apply_theme(ctx: &egui::Context, theme: ThemeMode) {
     let mut style = (*ctx.style()).clone();
-
     style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
     style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
     style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
@@ -177,44 +163,35 @@ pub fn apply_theme(ctx: &egui::Context, theme: ThemeMode) {
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
     style.spacing.window_margin = egui::Margin::same(10);
-
     match theme {
         ThemeMode::Dark => apply_dark_theme(&mut style),
         ThemeMode::Light => apply_light_theme(&mut style),
     }
-
     ctx.set_style(style);
 }
 
 fn apply_dark_theme(style: &mut egui::Style) {
     style.visuals.dark_mode = true;
-    
     style.visuals.panel_fill = ColorPalette::ZINC_900;
     style.visuals.window_fill = ColorPalette::ZINC_900;
     style.visuals.faint_bg_color = ColorPalette::ZINC_800;
     style.visuals.extreme_bg_color = egui::Color32::from_rgb(12, 12, 15);
-    
     style.visuals.widgets.noninteractive.bg_fill = ColorPalette::ZINC_800;
     style.visuals.widgets.noninteractive.weak_bg_fill = egui::Color32::from_rgb(22, 22, 26);
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_700);
-    
     style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 30, 35);
     style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::ZINC_800;
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_600);
-    
     style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 40, 48);
     style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 35, 42);
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_500);
-    
     style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(50, 50, 60);
     style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(45, 45, 55);
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_400);
-    
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::SLATE_300);
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::SLATE_200);
     style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, ColorPalette::SLATE_100);
     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-    
     style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(60, 120, 240, 100);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_200);
     style.visuals.hyperlink_color = ColorPalette::BLUE_400;
@@ -222,85 +199,59 @@ fn apply_dark_theme(style: &mut egui::Style) {
 
 fn apply_light_theme(style: &mut egui::Style) {
     style.visuals.dark_mode = false;
-    
     style.visuals.panel_fill = ColorPalette::GRAY_100;
     style.visuals.window_fill = ColorPalette::GRAY_100;
     style.visuals.faint_bg_color = ColorPalette::GRAY_200;
     style.visuals.extreme_bg_color = ColorPalette::SLATE_300;
-    
     style.visuals.widgets.noninteractive.bg_fill = egui::Color32::WHITE;
     style.visuals.widgets.noninteractive.weak_bg_fill = ColorPalette::GRAY_100;
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_400);
-    
     style.visuals.widgets.inactive.bg_fill = ColorPalette::SLATE_300;
     style.visuals.widgets.inactive.weak_bg_fill = ColorPalette::GRAY_200;
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_400);
-    
     style.visuals.widgets.hovered.bg_fill = ColorPalette::GRAY_200;
     style.visuals.widgets.hovered.weak_bg_fill = ColorPalette::GRAY_300;
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_500);
-    
     style.visuals.widgets.active.bg_fill = ColorPalette::GRAY_300;
     style.visuals.widgets.active.weak_bg_fill = ColorPalette::GRAY_400;
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_600);
-    
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_700);
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_800);
     style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, ColorPalette::GRAY_900);
     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::BLACK);
-    
     style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(60, 120, 240, 80);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, ColorPalette::BLUE_600);
     style.visuals.hyperlink_color = ColorPalette::BLUE_600;
 }
 
+// Button Styling
 pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let (bg_color, hover_color) = (ColorPalette::BLUE_600, ColorPalette::BLUE_500);
-    
     ui.scope(|ui| {
         let style = ui.style_mut();
         style.visuals.widgets.inactive.bg_fill = bg_color;
         style.visuals.widgets.inactive.weak_bg_fill = bg_color;
         style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
         style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-
         style.visuals.widgets.hovered.bg_fill = hover_color;
         style.visuals.widgets.hovered.weak_bg_fill = hover_color;
         style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
         style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-        
         style.visuals.widgets.active.bg_fill = bg_color;
         style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
         style.visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
-
-        let button = egui::Button::new(
-            egui::RichText::new(text).size(16.0)
-        )
-        .min_size(egui::vec2(220.0, 45.0));
-        
+        let button = egui::Button::new(egui::RichText::new(text).size(16.0)).min_size(egui::vec2(220.0, 45.0));
         ui.add(button)
     }).inner
 }
 
 pub fn secondary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui::Response {
     let (bg_color, stroke_color, text_color, hover_bg) = match theme {
-        ThemeMode::Dark => (
-            ColorPalette::ZINC_800,
-            ColorPalette::ZINC_600,
-            ColorPalette::SLATE_200,
-            ColorPalette::ZINC_700,
-        ),
-        ThemeMode::Light => (
-            egui::Color32::WHITE,
-            ColorPalette::GRAY_300,
-            ColorPalette::GRAY_800,
-            ColorPalette::GRAY_50,
-        ),
+        ThemeMode::Dark => (ColorPalette::ZINC_800, ColorPalette::ZINC_600, ColorPalette::SLATE_200, ColorPalette::ZINC_700),
+        ThemeMode::Light => (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_800, ColorPalette::GRAY_50),
     };
-    
     ui.scope(|ui| {
         let style = ui.style_mut();
-        
         style.visuals.widgets.inactive.bg_fill = bg_color;
         style.visuals.widgets.inactive.weak_bg_fill = bg_color;
         style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text_color);
@@ -311,41 +262,24 @@ pub fn secondary_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui
         style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, stroke_color);
         style.visuals.widgets.active.bg_fill = bg_color;
         style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, text_color);
-
-        let button = egui::Button::new(
-            egui::RichText::new(text).size(16.0)
-        )
-        .min_size(egui::vec2(220.0, 45.0));
-        
+        let button = egui::Button::new(egui::RichText::new(text).size(16.0)).min_size(egui::vec2(220.0, 45.0));
         ui.add(button)
     }).inner
 }
 
+// Sidebar Styling
 pub fn sidebar_section(ui: &mut egui::Ui, title: &str, expanded: &mut bool, theme: ThemeMode, content: impl FnOnce(&mut egui::Ui),) {
     let (header_bg, header_hover, text_color, content_bg) = match theme {
-        ThemeMode::Dark => (
-            egui::Color32::from_rgb(30, 30, 35),
-            egui::Color32::from_rgb(35, 35, 42),
-            ColorPalette::SLATE_100,
-            ColorPalette::ZINC_900,
-        ),
-        ThemeMode::Light => (
-            ColorPalette::GRAY_200,
-            ColorPalette::GRAY_300,
-            ColorPalette::GRAY_800,
-            ColorPalette::GRAY_100,
-        ),
+        ThemeMode::Dark => (egui::Color32::from_rgb(30, 30, 35), egui::Color32::from_rgb(35, 35, 42), ColorPalette::SLATE_100, ColorPalette::ZINC_900),
+        ThemeMode::Light => (ColorPalette::GRAY_200, ColorPalette::GRAY_300, ColorPalette::GRAY_800, ColorPalette::GRAY_100),
     };
 
     ui.horizontal(|ui| {
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), 32.0),
-            egui::Sense::click(),
-        );
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 32.0),egui::Sense::click());
         let bg_color = if response.hovered() { header_hover } else { header_bg };
         ui.painter().rect_filled(rect, 4.0, bg_color);
-        let arrow_center = rect.left_center() + egui::vec2(16.0, 0.0);
-        let arrow_size = 4.0;
+
+        let arrow_center = rect.left_center() + egui::vec2(16.0, 0.0); let arrow_size = 4.0;
         let points = if *expanded {
             vec![
                 arrow_center + egui::vec2(-arrow_size, -arrow_size * 0.5),
@@ -360,23 +294,13 @@ pub fn sidebar_section(ui: &mut egui::Ui, title: &str, expanded: &mut bool, them
             ]
         };
 
-        ui.painter().add(egui::Shape::convex_polygon(
-            points,
-            text_color,
-            egui::Stroke::NONE,
-        ));
-
+        ui.painter().add(egui::Shape::convex_polygon(points,text_color,egui::Stroke::NONE,));
         ui.painter().text(
-            rect.left_center() + egui::vec2(30.0, 0.0),
-            egui::Align2::LEFT_CENTER,
-            title,
-            egui::FontId::proportional(13.0),
-            text_color,
+            rect.left_center() + egui::vec2(30.0, 0.0), egui::Align2::LEFT_CENTER,
+            title, egui::FontId::proportional(13.0), text_color,
         );
 
-        if response.clicked() {
-            *expanded = !*expanded;
-        }
+        if response.clicked() { *expanded = !*expanded; }
     });
 
     if *expanded {
@@ -384,7 +308,6 @@ pub fn sidebar_section(ui: &mut egui::Ui, title: &str, expanded: &mut bool, them
             let painter = ui.painter();
             let rect = ui.available_rect_before_wrap();
             painter.rect_filled(rect, 0.0, content_bg);
-            
             ui.add_space(4.0);
             content(ui);
             ui.add_space(4.0);
@@ -394,168 +317,29 @@ pub fn sidebar_section(ui: &mut egui::Ui, title: &str, expanded: &mut bool, them
 
 pub fn sidebar_item(ui: &mut egui::Ui, label: &str, icon: &str, theme: ThemeMode,) -> egui::Response {
     let (normal_bg, hover_bg, text_color) = match theme {
-        ThemeMode::Dark => (
-            egui::Color32::TRANSPARENT,
-            egui::Color32::from_rgb(40, 40, 48),
-            ColorPalette::SLATE_200,
-        ),
-        ThemeMode::Light => (
-            egui::Color32::TRANSPARENT,
-            ColorPalette::GRAY_200,
-            ColorPalette::GRAY_800,
-        ),
+        ThemeMode::Dark => (egui::Color32::TRANSPARENT, egui::Color32::from_rgb(40, 40, 48), ColorPalette::SLATE_200),
+        ThemeMode::Light => (egui::Color32::TRANSPARENT, ColorPalette::GRAY_200, ColorPalette::GRAY_800),
     };
 
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width() - 8.0, 32.0),
-        egui::Sense::click(),
-    );
-
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width() - 8.0, 32.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
     let bg_color = if response.hovered() { hover_bg } else { normal_bg };
     painter.rect_filled(rect, 4.0, bg_color);
 
     let icon_pos = rect.left_center() + egui::vec2(12.0, 0.0);
     painter.text(
-        icon_pos,
-        egui::Align2::LEFT_CENTER,
-        icon,
-        egui::FontId::proportional(14.0),
-        text_color,
+        icon_pos, egui::Align2::LEFT_CENTER,
+        icon, egui::FontId::proportional(14.0), text_color,
     );
-
     let text_pos = rect.left_center() + egui::vec2(32.0, 0.0);
     painter.text(
-        text_pos,
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(13.0),
-        text_color,
+        text_pos, egui::Align2::LEFT_CENTER,
+        label, egui::FontId::proportional(13.0),text_color,
     );
-
     response
 }
 
-pub fn ghost_button(ui: &mut egui::Ui, text: &str, disabled: bool, theme: ThemeMode) -> egui::Response {
-    let (text_color, hover_bg, border) = match theme {
-        ThemeMode::Dark => (
-            if disabled { egui::Color32::from_rgb(65, 65, 74) } else { ColorPalette::SLATE_300 },
-            egui::Color32::from_rgb(34, 34, 42),
-            if disabled { egui::Color32::from_rgb(42, 42, 50) } else { ColorPalette::ZINC_700 },
-        ),
-        ThemeMode::Light => (
-            if disabled { ColorPalette::GRAY_300 } else { ColorPalette::GRAY_600 },
-            ColorPalette::GRAY_100,
-            if disabled { ColorPalette::GRAY_200 } else { ColorPalette::GRAY_300 },
-        ),
-    };
-
-    ui.scope(|ui| {
-        if disabled { ui.disable(); }
-        let s = ui.style_mut();
-        s.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        s.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, border);
-        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text_color);
-        s.visuals.widgets.hovered.bg_fill = hover_bg;
-        s.visuals.widgets.hovered.weak_bg_fill = hover_bg;
-        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, border);
-        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, text_color);
-        s.visuals.widgets.active.bg_fill = hover_bg;
-        s.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, border);
-        s.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, text_color);
-        ui.add(
-            egui::Button::new(egui::RichText::new(text).size(13.0).color(text_color))
-                .min_size(egui::vec2(0.0, 30.0)),
-        )
-    }).inner
-}
-
-pub fn tool_card(ui: &mut egui::Ui, title: &str, desc: &str, accent: egui::Color32, theme: ThemeMode,) -> egui::Response {
-    let (card_bg, card_hover, border, hover_border, title_color, desc_color) = match theme {
-        ThemeMode::Dark => (
-            egui::Color32::from_rgb(26, 26, 31),
-            egui::Color32::from_rgb(34, 34, 41),
-            egui::Color32::from_rgb(46, 46, 54),
-            accent,
-            ColorPalette::SLATE_100,
-            ColorPalette::ZINC_500,
-        ),
-        ThemeMode::Light => (
-            ColorPalette::GRAY_50,
-            ColorPalette::GRAY_100,
-            ColorPalette::GRAY_300,
-            accent,
-            ColorPalette::GRAY_900,
-            ColorPalette::GRAY_500,
-        ),
-    };
-
-    let desired = egui::vec2(ui.available_width(), 84.0);
-    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
-
-    if ui.is_rect_visible(rect) {
-        let hovered = response.hovered();
-        let bg      = if hovered { card_hover } else { card_bg };
-        let stroke  = egui::Stroke::new(if hovered { 1.5 } else { 1.0 }, if hovered { hover_border } else { border });
-
-        ui.painter().rect(rect, 8.0, bg, stroke, egui::StrokeKind::Outside);
-
-        let bar = egui::Rect::from_min_size(
-            rect.min + egui::vec2(1.0, 1.0),
-            egui::vec2(3.0, rect.height() - 2.0),
-        );
-        ui.painter().rect_filled(bar, egui::CornerRadius { nw: 7, sw: 7, ne: 0, se: 0 }, accent);
-
-        let tx = rect.left() + 20.0;
-        let mid = rect.center().y;
-        let offset = if desc.is_empty() { 0.0 } else { 11.0 };
-
-        ui.painter().text(
-            egui::pos2(tx, mid - offset),
-            egui::Align2::LEFT_CENTER,
-            title,
-            egui::FontId::proportional(15.0),
-            title_color,
-        );
-        if !desc.is_empty() {
-            ui.painter().text(
-                egui::pos2(tx, mid + offset),
-                egui::Align2::LEFT_CENTER,
-                desc,
-                egui::FontId::proportional(12.0),
-                desc_color,
-            );
-        }
-    }
-
-    response
-}
-
-pub fn tool_card_placeholder(ui: &mut egui::Ui, label: &str, theme: ThemeMode) {
-    let (bg, border, text_color) = match theme {
-        ThemeMode::Dark => (
-            egui::Color32::from_rgb(20, 20, 24),
-            egui::Color32::from_rgb(36, 36, 42),
-            ColorPalette::ZINC_600,
-        ),
-        ThemeMode::Light => (ColorPalette::GRAY_50, ColorPalette::GRAY_200, ColorPalette::GRAY_400),
-    };
-
-    let desired = egui::vec2(ui.available_width(), 84.0);
-    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
-    if ui.is_rect_visible(rect) {
-        ui.painter().rect(rect, 8.0, bg, egui::Stroke::new(1.0, border), egui::StrokeKind::Outside);
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(12.0),
-            text_color,
-        );
-    }
-}
-
+// Toolbar Styling
 pub fn toolbar_action_btn(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, theme: ThemeMode) -> egui::Response {
     let (bg, hover, txt) = match theme {
         ThemeMode::Dark => (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_200),
@@ -606,18 +390,42 @@ pub fn toolbar_toggle_btn(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, 
     }).inner
 }
 
-pub fn main_menu_modal(ctx: &egui::Context, id: &str, theme: ThemeMode, min_width: f32, content: impl FnOnce(&mut egui::Ui)) -> bool {
-    draw_modal_overlay(ctx, &format!("{}_ov", id), 160);
-    let is_dark = matches!(theme, ThemeMode::Dark);
-    let (bg, border) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700) } else { (egui::Color32::WHITE, ColorPalette::GRAY_200) };
-    let resp = egui::Window::new(id)
-        .title_bar(false).collapsible(false).resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .min_size(egui::vec2(min_width, 0.0))
-        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(12.0).inner_margin(0.0))
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| content(ui));
-    resp.map_or(false, |r| ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))))
+// Modal Styling
+pub fn draw_modal_overlay(ctx: &egui::Context, id_salt: &str, alpha: u8) {
+    let overlay = egui::Color32::from_rgba_premultiplied(0, 0, 0, alpha);
+    egui::Area::new(egui::Id::new(id_salt))
+        .fixed_pos(egui::pos2(0.0, 0.0))
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let screen = ctx.content_rect();
+            ui.painter().rect_filled(screen, 0.0, overlay);
+            ui.allocate_rect(screen, egui::Sense::click_and_drag());
+        });
+}
+
+// Main Menu Styling
+pub fn main_menu_modal_button(ui: &mut egui::Ui, text: &str, theme: ThemeMode) -> egui::Response {
+    let (text_color, hover_bg, border) = match theme {
+        ThemeMode::Dark => (ColorPalette::SLATE_300, egui::Color32::from_rgb(34, 34, 42), ColorPalette::ZINC_700),
+        ThemeMode::Light => (ColorPalette::GRAY_600, ColorPalette::GRAY_100, ColorPalette::GRAY_300),
+    };
+
+    ui.scope(|ui| {
+        let s = ui.style_mut();
+        s.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        s.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+        s.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text_color);
+        s.visuals.widgets.hovered.bg_fill = hover_bg;
+        s.visuals.widgets.hovered.weak_bg_fill = hover_bg;
+        s.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, text_color);
+        s.visuals.widgets.active.bg_fill = hover_bg;
+        s.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, border);
+        s.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, text_color);
+        ui.add(egui::Button::new(egui::RichText::new(text).size(13.0).color(text_color)).min_size(egui::vec2(0.0, 30.0)))
+    }).inner
 }
 
 pub fn main_menu_modal_header(ui: &mut egui::Ui, title: &str, subtitle: &str, theme: ThemeMode) -> bool {
@@ -648,27 +456,96 @@ pub fn main_menu_modal_header(ui: &mut egui::Ui, title: &str, subtitle: &str, th
     closed
 }
 
-pub fn home_section_header(ui: &mut egui::Ui, title: &str, theme: ThemeMode) {
+pub fn main_menu_modal(ctx: &egui::Context, id: &str, theme: ThemeMode, min_width: f32, content: impl FnOnce(&mut egui::Ui)) -> bool {
+    draw_modal_overlay(ctx, &format!("{}_ov", id), 160);
+    let is_dark = matches!(theme, ThemeMode::Dark);
+    let (bg, border) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700) } else { (egui::Color32::WHITE, ColorPalette::GRAY_200) };
+    let resp = egui::Window::new(id)
+        .title_bar(false).collapsible(false).resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .min_size(egui::vec2(min_width, 0.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(12.0).inner_margin(0.0))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| content(ui));
+    resp.map_or(false, |r| ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p))))
+}
+
+pub fn main_menu_section_header(ui: &mut egui::Ui, title: &str, theme: ThemeMode) {
     let text_color = match theme {
-        ThemeMode::Dark  => ColorPalette::ZINC_500,
+        ThemeMode::Dark => ColorPalette::ZINC_500,
         ThemeMode::Light => ColorPalette::GRAY_400,
     };
     let line_color = match theme {
-        ThemeMode::Dark  => egui::Color32::from_rgb(42, 42, 50),
+        ThemeMode::Dark => egui::Color32::from_rgb(42, 42, 50),
         ThemeMode::Light => ColorPalette::GRAY_200,
     };
-
     ui.horizontal(|ui| {
-        let label_resp = ui.label(
-            egui::RichText::new(title.to_uppercase()).size(11.0).color(text_color),
-        );
-        let y   = label_resp.rect.center().y;
-        let x0  = ui.cursor().min.x + 6.0;
-        let x1  = ui.max_rect().max.x;
-        ui.painter().line_segment(
-            [egui::pos2(x0, y), egui::pos2(x1, y)],
-            egui::Stroke::new(1.0, line_color),
-        );
+        let label_resp = ui.label(egui::RichText::new(title.to_uppercase()).size(11.0).color(text_color),);
+        let y = label_resp.rect.center().y;
+        let x0 = ui.cursor().min.x + 6.0;
+        let x1 = ui.max_rect().max.x;
+        ui.painter().line_segment([egui::pos2(x0, y), egui::pos2(x1, y)], egui::Stroke::new(1.0, line_color));
         ui.allocate_exact_size(egui::vec2((x1 - x0).max(0.0), 1.0), egui::Sense::hover());
     });
+}
+
+pub fn tool_card(ui: &mut egui::Ui, title: &str, desc: &str, accent: egui::Color32, theme: ThemeMode,) -> egui::Response {
+    let (card_bg, card_hover, border, hover_border, title_color, desc_color) = match theme {
+        ThemeMode::Dark => (
+            egui::Color32::from_rgb(26, 26, 31), egui::Color32::from_rgb(34, 34, 41), egui::Color32::from_rgb(46, 46, 54),
+            accent, ColorPalette::SLATE_100, ColorPalette::ZINC_500,
+        ),
+        ThemeMode::Light => (
+            ColorPalette::GRAY_50, ColorPalette::GRAY_100, ColorPalette::GRAY_300,
+            accent, ColorPalette::GRAY_900, ColorPalette::GRAY_500,
+        ),
+    };
+
+    let desired = egui::vec2(ui.available_width(), 84.0);
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let hovered = response.hovered();
+        let bg = if hovered { card_hover } else { card_bg };
+        let stroke = egui::Stroke::new(if hovered { 1.5 } else { 1.0 }, if hovered { hover_border } else { border });
+        ui.painter().rect(rect, 8.0, bg, stroke, egui::StrokeKind::Outside);
+
+        let bar = egui::Rect::from_min_size(rect.min + egui::vec2(1.0, 1.0), egui::vec2(3.0, rect.height() - 2.0));
+        ui.painter().rect_filled(bar, egui::CornerRadius { nw: 7, sw: 7, ne: 0, se: 0 }, accent);
+
+        let tx = rect.left() + 20.0;
+        let mid = rect.center().y;
+        let offset = if desc.is_empty() { 0.0 } else { 11.0 };
+        ui.painter().text(
+            egui::pos2(tx, mid - offset), egui::Align2::LEFT_CENTER,
+            title, egui::FontId::proportional(15.0), title_color,
+        );
+        if !desc.is_empty() {
+            ui.painter().text(
+                egui::pos2(tx, mid + offset),egui::Align2::LEFT_CENTER,
+                desc, egui::FontId::proportional(12.0), desc_color,
+            );
+        }
+    }
+
+    response
+}
+
+pub fn tool_card_placeholder(ui: &mut egui::Ui, label: &str, theme: ThemeMode) {
+    let (bg, border, text_color) = match theme {
+        ThemeMode::Dark => (egui::Color32::from_rgb(20, 20, 24), egui::Color32::from_rgb(36, 36, 42), ColorPalette::ZINC_600),
+        ThemeMode::Light => (ColorPalette::GRAY_50, ColorPalette::GRAY_200, ColorPalette::GRAY_400),
+    };
+
+    let desired = egui::vec2(ui.available_width(), 84.0);
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(rect, 8.0, bg, egui::Stroke::new(1.0, border), egui::StrokeKind::Outside);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(12.0),
+            text_color,
+        );
+    }
 }
