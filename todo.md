@@ -43,7 +43,6 @@
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Undoing all changes does not remove "modified" file information status
-- [ ] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
 
 ### Image Editor Bugs
 
@@ -57,7 +56,16 @@
 
 ### Document Editor Bugs
 
-- [ ] Doesn't load horizontal lines properly
+- [ ] External loading
+  - [ ] Doesn't load horizontal lines properly (.docx and .odt)
+  - [ ] Links show up as links, but do not actually link to the site (.docx and .odt)
+  - [ ] Highlights don't load from external docs (.docx and .odt)
+  - [ ] Single indents sometimes disappear on load (.docx)
+  - [ ] Fonts do not load properly if they are the same ones as used in the external doc (.docx)
+  - [ ] Subscript loading as superscript (.docx)
+  - [ ] Superscript and subscript dont load (.odt)
+  - [ ] Double indents sometimes disappear on load (.odt)
+  - [ ] Empty spaces (newlines) are deleted on load (.odt)
 - [ ] Highlighting
   - [ ] Cannot highlight and scroll at the same time
   - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
@@ -118,13 +126,12 @@
 - [ ] Document Templates
 - [ ] Add way to create comments
 - [ ] Increase indent and decrease indent buttons
-- [ ] Different font's per line/text instead of changing the whole file to one font
+- [ ] Export to PDF, MD, txt, rtf, epub, html
 - [ ] Checklists
 - [ ] Tables
 - [ ] Images
-- [ ] Links
-- [ ] Highlighting
 - [ ] Ability to change look of headers/normal text
+- [ ] Headers should change font size
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Clean up toolbar

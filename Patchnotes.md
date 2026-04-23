@@ -264,3 +264,14 @@
 - **DOCUMENT EDITOR**: Now loads bullet points properly for both docx and odt files
 - **DOCUMENT EDITOR**: Tabbing at the start of a paragraph no longer indents the whole paragraph, only the first line
 - **DOCUMENT EDITOR**: Multi-line Highlighting and in line highlighting are now the same
+
+## V0.0.9
+
+#### Features
+- **DOCUMENT EDITOR**: Font now works per character not for the whole document at once
+- **DOCUMENT EDITOR**: Added the ability to create links
+- **DOCUMENT EDITOR**: Added the ability to highlight text
+- **DOCUMENT EDITOR**: Undo stack improved to undo changes a little better while typing
+
+#### Debugging
+- **DOCUMENT EDITOR**: Up and down arrows now properly navigate through pages

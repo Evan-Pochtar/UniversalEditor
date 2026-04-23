@@ -31,6 +31,7 @@ pub struct MenuContribution {
     pub image_items: Vec<(MenuItem, MenuAction)>,
     pub filter_items: Vec<(MenuItem, MenuAction)>,
     pub layer_items: Vec<(MenuItem, MenuAction)>,
+    pub insert_items: Vec<(MenuItem, MenuAction)>
 }
 
 #[allow(dead_code)]

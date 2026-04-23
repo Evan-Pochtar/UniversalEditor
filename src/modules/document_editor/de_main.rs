@@ -38,8 +38,10 @@ pub struct DocumentEditor {
     pub(super) heights_dirty: bool,
     pub(super) preset_idx: usize,
     pub(super) line_spacing_input: f32,
+    pub(super) link_input: String,
     pub(super) doc_sel: Option<[DocPos; 2]>,
     pub(super) page_settings_draft: Option<(PageLayout, usize, f32)>,
+    pub(super) last_edit_action: u8,
 }
 
 impl DocumentEditor {
@@ -73,8 +75,8 @@ impl DocumentEditor {
             para_texts: vec![String::new(); n],
             para_ids: (0..n).map(|i| egui::Id::new(("de_para", i as u64))).collect(),
             para_heights: vec![0.0; n], heights_dirty: true,
-            preset_idx: 0, line_spacing_input: 1.15,
-            doc_sel: None, page_settings_draft: None,
+            preset_idx: 0, line_spacing_input: 1.15, link_input: String::new(),
+            doc_sel: None, page_settings_draft: None, last_edit_action: 0,
         }
     }
 
@@ -94,6 +96,7 @@ impl DocumentEditor {
         self.redo_stack.clear();
         self.undo_stack.push_back(self.paras.clone());
         if self.undo_stack.len() > 50 { self.undo_stack.pop_front(); }
+        self.last_edit_action = 0;
     }
 
     pub(super) fn undo(&mut self) {
@@ -119,6 +122,18 @@ impl DocumentEditor {
 
     pub(super) fn has_cross_sel(&self) -> bool {
         self.doc_sel.map(|[a, b]| a.para != b.para).unwrap_or(false)
+    }
+
+    fn set_single_para_fmt<F: Fn(&mut SpanFmt)>(&mut self, op: F) -> bool {
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                apply_fmt_range(&mut self.paras[pi], s, e, op);
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true; return true;
+            }
+        }
+        false
     }
 
     pub(super) fn collect_sel_text(&self, from: DocPos, to: DocPos) -> String {
@@ -368,16 +383,43 @@ impl DocumentEditor {
         self.cur_fmt.sub
     }
 
+    pub(super) fn apply_fmt_font(&mut self, font: Option<FontChoice>) {
+        if self.set_single_para_fmt(|f| f.font = font) { return; }
+        self.cur_fmt.font = font;
+    }
+
     pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                apply_fmt_range(&mut self.paras[pi], s, e, |f| f.color = color);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
+        if self.set_single_para_fmt(|f| f.color = color) { return; }
         self.cur_fmt.color = color;
+    }
+
+    pub(super) fn apply_fmt_highlight(&mut self, color: Option<[u8; 3]>) {
+        if self.set_single_para_fmt(|f| f.highlight = color) { return; }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        self.push_undo();
+        let len = self.paras[pi].text.len();
+        if len > 0 {
+            apply_fmt_range(&mut self.paras[pi], 0, len, |f| f.highlight = color);
+            self.para_texts[pi] = self.paras[pi].text.clone();
+            self.dirty = true; self.heights_dirty = true;
+        } else {
+            self.cur_fmt.highlight = color;
+        }
+    }
+
+    pub(super) fn apply_fmt_link(&mut self, link: Option<String>) {
+        if self.set_single_para_fmt(|f| f.link = link.clone()) { return; }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        self.push_undo();
+        let len = self.paras[pi].text.len();
+        if len > 0 {
+            let link_clone = link.clone();
+            apply_fmt_range(&mut self.paras[pi], 0, len, move |f| f.link = link_clone.clone());
+            self.para_texts[pi] = self.paras[pi].text.clone();
+            self.dirty = true; self.heights_dirty = true;
+        } else {
+            self.cur_fmt.link = link;
+        }
     }
 
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
@@ -425,7 +467,7 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Zoom Out".into(), shortcut: Some("Ctrl+-".into()), enabled: true }, MenuAction::Custom("ZoomOut".into())),
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
             ],
-            image_items: vec![], filter_items: vec![], layer_items: vec![],
+            image_items: vec![], filter_items: vec![], layer_items: vec![], insert_items: vec![],
         }
     }
     fn handle_menu_action(&mut self, action: MenuAction) -> bool {

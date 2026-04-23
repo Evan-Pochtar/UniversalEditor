@@ -166,10 +166,7 @@ impl EditorModule for TextEditor {
                 (MenuItem { label: "Undo".to_string(), shortcut: Some("Ctrl+Z".to_string()), enabled: false }, MenuAction::Undo),
                 (MenuItem { label: "Redo".to_string(), shortcut: Some("Ctrl+Y".to_string()), enabled: false }, MenuAction::Redo),
             ],
-            view_items: Vec::new(),
-            image_items: Vec::new(),
-            filter_items: Vec::new(),
-            layer_items: Vec::new(),
+            view_items: Vec::new(), image_items: Vec::new(), filter_items: Vec::new(), layer_items: Vec::new(), insert_items: Vec::new(),
         }
     }
 

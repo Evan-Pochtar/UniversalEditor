@@ -1804,6 +1804,7 @@ impl EditorModule for ImageEditor {
                 (MenuItem { label: "Merge Down".into(), shortcut: Some("Ctrl+E".into()), enabled: can_merge }, MenuAction::Custom("Layer Merge Down".into())),
                 (MenuItem { label: "Flatten Image".into(), shortcut: None, enabled: self.layers.len() > 1 }, MenuAction::Custom("Layer Flatten".into())),
             ],
+            insert_items: Vec::new(),
         }
     }
 

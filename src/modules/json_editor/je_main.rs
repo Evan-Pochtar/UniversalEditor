@@ -479,10 +479,7 @@ impl EditorModule for JsonEditor {
                     enabled: self.can_redo(),
                 }, MenuAction::Redo),
             ],
-            view_items: Vec::new(),
-            image_items: Vec::new(),
-            filter_items: Vec::new(),
-            layer_items: Vec::new(),
+            view_items: Vec::new(), image_items: Vec::new(), filter_items: Vec::new(), layer_items: Vec::new(), insert_items: Vec::new(),
         }
     }
 

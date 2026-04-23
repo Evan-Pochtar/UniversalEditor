@@ -89,6 +89,8 @@ pub struct SpanFmt {
     pub bold: bool, pub italic: bool, pub underline: bool, pub strike: bool,
     pub sub: bool, pub sup: bool, pub size_hp: Option<u32>,
     pub font: Option<FontChoice>, pub color: Option<[u8; 3]>,
+    pub highlight: Option<[u8; 3]>,
+    pub link: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +167,10 @@ impl PageLayout {
     }
 }
 
+pub fn highlight_color32(rgb: [u8; 3]) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], (0.40 * 255.0_f32).round() as u8)
+}
+
 pub fn ensure_boundary(para: &mut DocParagraph, byte: usize) {
     if byte == 0 || byte >= para.text.len() { return; }
     let mut pos = 0;
@@ -218,13 +224,6 @@ pub fn toggle_fmt(para: &mut DocParagraph, start: usize, end: usize, get: impl F
 
 pub fn char_to_byte(text: &str, ci: usize) -> usize { text.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(text.len()) }
 
-pub fn para_fmt_at(para: &DocParagraph, byte: usize) -> SpanFmt {
-    let mut p = 0;
-    for s in &para.spans { let e = p + s.len; if byte >= p && (byte < e || (byte == 0 && e == 0)) { return s.fmt.clone(); } p = e; }
-    para.spans.last().map(|s| s.fmt.clone()).unwrap_or_default()
-}
-
-
 pub fn merge_paragraphs(paras: &mut Vec<DocParagraph>, idx: usize) {
     if idx + 1 >= paras.len() { return; }
     let next = paras.remove(idx + 1);
@@ -236,6 +235,19 @@ pub fn merge_paragraphs(paras: &mut Vec<DocParagraph>, idx: usize) {
         else { paras[idx].spans.push(s); }
     }
     if paras[idx].spans.is_empty() { paras[idx].spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+}
+
+pub fn para_fmt_at(para: &DocParagraph, byte: usize) -> SpanFmt {
+    let mut p = 0;
+    for s in &para.spans {
+        let e = p + s.len;
+        if byte >= p && byte < e { return s.fmt.clone(); }
+        if byte == 0 && e == 0 { return s.fmt.clone(); }
+        p = e;
+    }
+    let mut fmt = para.spans.last().map(|s| s.fmt.clone()).unwrap_or_default();
+    fmt.link = None;
+    fmt
 }
 
 pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFmt) {
@@ -254,15 +266,6 @@ pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFm
         ensure_boundary(para, del_start); ensure_boundary(para, del_end);
         let mut p = 0usize;
         para.spans.retain(|s| { let e = p + s.len; let keep = !(p >= del_start && e <= del_end); p = e; keep });
-        let mut p = 0usize;
-        for s in &mut para.spans {
-            let e = p + s.len;
-            if p < del_end && e > del_start {
-                let rm = del_end.min(e) - del_start.max(p);
-                s.len = s.len.saturating_sub(rm);
-            }
-            p = e;
-        }
         let is_single = para.spans.len() == 1;
         para.spans.retain(|s| s.len > 0 || is_single);
     }
@@ -343,11 +346,16 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
 
         let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
         let fc = span.fmt.font.unwrap_or(base_font);
-        let col = span
+        let mut col = span
             .fmt
             .color
             .map(|c| egui::Color32::from_rgb(c[0], c[1], c[2]))
             .unwrap_or(base_col);
+        if span.fmt.link.is_some() && span.fmt.color.is_none() {
+            col = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
+        }
+        let bg = span.fmt.highlight.map(highlight_color32)
+            .unwrap_or_else(|| if para.style == ParaStyle::Code { code_bg } else { egui::Color32::TRANSPARENT });
 
         job.append(
             seg,
@@ -355,8 +363,8 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
             egui::TextFormat {
                 font_id: egui::FontId::new(sz, fc.egui_family(sb || span.fmt.bold, si || span.fmt.italic)),
                 color: col,
-                background: if para.style == ParaStyle::Code { code_bg } else { egui::Color32::TRANSPARENT },
-                underline: if span.fmt.underline {
+                background: bg,
+                underline: if span.fmt.underline || span.fmt.link.is_some() {
                     egui::Stroke::new((eff * 0.07).max(1.0), col)
                 } else {
                     egui::Stroke::NONE
@@ -427,7 +435,7 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
             let end = (pos + span.len).min(para.text.len()); let txt = &para.text[pos..end]; pos = end;
             if txt.is_empty() { continue; }
             out.push_str("<w:r>\n");
-            let hf = span.fmt.bold||span.fmt.italic||span.fmt.underline||span.fmt.strike||span.fmt.sub||span.fmt.sup||span.fmt.size_hp.is_some()||span.fmt.color.is_some();
+            let hf = span.fmt.bold||span.fmt.italic||span.fmt.underline||span.fmt.strike||span.fmt.sub||span.fmt.sup||span.fmt.size_hp.is_some()||span.fmt.color.is_some()||span.fmt.highlight.is_some();
             if hf {
                 out.push_str("<w:rPr>\n");
                 if span.fmt.bold { out.push_str("<w:b/>\n"); }

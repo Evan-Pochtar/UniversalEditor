@@ -474,6 +474,7 @@ impl UniversalEditor {
                 if !contributions.image_items.is_empty() { let items = contributions.image_items.clone(); ui.menu_button("Image", |ui| { self.menu_items_ui(ui, &items); }); }
                 if !contributions.filter_items.is_empty() { let items = contributions.filter_items.clone(); ui.menu_button("Filter", |ui| { self.menu_items_ui(ui, &items); }); }
                 if !contributions.layer_items.is_empty() { let items = contributions.layer_items.clone(); ui.menu_button("Layer", |ui| { self.menu_items_ui(ui, &items); }); }
+                if !contributions.insert_items.is_empty() { let items = contributions.layer_items.clone(); ui.menu_button("Layer", |ui| { self.menu_items_ui(ui, &items); }); }
             });
             ui.add_space(4.0);
         });

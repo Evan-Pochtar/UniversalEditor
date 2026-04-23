@@ -55,6 +55,7 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 - [x] Changing fonts sometimes causes code blocks to desync
+- [x] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
 
 ### Image Editor Bugs
 
@@ -271,6 +272,9 @@
 - [x] Add .odt file compatibility
 - [x] Add to the about modal
 - [x] Up and down arrow keys to navigate lines
+- [x] Links
+- [x] Highlighting
+- [x] Different font's per line/text instead of changing the whole file to one font
 
 ### CONVERTER: Img 2 Img
 
