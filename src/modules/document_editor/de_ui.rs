@@ -235,8 +235,10 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     ui.separator();
                     let is_bullet = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListBullet).unwrap_or(false);
                     let is_num = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListOrdered).unwrap_or(false);
+                    let is_check = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListCheck).unwrap_or(false);
                     if fmt_btn(ui, "\u{2022}", is_bullet, theme, "Bullet List") { ed.apply_style_toggle(ParaStyle::ListBullet); }
                     if fmt_btn(ui, "1.", is_num, theme, "Numbered List") { ed.apply_style_toggle(ParaStyle::ListOrdered); }
+                    if fmt_btn(ui, "☐", is_check, theme, "Checklist") { ed.apply_style_toggle(ParaStyle::ListCheck); }
                     if act_btn(ui, "\u{2014}", theme, "Insert Horizontal Rule") {
                         ed.push_undo();
                         let idx = ed.focused_para;
@@ -432,11 +434,6 @@ fn split_para_at_byte(src: &DocParagraph, split_byte: usize) -> (DocParagraph, D
     merge_adjacent(&mut right);
 
     (left, right)
-}
-
-fn adjust_paragraph_indent(ed: &mut DocumentEditor, idx: usize, delta: f32) {
-    if idx >= ed.paras.len() { return; }
-    ed.paras[idx].indent_left = (ed.paras[idx].indent_left + delta).max(0.0);
 }
 
 fn find_split_byte_fit(ctx: &egui::Context, para: &DocParagraph, base_font: FontChoice, base_size: f32, wrap_w: f32, max_total_h: f32, zoom: f32, is_dark: bool,) -> usize {
@@ -650,8 +647,23 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 egui::pos2(edit_x, text_y),
                 egui::vec2(edit_w, text_h.max(bs * 1.2)),
             );
+            let checkbox_rect = if para.style == ParaStyle::ListCheck {
+                Some(egui::Rect::from_center_size(
+                    egui::pos2(edit_x - 8.0 * ed.zoom, text_y + text_h / 2.0),
+                    egui::vec2((12.0 * ed.zoom).max(10.0), (12.0 * ed.zoom).max(10.0)),
+                ))
+            } else { None };
 
            if let Some(pp) = ptr {
+            if let Some(cb) = checkbox_rect {
+                if btn_pressed && cb.expand(4.0).contains(pp) {
+                    ed.push_undo();
+                    ed.paras[i].checked = !ed.paras[i].checked;
+                    ed.sync_texts();
+                    ed.dirty = true;
+                    continue;
+                }
+            }
             if edit_rect.expand(2.0).contains(pp) {
                 let job = build_layout_job(&ed.paras[i].spans, &ed.paras[i].text, &ed.paras[i], font, bs, wrap_w, is_dark, ed.zoom);
                 let galley = ctx.fonts_mut(|f| f.layout_job(job));
@@ -747,6 +759,24 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             format!("{}.", num), egui::FontId::proportional(bs * para.style.size_scale() * 0.9), bullet_col,
                         );
                     }
+                    ParaStyle::ListCheck => {
+                        let box_sz = (11.0 * ed.zoom).max(9.0);
+                        let box_rect = egui::Rect::from_center_size(
+                            egui::pos2(edit_x - 8.0 * ed.zoom, text_y + text_h / 2.0),
+                            egui::vec2(box_sz, box_sz),
+                        );
+                        painter.rect_stroke(box_rect, 2.0, egui::Stroke::new(1.4, bullet_col), egui::StrokeKind::Outside);
+                        if para.checked {
+                            painter.line_segment([
+                                box_rect.left_top() + egui::vec2(box_sz * 0.18, box_sz * 0.55),
+                                box_rect.center() + egui::vec2(-box_sz * 0.08, box_sz * 0.18),
+                            ], egui::Stroke::new(1.8, bullet_col));
+                            painter.line_segment([
+                                box_rect.center() + egui::vec2(-box_sz * 0.10, box_sz * 0.15),
+                                box_rect.right_top() + egui::vec2(-box_sz * 0.16, box_sz * 0.28),
+                            ], egui::Stroke::new(1.8, bullet_col));
+                        }
+                    }
                     _ => {}
                 }
 
@@ -794,9 +824,14 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     cr.primary.index == len && cr.secondary.index == len
                 }).unwrap_or(false);
 
-                let should_handle_bksp = at_start && (ed.paras[i].indent_left > 0.0 || i > 0);
+                let should_handle_bksp = at_start && (ed.paras[i].indent_first > 0.0 || ed.paras[i].indent_left > 0.0 || i > 0);
                 if should_handle_bksp && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
-                    if ed.paras[i].indent_left > 0.0 {
+                    if ed.paras[i].indent_first > 0.0 {
+                        ed.push_undo();
+                        ed.paras[i].indent_first = (ed.paras[i].indent_first - 18.0).max(0.0);
+                        ed.dirty = true;
+                        ed.heights_dirty = true;
+                    } else if ed.paras[i].indent_left > 0.0 {
                         ed.push_undo();
                         ed.paras[i].indent_left = (ed.paras[i].indent_left - 18.0).max(0.0);
                         ed.dirty = true;
@@ -962,27 +997,59 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     ed.apply_style_toggle(style);
                 }
                 if tab_keys.0 || tab_keys.1 || tab_keys.2 || tab_keys.3 {
-                    let delta = if tab_keys.1 || tab_keys.3 { -18.0f32 } else { 18.0 };
+                    let shift_tab = tab_keys.1 || tab_keys.3;
+                    let delta = if shift_tab { -18.0f32 } else { 18.0f32 };
+                    let state = egui::TextEdit::load_state(ctx, id);
+                    let cr = state.as_ref().and_then(|s| s.cursor.char_range());
+                    let has_selection = cr.map(|cr| cr.primary.index != cr.secondary.index).unwrap_or(false);
+                    let caret_index = cr.map(|cr| cr.primary.index.min(cr.secondary.index)).unwrap_or(0);
+                    let caret_at_start = cr.map(|cr| cr.primary.index == 0 && cr.secondary.index == 0).unwrap_or(false);
+                    let caret_byte = char_to_byte(&ed.para_texts[i], caret_index);
                     let mut changed = false;
                     ed.push_undo();
-                    if ed.has_cross_sel() {
-                        if let Some((from, to)) = ed.norm_sel() {
-                            for pi in from.para..=to.para.min(ed.paras.len().saturating_sub(1)) {
-                                let before = ed.paras[pi].indent_left;
-                                adjust_paragraph_indent(ed, pi, delta);
-                                if (ed.paras[pi].indent_left - before).abs() > f32::EPSILON { changed = true; }
+
+                    if has_selection {
+                        let before = ed.paras[i].indent_left;
+                        ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).max(0.0);
+                        changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
+                    } else if caret_at_start {
+                        let before = ed.paras[i].indent_first;
+                        ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).max(0.0);
+                        changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
+                    } else if shift_tab {
+                        if caret_byte > 0 && ed.paras[i].text.as_bytes().get(caret_byte - 1) == Some(&b'\t') {
+                            let mut new_text = ed.paras[i].text.clone();
+                            new_text.remove(caret_byte - 1);
+                            let fmt = para_fmt_at(&ed.paras[i], caret_byte.saturating_sub(1));
+                            rebuild_spans(&mut ed.paras[i], new_text, &fmt);
+                            ed.para_texts[i] = ed.paras[i].text.clone();
+                            if let Some(mut st) = state {
+                                let cc = egui::text::CCursor::new(caret_index.saturating_sub(1));
+                                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
+                                egui::TextEdit::store_state(ctx, id, st);
                             }
+                            changed = true;
                         }
                     } else {
-                        let before = ed.paras[i].indent_left;
-                        adjust_paragraph_indent(ed, i, delta);
-                        if (ed.paras[i].indent_left - before).abs() > f32::EPSILON { changed = true; }
+                        let mut new_text = ed.paras[i].text.clone();
+                        new_text.insert(caret_byte, '\t');
+                        let fmt = para_fmt_at(&ed.paras[i], caret_byte);
+                        rebuild_spans(&mut ed.paras[i], new_text, &fmt);
+                        ed.para_texts[i] = ed.paras[i].text.clone();
+                        if let Some(mut st) = state {
+                            let cc = egui::text::CCursor::new(caret_index + 1);
+                            st.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
+                            egui::TextEdit::store_state(ctx, id, st);
+                        }
+                        changed = true;
                     }
+
                     if !changed {
                         ed.undo_stack.pop_back();
                     } else {
                         ed.dirty = true;
                         ed.heights_dirty = true;
+                        ed.find_stale = true;
                     }
                 }
 
@@ -1000,6 +1067,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             c.strike = fmt.strike; c.sub = fmt.sub; c.sup = fmt.sup;
                             c.size_hp = fmt.size_hp; c.font = fmt.font; c.color = fmt.color;
                             c.highlight = fmt.highlight; c.link = fmt.link;
+                            ed.doc_sel = None;
                         }
                     }
                 }

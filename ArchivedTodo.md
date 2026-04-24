@@ -153,6 +153,11 @@
 - [x] Tab/indent currently indents the whole paragraph, not just the first line
 - [x] Tabbing in the middle of a paragraph indents instead of adding empty space
 - [x] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
+- [x] Fonts do not load properly if they are the same ones as used in the external doc (.docx)
+- [x] Links show up as links, but do not actually link to the site (.docx and .odt)
+- [x] Highlights don't load from external docs (.docx and .odt)
+- [x] Cannot tab/indent with multi-line highlights
+- [x] Subscript loading as superscript (.docx)
 
 ### Other Bugs
 
@@ -275,6 +280,7 @@
 - [x] Links
 - [x] Highlighting
 - [x] Different font's per line/text instead of changing the whole file to one font
+- [x] Checklists
 
 ### CONVERTER: Img 2 Img
 

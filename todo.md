@@ -58,14 +58,17 @@
 
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
-  - [ ] Links show up as links, but do not actually link to the site (.docx and .odt)
-  - [ ] Highlights don't load from external docs (.docx and .odt)
+  - [ ] Doesn't load checklists properly (.docx and .odt)
   - [ ] Single indents sometimes disappear on load (.docx)
-  - [ ] Fonts do not load properly if they are the same ones as used in the external doc (.docx)
-  - [ ] Subscript loading as superscript (.docx)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
+- [ ] Exporting
+  - [ ] Headers/Titles do not export correctly
+  - [ ] Fonts do not export correctly
+  - [ ] Highlights do not export correctly
+  - [ ] Links do not export correctly
+  - [ ] Lists do not export correctly
 - [ ] Highlighting
   - [ ] Cannot highlight and scroll at the same time
   - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
@@ -74,7 +77,6 @@
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word
 - [ ] Tab/Indent
   - [ ] Undoing a tab/indent moves cursor one character too far
-  - [ ] Cannot tab/indent with multi-line highlights
   - [ ] Cannot tab/indent multiple lines at once, removes the lines instead
 
 ### Other Bugs
@@ -127,7 +129,6 @@
 - [ ] Add way to create comments
 - [ ] Increase indent and decrease indent buttons
 - [ ] Export to PDF, MD, txt, rtf, epub, html
-- [ ] Checklists
 - [ ] Tables
 - [ ] Images
 - [ ] Ability to change look of headers/normal text

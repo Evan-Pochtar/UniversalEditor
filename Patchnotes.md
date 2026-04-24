@@ -271,7 +271,12 @@
 - **DOCUMENT EDITOR**: Font now works per character not for the whole document at once
 - **DOCUMENT EDITOR**: Added the ability to create links
 - **DOCUMENT EDITOR**: Added the ability to highlight text
+- **DOCUMENT EDITOR**: Added the ability to create checklists
 - **DOCUMENT EDITOR**: Undo stack improved to undo changes a little better while typing
 
 #### Debugging
 - **DOCUMENT EDITOR**: Up and down arrows now properly navigate through pages
+- **DOCUMENT EDITOR**: Highlights now load from both .odt and .docx files
+- **DOCUMENT EDITOR**: Font's now transfer from exported docx files
+- **DOCUMENT EDITOR**: Links now properly load from both .odt and .docx files
+- **DOCUMENT EDITOR**: Subscript no longer loads as superscript
