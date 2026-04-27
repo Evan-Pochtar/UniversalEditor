@@ -158,6 +158,8 @@
 - [x] Highlights don't load from external docs (.docx and .odt)
 - [x] Cannot tab/indent with multi-line highlights
 - [x] Subscript loading as superscript (.docx)
+- [x] Single indents sometimes disappear on load (.docx)
+- [x] Cannot tab/indent multiple lines at once, removes the lines instead
 
 ### Other Bugs
 

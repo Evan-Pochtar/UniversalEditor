@@ -344,28 +344,17 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
         if span.len == 0 {
             continue;
         }
-
         let end = (pos + span.len).min(text.len());
         let seg = &text[pos..end];
+        let is_first = pos == 0;
         pos = end;
-
         if seg.is_empty() {
             continue;
         }
-
-        let eff = span
-            .fmt
-            .size_hp
-            .map(|hp| hp as f32 / 2.0 * zoom)
-            .unwrap_or(ss);
-
+        let eff = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(ss);
         let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
         let fc = span.fmt.font.unwrap_or(base_font);
-        let mut col = span
-            .fmt
-            .color
-            .map(|c| egui::Color32::from_rgb(c[0], c[1], c[2]))
-            .unwrap_or(base_col);
+        let mut col = span.fmt.color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(base_col);
         if span.fmt.link.is_some() && span.fmt.color.is_none() {
             col = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
         }
@@ -374,7 +363,7 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
 
         job.append(
             seg,
-            0.0,
+            if is_first { para.indent_first * zoom } else { 0.0 },
             egui::TextFormat {
                 font_id: egui::FontId::new(sz, fc.egui_family(sb || span.fmt.bold, si || span.fmt.italic)),
                 color: col,
@@ -405,7 +394,7 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
     if job.sections.is_empty() {
         job.append(
             "",
-            0.0,
+            para.indent_first * zoom,
             egui::TextFormat {
                 font_id: egui::FontId::new(ss, base_font.egui_family(sb, si)),
                 color: base_col,
@@ -466,8 +455,17 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
                 if let Some(c) = span.fmt.color { out.push_str(&format!("<w:color w:val=\"{:02X}{:02X}{:02X}\"/>\n", c[0], c[1], c[2])); }
                 out.push_str("</w:rPr>\n");
             }
-            let ps = if txt.starts_with(' ') || txt.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
-            out.push_str(&format!("<w:t{}>{}</w:t>\n</w:r>\n", ps, xml_esc(txt)));
+            let parts: Vec<&str> = txt.split('\t').collect();
+            for (i, part) in parts.iter().enumerate() {
+                if !part.is_empty() {
+                    let ps = if part.starts_with(' ') || part.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
+                    out.push_str(&format!("<w:t{}>{}</w:t>\n", ps, xml_esc(part)));
+                }
+                if i < parts.len() - 1 {
+                    out.push_str("<w:tab/>\n");
+                }
+            }
+            out.push_str("</w:r>\n");
         }
         out.push_str("</w:p>\n");
     }
@@ -618,7 +616,9 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"hyperlink" => { if let Some(id) = get_attr(e, b"id") { cur_link_url = rels_map.get(&id).cloned(); } }
                     b"r" => { in_run = true; cur_fmt = SpanFmt::default(); cur_fmt.link = cur_link_url.clone(); cur_run_text.clear(); }
                     b"rPr" => in_rpr = true,
-                    b"t" => { in_t = true; cur_run_text.clear(); }
+                    b"t" => { in_t = true; }
+                    b"tab" => { if in_run { cur_run_text.push('\t'); } }
+                    b"br" => { if in_run { cur_run_text.push('\n'); } }
                     b"b" => { if in_rpr { cur_fmt.bold = true; } }
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
@@ -695,6 +695,8 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
                     b"bottom" | b"top" => { if in_pbdr && in_ppr { has_hborder = true; } }
                     b"numId" => { if in_numpr { pending_num_id = get_attr(e, b"val").and_then(|v| v.parse().ok()); } }
+                    b"tab" => { if in_run { cur_run_text.push('\t'); } }
+                    b"br" => { if in_run { cur_run_text.push('\n'); } }
                     b"b" => { if in_rpr { cur_fmt.bold = true; } }
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }

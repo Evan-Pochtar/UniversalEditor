@@ -59,7 +59,6 @@
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
   - [ ] Doesn't load checklists properly (.docx and .odt)
-  - [ ] Single indents sometimes disappear on load (.docx)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
@@ -77,7 +76,6 @@
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word
 - [ ] Tab/Indent
   - [ ] Undoing a tab/indent moves cursor one character too far
-  - [ ] Cannot tab/indent multiple lines at once, removes the lines instead
 
 ### Other Bugs
 

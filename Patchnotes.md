@@ -280,3 +280,4 @@
 - **DOCUMENT EDITOR**: Font's now transfer from exported docx files
 - **DOCUMENT EDITOR**: Links now properly load from both .odt and .docx files
 - **DOCUMENT EDITOR**: Subscript no longer loads as superscript
+- **DOCUMENT EDITOR**: Fixed issues relating to placing tab indents and loading tab indents

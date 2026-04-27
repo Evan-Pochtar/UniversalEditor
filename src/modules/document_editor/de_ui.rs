@@ -7,7 +7,7 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
-fn selection_rects_for_galley(galley: &egui::Galley,text: &str,start_byte: usize,end_byte: usize) -> Vec<egui::Rect> {
+fn multiline_highlight(galley: &egui::Galley,text: &str,start_byte: usize,end_byte: usize) -> Vec<egui::Rect> {
     let start_byte = start_byte.min(text.len()); let end_byte = end_byte.min(text.len());
     let start_char = text[..start_byte].chars().count(); let end_char = text[..end_byte].chars().count();
     let mut rects = Vec::new();
@@ -45,7 +45,7 @@ fn selection_rects_for_galley(galley: &egui::Galley,text: &str,start_byte: usize
     rects
 }
 
-fn render_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
+fn text_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
     const PALETTE: &[([u8; 3], &str)] = &[
         ([0,0,0], "Black"), ([68,68,68], "Dark Gray"), ([102,102,102], "Gray"),
         ([153,153,153], "Light Gray"), ([204,204,204], "Silver"), ([255,255,255], "White"),
@@ -80,7 +80,7 @@ fn render_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: boo
     }
 }
 
-fn render_highlight_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
+fn highlight_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool, popup_id: egui::Id) {
     const PALETTE: &[([u8; 3], &str)] = &[
         ([255, 235, 59], "Yellow"), ([255, 204, 128], "Peach"), ([255, 171, 145], "Salmon"),
         ([199, 210, 254], "Lavender"), ([167, 243, 208], "Mint"), ([147, 197, 253], "Sky"),
@@ -189,10 +189,10 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
 }
 
 fn fmt_btn(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>, active: bool, theme: ThemeMode, tip: &str) -> bool {
-    toolbar_toggle_btn(ui, label, active, theme).on_hover_text(tip).clicked()
+    toolbar_toggle_btn(ui, label, active, theme).on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 fn act_btn(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>, theme: ThemeMode, tip: &str) -> bool {
-    toolbar_action_btn(ui, label, theme).on_hover_text(tip).clicked()
+    toolbar_action_btn(ui, label, theme).on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
 fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, is_dark: bool) {
@@ -263,7 +263,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             ui.set_min_width(140.0);
-                            render_color_palette(ui, ed, is_dark, color_popup_id);
+                            text_color_palette(ui, ed, is_dark, color_popup_id);
                         });
                     let _ = color_popup_id;
 
@@ -280,7 +280,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             ui.set_min_width(160.0);
-                            render_highlight_palette(ui, ed, is_dark, hl_popup_id);
+                            highlight_color_palette(ui, ed, is_dark, hl_popup_id);
                         });
                     let _ = hl_popup_id;
 
@@ -804,7 +804,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         };
                         let base_x = edit_x + align_offset;
 
-                        for rect in selection_rects_for_galley(&galley, &para.text, start_byte, end_byte) {
+                        for rect in multiline_highlight(&galley, &para.text, start_byte, end_byte) {
                             painter.rect_filled(
                                 rect.translate(egui::vec2(base_x, text_y)),
                                 0.0, sel_color,
