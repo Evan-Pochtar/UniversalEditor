@@ -13,7 +13,7 @@ pub struct DocumentEditor {
     pub(super) paras: Vec<DocParagraph>,
     pub(super) layout: PageLayout,
     pub(super) base_font: FontChoice,
-    pub(super) base_size: f32,
+    pub(super) base_size: u32,
     pub(super) cur_fmt: SpanFmt,
     pub(super) focused_para: usize,
     pub(super) last_selection: Option<(usize, usize, usize)>,
@@ -40,7 +40,7 @@ pub struct DocumentEditor {
     pub(super) line_spacing_input: f32,
     pub(super) link_input: String,
     pub(super) doc_sel: Option<[DocPos; 2]>,
-    pub(super) page_settings_draft: Option<(PageLayout, usize, f32)>,
+    pub(super) page_settings_draft: Option<(PageLayout, usize, u32)>,
     pub(super) last_edit_action: u8,
 }
 
@@ -65,7 +65,7 @@ impl DocumentEditor {
         let n = paras.len();
         Self {
             file_path: path, dirty: false, paras, layout,
-            base_font: FontChoice::Ubuntu, base_size: 12.0, cur_fmt: SpanFmt::default(),
+            base_font: FontChoice::Ubuntu, base_size: 11, cur_fmt: SpanFmt::default(),
             focused_para: 0, last_selection: None, pending_focus: None,
             show_outline: false, show_stats: false, show_page_settings: false,
             find_text: String::new(), replace_text: String::new(), show_find: false,
@@ -211,19 +211,19 @@ impl DocumentEditor {
         self.scroll_to_para = Some(self.find_results[self.find_cursor].0);
     }
 
-    pub(super) fn sel_font_size_pt(&self) -> f32 {
+    pub(super) fn sel_font_size_pt(&self) -> u32 {
         if let Some((pi, s, e)) = self.last_selection {
             if pi < self.paras.len() {
                 let byte = if s == e { s } else { s };
-                if let Some(hp) = para_fmt_at(&self.paras[pi], byte).size_hp { return hp as f32 / 2.0; }
+                if let Some(hp) = para_fmt_at(&self.paras[pi], byte).size_hp { return (hp as f32 / 2.0).round() as u32; }
             }
         }
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| hp as f32 / 2.0).unwrap_or(self.base_size)
+        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| (hp as f32 / 2.0).round() as u32).unwrap_or_else(|| self.paras[pi].style.default_font_size_pt(self.base_size))
     }
 
-    pub(super) fn apply_fmt_size(&mut self, pt: f32) {
-        let hp = (pt * 2.0).round() as u32;
+    pub(super) fn apply_fmt_size(&mut self, pt: u32) {
+        let hp = pt.saturating_mul(2);
         if let Some((pi, s, e)) = self.last_selection {
             if s != e && pi < self.paras.len() {
                 self.push_undo();
@@ -479,8 +479,8 @@ impl EditorModule for DocumentEditor {
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
                 "ToggleOutline" => { self.show_outline = !self.show_outline; true }
-                "ZoomIn" => { self.zoom = (self.zoom + 0.1).min(3.0); true }
-                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); true }
+                "ZoomIn"  => { self.zoom = (self.zoom + 0.1).min(3.0); self.heights_dirty = true; true }
+                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); self.heights_dirty = true; true }
                 "ZoomReset" => { self.auto_zoom_done = false; true }
                 _ => false,
             },

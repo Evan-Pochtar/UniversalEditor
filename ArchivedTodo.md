@@ -160,6 +160,7 @@
 - [x] Subscript loading as superscript (.docx)
 - [x] Single indents sometimes disappear on load (.docx)
 - [x] Cannot tab/indent multiple lines at once, removes the lines instead
+- [x] Headers/Titles do not export correctly
 
 ### Other Bugs
 
@@ -283,6 +284,7 @@
 - [x] Highlighting
 - [x] Different font's per line/text instead of changing the whole file to one font
 - [x] Checklists
+- [x] Headers should change font size
 
 ### CONVERTER: Img 2 Img
 

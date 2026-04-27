@@ -56,6 +56,7 @@
 
 ### Document Editor Bugs
 
+- [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
   - [ ] Doesn't load checklists properly (.docx and .odt)
@@ -63,7 +64,6 @@
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
 - [ ] Exporting
-  - [ ] Headers/Titles do not export correctly
   - [ ] Fonts do not export correctly
   - [ ] Highlights do not export correctly
   - [ ] Links do not export correctly
@@ -76,6 +76,7 @@
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word
 - [ ] Tab/Indent
   - [ ] Undoing a tab/indent moves cursor one character too far
+  - [ ] Paragraph indent and tab indent aren't the same size
 
 ### Other Bugs
 
@@ -130,7 +131,6 @@
 - [ ] Tables
 - [ ] Images
 - [ ] Ability to change look of headers/normal text
-- [ ] Headers should change font size
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Clean up toolbar

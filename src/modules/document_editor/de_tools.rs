@@ -43,11 +43,22 @@ impl ParaStyle {
     }
     pub fn is_heading(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title|Self::Subtitle) }
     pub fn size_scale(self) -> f32 {
-        match self { Self::Title => 2.4, Self::H1 => 2.0, Self::H2 => 1.6, Self::H3 => 1.3,
-            Self::H4 => 1.15, Self::H5 => 1.05, Self::Subtitle => 1.4, Self::Code => 0.9, _ => 1.0 }
+        match self {
+            Self::Title => 26.0 / 11.0,
+            Self::H1 => 20.0 / 11.0,
+            Self::H2 => 16.0 / 11.0,
+            Self::H3 => 14.0 / 11.0,
+            Self::H4 => 13.0 / 11.0,
+            Self::H5 => 12.0 / 11.0,
+            Self::H6 => 1.0,
+            Self::Subtitle => 15.0 / 11.0,
+            Self::Code => 1.0,
+            _ => 1.0,
+        }
     }
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
+    pub fn default_font_size_pt(self, base_size: u32) -> u32 { (base_size as f32 * self.size_scale()).round() as u32 }
     pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
     pub fn space_after(self) -> f32 { match self { Self::H1|Self::H2 => 8.0, Self::H3|Self::H4|Self::HRule => 8.0, _ => 6.0 } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 18.0, Self::BlockQuote => 24.0, _ => 0.0 } }
@@ -307,13 +318,13 @@ pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFm
     merge_adjacent(para);
 }
 
-pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: f32, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
+pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: u32, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_w;
     job.halign = egui::Align::LEFT;
     job.justify = false;
 
-    let ss = base_size * para.style.size_scale();
+    let ss = para.style.default_font_size_pt(base_size) as f32 * zoom;
     let (sb, si) = (para.style.is_bold(), para.style.is_italic());
     let code_bg = if is_dark {
         egui::Color32::from_rgb(28, 28, 34)
@@ -351,7 +362,7 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
         if seg.is_empty() {
             continue;
         }
-        let eff = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(ss);
+            let eff = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(ss);
         let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
         let fc = span.fmt.font.unwrap_or(base_font);
         let mut col = span.fmt.color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(base_col);
@@ -410,10 +421,70 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
 pub fn word_count(paras: &[DocParagraph]) -> usize { paras.iter().map(|p| p.text.split_whitespace().count()).sum() }
 pub fn char_count(paras: &[DocParagraph]) -> usize { paras.iter().map(|p| p.text.chars().count()).sum() }
 
-// DOCX LOADING
-const CONTENT_TYPES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>";
-const ROOT_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
-const WORD_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>";
+const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#;
+const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+const WORD_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
+
+fn style_size_hp(style: ParaStyle) -> Option<u32> {
+    match style {
+        ParaStyle::Title => Some(52),
+        ParaStyle::H1 => Some(40),
+        ParaStyle::H2 => Some(32),
+        ParaStyle::H3 => Some(28),
+        ParaStyle::H4 => Some(26),
+        ParaStyle::H5 => Some(24),
+        ParaStyle::H6 => Some(22),
+        ParaStyle::Subtitle => Some(30),
+        ParaStyle::Code => Some(22),
+        _ => None,
+    }
+}
+
+fn docx_pstyle_block(style: ParaStyle) -> String {
+    let (style_id, display_name, based_on, outline, spacing_before, spacing_after, indent_left, size_hp, bold, italic, font_name) = match style {
+        ParaStyle::Normal => return String::new(),
+        ParaStyle::H1 => ("Heading1", "Heading 1", Some("Normal"), Some(0), 320, 80, None, style_size_hp(style), true, false, None),
+        ParaStyle::H2 => ("Heading2", "Heading 2", Some("Normal"), Some(1), 240, 80, None, style_size_hp(style), true, false, None),
+        ParaStyle::H3 => ("Heading3", "Heading 3", Some("Normal"), Some(2), 200, 60, None, style_size_hp(style), true, false, None),
+        ParaStyle::H4 => ("Heading4", "Heading 4", Some("Normal"), Some(3), 160, 60, None, style_size_hp(style), true, false, None),
+        ParaStyle::H5 => ("Heading5", "Heading 5", Some("Normal"), Some(4), 120, 40, None, style_size_hp(style), true, false, None),
+        ParaStyle::H6 => ("Heading6", "Heading 6", Some("Normal"), Some(5), 100, 40, None, style_size_hp(style), true, false, None),
+        ParaStyle::Title => ("Title", "Title", Some("Normal"), Some(0), 0, 120, None, style_size_hp(style), true, false, None),
+        ParaStyle::Subtitle => ("Subtitle", "Subtitle", Some("Normal"), Some(0), 0, 120, None, style_size_hp(style), false, true, None),
+        ParaStyle::BlockQuote => ("Quote", "Quote", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, true, None),
+        ParaStyle::Code => ("CodeBlock", "Code Block", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, false, Some("Consolas")),
+        ParaStyle::ListBullet => ("ListBullet", "List Bullet", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
+        ParaStyle::ListOrdered => ("ListNumber", "List Number", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
+        ParaStyle::ListCheck => ("ListCheck", "List Check", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
+        ParaStyle::HRule => return String::new(),
+    };
+
+    let mut out = format!(r#"<w:style w:type="paragraph" w:styleId="{}"><w:name w:val="{}"/>"#, style_id, display_name);
+    if let Some(base) = based_on { out.push_str(&format!(r#"<w:basedOn w:val="{}"/>"#, base)); }
+    out.push_str("<w:qFormat/>");
+    if let Some(lvl) = outline { out.push_str(&format!(r#"<w:outlineLvl w:val="{}"/>"#, lvl)); }
+    out.push_str("<w:pPr>");
+    if spacing_before != 0 || spacing_after != 0 { out.push_str(&format!(r#"<w:spacing w:before="{}" w:after="{}"/>"#, spacing_before, spacing_after)); }
+    if let Some(left) = indent_left { out.push_str(&format!(r#"<w:ind w:left="{}"/>"#, left)); }
+    out.push_str("</w:pPr><w:rPr>");
+    if bold { out.push_str("<w:b/>"); }
+    if italic { out.push_str("<w:i/>"); }
+    if let Some(sz) = size_hp { out.push_str(&format!(r#"<w:sz w:val="{}"/><w:szCs w:val="{}"/>"#, sz, sz)); }
+    if let Some(font) = font_name { out.push_str(&format!(r#"<w:rFonts w:ascii="{}" w:hAnsi="{}" w:cs="{}"/>"#, font, font, font)); }
+    out.push_str("</w:rPr></w:style>");
+    out
+}
+
+fn build_docx_styles_xml() -> String {
+    let mut out = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+    out.push_str(r#"<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults>"#);
+    out.push_str(r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:pPr><w:spacing w:after="120"/></w:pPr></w:style>"#);
+    for style in [ParaStyle::Title, ParaStyle::Subtitle, ParaStyle::H1, ParaStyle::H2, ParaStyle::H3, ParaStyle::H4, ParaStyle::H5, ParaStyle::H6, ParaStyle::BlockQuote, ParaStyle::Code, ParaStyle::ListBullet, ParaStyle::ListOrdered, ParaStyle::ListCheck] {
+        out.push_str(&docx_pstyle_block(style));
+    }
+    out.push_str("</w:styles>");
+    out
+}
 
 fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
 fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
@@ -478,13 +549,20 @@ pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) ->
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default();
-    for (name, data) in [("[Content_Types].xml", CONTENT_TYPES.as_bytes()), ("_rels/.rels", ROOT_RELS.as_bytes()), ("word/_rels/document.xml.rels", WORD_RELS.as_bytes())] {
+    for (name, data) in [
+        ("[Content_Types].xml", CONTENT_TYPES.as_bytes()),
+        ("_rels/.rels", ROOT_RELS.as_bytes()),
+        ("word/_rels/document.xml.rels", WORD_RELS.as_bytes()),
+    ] {
         zip.start_file(name, opts).map_err(|e| e.to_string())?;
         zip.write_all(data).map_err(|e| e.to_string())?;
     }
     let doc = build_document_xml(paras, layout);
     zip.start_file("word/document.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(doc.as_bytes()).map_err(|e| e.to_string())?;
+    let styles = build_docx_styles_xml();
+    zip.start_file("word/styles.xml", opts).map_err(|e| e.to_string())?;
+    zip.write_all(styles.as_bytes()).map_err(|e| e.to_string())?;
     zip.finish().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -818,7 +896,6 @@ pub fn load_txt_as_doc(path: &PathBuf) -> Result<Vec<DocParagraph>, String> {
     Ok(paras)
 }
 
-// ODT LOADING
 const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
 #[derive(Clone, Default)]
 struct OdtStyle { bold:bool, italic:bool, underline:bool, strike:bool, size_hp:Option<u32>, color:Option<[u8;3]>, highlight:Option<[u8;3]>, align:Align, h_border:bool, parent:String }
@@ -923,8 +1000,50 @@ fn fmt_to_odt_id(fmt: &SpanFmt) -> String {
 
 fn build_odt_styles(layout: &PageLayout) -> String {
     let cm = |pt: f32| format!("{:.3}cm", pt / 28.3465);
-    format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"><office:automatic-styles><style:page-layout style:name=\"pm1\"><style:page-layout-properties fo:page-width=\"{}\" fo:page-height=\"{}\" fo:margin-top=\"{}\" fo:margin-bottom=\"{}\" fo:margin-left=\"{}\" fo:margin-right=\"{}\"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/></office:master-styles></office:document-styles>",
-        cm(layout.width), cm(layout.height), cm(layout.margin_top), cm(layout.margin_bot), cm(layout.margin_left), cm(layout.margin_right))
+    let pt = |pt: f32| format!("{:.1}pt", pt);
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"><office:styles>");
+    for (name, parent, size, bold, italic, before, after, left, outline) in [
+        ("Standard", "", Some(11.0), false, false, 0.0, 6.0, 0.0, None),
+        ("Title", "Standard", Some(26.0), true, false, 0.0, 6.0, 0.0, Some(0)),
+        ("Subtitle", "Standard", Some(15.0), false, true, 0.0, 6.0, 0.0, Some(0)),
+        ("Heading_20_1", "Standard", Some(20.0), true, false, 16.0, 8.0, 0.0, Some(1)),
+        ("Heading_20_2", "Standard", Some(16.0), true, false, 16.0, 8.0, 0.0, Some(2)),
+        ("Heading_20_3", "Standard", Some(14.0), true, false, 12.0, 6.0, 0.0, Some(3)),
+        ("Heading_20_4", "Standard", Some(13.0), true, false, 12.0, 6.0, 0.0, Some(4)),
+        ("Heading_20_5", "Standard", Some(12.0), true, false, 8.0, 4.0, 0.0, Some(5)),
+        ("Heading_20_6", "Standard", Some(11.0), true, false, 8.0, 4.0, 0.0, Some(6)),
+        ("Quotations", "Standard", Some(12.0), false, true, 6.0, 6.0, 24.0, None),
+        ("Preformatted_20_Text", "Standard", Some(11.0), false, false, 6.0, 6.0, 24.0, None),
+        ("List_20_Bullet", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
+        ("List_20_Number", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
+        ("List_20_Check", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
+    ] {
+        out.push_str("<style:style style:name=\"");
+        out.push_str(name);
+        out.push_str("\" style:family=\"paragraph\"");
+        if !parent.is_empty() {
+            out.push_str(&format!(" style:parent-style-name=\"{}\"", parent));
+        }
+        if let Some(lvl) = outline {
+            out.push_str(&format!(" style:default-outline-level=\"{}\"", lvl));
+        }
+        out.push_str(">");
+        out.push_str("<style:paragraph-properties");
+        if before != 0.0 { out.push_str(&format!(" fo:margin-top=\"{}\"", pt(before))); }
+        if after != 0.0 { out.push_str(&format!(" fo:margin-bottom=\"{}\"", pt(after))); }
+        if left != 0.0 { out.push_str(&format!(" fo:margin-left=\"{}\"", pt(left))); }
+        out.push_str("/>");
+        out.push_str("<style:text-properties");
+        if let Some(sz) = size { out.push_str(&format!(" fo:font-size=\"{}\"", pt(sz))); }
+        if bold { out.push_str(" fo:font-weight=\"bold\""); }
+        if italic { out.push_str(" fo:font-style=\"italic\""); }
+        if name == "Preformatted_20_Text" { out.push_str(" style:font-name=\"Liberation Mono\" fo:font-family=\"Liberation Mono\""); }
+        out.push_str("/>");
+        out.push_str("</style:style>");
+    }
+    out.push_str(&format!("</office:styles><office:automatic-styles><style:page-layout style:name=\"pm1\"><style:page-layout-properties fo:page-width=\"{}\" fo:page-height=\"{}\" fo:margin-top=\"{}\" fo:margin-bottom=\"{}\" fo:margin-left=\"{}\" fo:margin-right=\"{}\"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/></office:master-styles></office:document-styles>",
+        cm(layout.width), cm(layout.height), cm(layout.margin_top), cm(layout.margin_bot), cm(layout.margin_left), cm(layout.margin_right)));
+    out
 }
 
 fn build_odt_content(paras: &[DocParagraph]) -> String {
@@ -942,7 +1061,7 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
         if fmt.strike { out.push_str(" style:text-line-through-style=\"solid\""); }
         if fmt.sup { out.push_str(" style:text-position=\"super 58%\""); }
         if fmt.sub { out.push_str(" style:text-position=\"sub 58%\""); }
-        if let Some(sz) = fmt.size_hp { out.push_str(&format!(" fo:font-size=\"{}pt\"", sz as f32 / 2.0)); }
+        if let Some(sz) = fmt.size_hp { out.push_str(&format!(" fo:font-size=\"{}pt\"", (sz as f32 / 2.0).round() as u32)); }
         if let Some(c) = fmt.color { out.push_str(&format!(" fo:color=\"#{:02X}{:02X}{:02X}\"", c[0],c[1],c[2])); }
         out.push_str("/></style:style>");
     }
