@@ -244,7 +244,32 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     let is_check = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListCheck).unwrap_or(false);
                     if fmt_btn(ui, "\u{2022}", is_bullet, theme, "Bullet List") { ed.apply_style_toggle(ParaStyle::ListBullet); }
                     if fmt_btn(ui, "1.", is_num, theme, "Numbered List") { ed.apply_style_toggle(ParaStyle::ListOrdered); }
-                    if fmt_btn(ui, "☐", is_check, theme, "Checklist") { ed.apply_style_toggle(ParaStyle::ListCheck); }
+                    if fmt_btn(ui, "✔", is_check, theme, "Checklist") { ed.apply_style_toggle(ParaStyle::ListCheck); }
+                    if act_btn(ui, egui::RichText::new("<").size(11.0), theme, "Decrease Indent") {
+                        ed.push_undo();
+                        let mut changed = false;
+                        let target_paras = if let Some((from, to)) = ed.norm_sel() { from.para..=to.para } else { ed.focused_para..=ed.focused_para };
+                        for pi in target_paras {
+                            if ed.paras[pi].indent_left > 0.0 {
+                                ed.paras[pi].indent_left = (ed.paras[pi].indent_left - 36.0).max(0.0);
+                                changed = true;
+                            }
+                        }
+                        if changed { ed.dirty = true; ed.heights_dirty = true; } else { ed.undo_stack.pop_back(); }
+                    }
+                    if act_btn(ui, egui::RichText::new(">").size(11.0), theme, "Increase Indent") {
+                        ed.push_undo();
+                        let mut changed = false;
+                        let max_indent = (ed.layout.content_width() - 36.0).max(0.0);
+                        let target_paras = if let Some((from, to)) = ed.norm_sel() { from.para..=to.para } else { ed.focused_para..=ed.focused_para };
+                        for pi in target_paras {
+                            if ed.paras[pi].indent_left + 36.0 <= max_indent {
+                                ed.paras[pi].indent_left += 36.0;
+                                changed = true;
+                            }
+                        }
+                        if changed { ed.dirty = true; ed.heights_dirty = true; } else { ed.undo_stack.pop_back(); }
+                    }
                     if act_btn(ui, "\u{2014}", theme, "Insert Horizontal Rule") {
                         ed.push_undo();
                         let idx = ed.focused_para;
@@ -837,17 +862,16 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     let len = ed.para_texts[i].chars().count();
                     cr.primary.index == len && cr.secondary.index == len
                 }).unwrap_or(false);
-
                 let should_handle_bksp = at_start && (ed.paras[i].indent_first > 0.0 || ed.paras[i].indent_left > 0.0 || i > 0);
                 if should_handle_bksp && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
                     if ed.paras[i].indent_first > 0.0 {
                         ed.push_undo();
-                        ed.paras[i].indent_first = (ed.paras[i].indent_first - 18.0).max(0.0);
+                        ed.paras[i].indent_first = (ed.paras[i].indent_first - 36.0).max(0.0);
                         ed.dirty = true;
                         ed.heights_dirty = true;
                     } else if ed.paras[i].indent_left > 0.0 {
                         ed.push_undo();
-                        ed.paras[i].indent_left = (ed.paras[i].indent_left - 18.0).max(0.0);
+                        ed.paras[i].indent_left = (ed.paras[i].indent_left - 36.0).max(0.0);
                         ed.dirty = true;
                         ed.heights_dirty = true;
                     } else if i > 0 {
@@ -855,7 +879,6 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
                     continue;
                 }
-
                 if at_end && i + 1 < ed.paras.len() && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Delete)) {
                     merge_down = Some(i);
                     continue;
@@ -1012,7 +1035,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 }
                 if tab_keys.0 || tab_keys.1 || tab_keys.2 || tab_keys.3 {
                     let shift_tab = tab_keys.1 || tab_keys.3;
-                    let delta = if shift_tab { -18.0f32 } else { 18.0f32 };
+                    let delta = if shift_tab { -36.0f32 } else { 36.0f32 };
+                    let max_indent = (ed.layout.content_width() - 36.0).max(0.0);
                     let state = egui::TextEdit::load_state(ctx, id);
                     let cr = state.as_ref().and_then(|s| s.cursor.char_range());
                     let has_selection = cr.map(|cr| cr.primary.index != cr.secondary.index).unwrap_or(false);
@@ -1024,11 +1048,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
                     if has_selection {
                         let before = ed.paras[i].indent_left;
-                        ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).max(0.0);
+                        ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).clamp(0.0, max_indent);
                         changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
                     } else if caret_at_start {
                         let before = ed.paras[i].indent_first;
-                        ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).max(0.0);
+                        ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).clamp(0.0, max_indent);
                         changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
                     } else if shift_tab {
                         if caret_byte > 0 && ed.paras[i].text.as_bytes().get(caret_byte - 1) == Some(&b'\t') {

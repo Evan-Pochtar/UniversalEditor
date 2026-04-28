@@ -161,6 +161,8 @@
 - [x] Single indents sometimes disappear on load (.docx)
 - [x] Cannot tab/indent multiple lines at once, removes the lines instead
 - [x] Headers/Titles do not export correctly
+- [x] Undoing a tab/indent moves cursor one character too far
+- [x] Paragraph indent and tab indent aren't the same size
 
 ### Other Bugs
 
@@ -285,6 +287,7 @@
 - [x] Different font's per line/text instead of changing the whole file to one font
 - [x] Checklists
 - [x] Headers should change font size
+- [x] Increase indent and decrease indent buttons
 
 ### CONVERTER: Img 2 Img
 

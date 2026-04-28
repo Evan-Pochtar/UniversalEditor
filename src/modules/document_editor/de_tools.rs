@@ -61,7 +61,7 @@ impl ParaStyle {
     pub fn default_font_size_pt(self, base_size: u32) -> u32 { (base_size as f32 * self.size_scale()).round() as u32 }
     pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
     pub fn space_after(self) -> f32 { match self { Self::H1|Self::H2 => 8.0, Self::H3|Self::H4|Self::HRule => 8.0, _ => 6.0 } }
-    pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 18.0, Self::BlockQuote => 24.0, _ => 0.0 } }
+    pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
     pub fn outline_depth(self) -> Option<u8> {
         match self { Self::Title|Self::Subtitle => Some(0), Self::H1 => Some(1), Self::H2 => Some(2), Self::H3 => Some(3), Self::H4 => Some(4), Self::H5 => Some(5), Self::H6 => Some(6), _ => None }
     }
@@ -416,6 +416,28 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
     }
 
     job
+}
+
+pub fn convert_leading_tabs_to_indent(paras: &mut Vec<DocParagraph>) {
+    for p in paras {
+        let mut tabs_to_remove = 0;
+        for ch in p.text.chars() {
+            if ch == '\t' { tabs_to_remove += 1; } else { break; }
+        }
+        if tabs_to_remove > 0 {
+            p.indent_first += 36.0 * (tabs_to_remove as f32);
+            p.text = p.text[tabs_to_remove..].to_string();
+            let mut remaining = tabs_to_remove;
+            for s in &mut p.spans {
+                if remaining == 0 { break; }
+                let take = s.len.min(remaining);
+                s.len -= take;
+                remaining -= take;
+            }
+            p.spans.retain(|s| s.len > 0);
+            if p.spans.is_empty() { p.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+        }
+    }
 }
 
 pub fn word_count(paras: &[DocParagraph]) -> usize { paras.iter().map(|p| p.text.split_whitespace().count()).sum() }
@@ -883,6 +905,7 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
         }
     }
     if paras.is_empty() { paras.push(DocParagraph::new()); }
+    convert_leading_tabs_to_indent(&mut paras);
     Ok((paras, layout))
 }
 
@@ -893,6 +916,7 @@ pub fn load_txt_as_doc(path: &PathBuf) -> Result<Vec<DocParagraph>, String> {
         p.spans = vec![DocSpan { len: line.len(), fmt: SpanFmt::default() }]; p
     }).collect();
     if paras.is_empty() { paras.push(DocParagraph::new()); }
+    convert_leading_tabs_to_indent(&mut paras);
     Ok(paras)
 }
 
@@ -1231,6 +1255,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
         }
     }
     if paras.is_empty() { paras.push(DocParagraph::new()); }
+    convert_leading_tabs_to_indent(&mut paras);
     Ok((paras, PageLayout::default()))
 }
 

@@ -273,6 +273,8 @@
 - **DOCUMENT EDITOR**: Added the ability to highlight text
 - **DOCUMENT EDITOR**: Added the ability to create checklists
 - **DOCUMENT EDITOR**: Undo stack improved to undo changes a little better while typing
+- **DOCUMENT EDITOR**: Headers now change font size and styling rather than hard coded size increases
+- **DOCUMENT EDITOR**: Added increase/decrease paragraph indent buttons (will be moved to top toolbar in the future)
 
 #### Debugging
 - **DOCUMENT EDITOR**: Up and down arrows now properly navigate through pages
@@ -281,3 +283,6 @@
 - **DOCUMENT EDITOR**: Links now properly load from both .odt and .docx files
 - **DOCUMENT EDITOR**: Subscript no longer loads as superscript
 - **DOCUMENT EDITOR**: Fixed issues relating to placing tab indents and loading tab indents
+- **DOCUMENT EDITOR**: Headers, Titles, Subtitles, etc. now export correctly
+- **DOCUMENT EDITOR**: Tab indents and paragraph indents now the same size
+- **DOCUMENT EDITOR**: Undoing tabs no longer moves the cursor one space too far

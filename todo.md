@@ -74,9 +74,6 @@
 - [ ] Page Break
   - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word
-- [ ] Tab/Indent
-  - [ ] Undoing a tab/indent moves cursor one character too far
-  - [ ] Paragraph indent and tab indent aren't the same size
 
 ### Other Bugs
 
@@ -126,7 +123,6 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Increase indent and decrease indent buttons
 - [ ] Export to PDF, MD, txt, rtf, epub, html
 - [ ] Tables
 - [ ] Images
