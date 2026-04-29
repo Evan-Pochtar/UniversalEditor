@@ -268,6 +268,7 @@
 ## V0.0.9
 
 #### Features
+
 - **DOCUMENT EDITOR**: Font now works per character not for the whole document at once
 - **DOCUMENT EDITOR**: Added the ability to create links
 - **DOCUMENT EDITOR**: Added the ability to highlight text
@@ -275,8 +276,11 @@
 - **DOCUMENT EDITOR**: Undo stack improved to undo changes a little better while typing
 - **DOCUMENT EDITOR**: Headers now change font size and styling rather than hard coded size increases
 - **DOCUMENT EDITOR**: Added increase/decrease paragraph indent buttons (will be moved to top toolbar in the future)
+- **DOCUMENT EDITOR**: Shift tab now works to remove tab indents/paragraph indents
+- **DOCUMENT EDITOR**: Toolbar cleaned up, moved options to the top menu bar
 
 #### Debugging
+
 - **DOCUMENT EDITOR**: Up and down arrows now properly navigate through pages
 - **DOCUMENT EDITOR**: Highlights now load from both .odt and .docx files
 - **DOCUMENT EDITOR**: Font's now transfer from exported docx files

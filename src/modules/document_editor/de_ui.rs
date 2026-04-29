@@ -211,13 +211,21 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
             egui::ScrollArea::horizontal().auto_shrink([false, true]).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.style_mut().spacing.interact_size.y = 26.0;
+
                     let cur_style = ed.paras.get(ed.focused_para).map(|p| p.style).unwrap_or_default();
                     egui::ComboBox::from_id_salt("de_style_cb")
-                        .selected_text(egui::RichText::new(cur_style.label()).size(12.0)).width(130.0)
-                        .show_ui(ui, |ui| { for s in ParaStyle::all() { if ui.selectable_label(cur_style == *s, s.label()).clicked() { ed.apply_style(*s); } } });
+                        .selected_text(egui::RichText::new(cur_style.label()).size(12.0))
+                        .width(130.0)
+                        .show_ui(ui, |ui| {
+                            for s in ParaStyle::all() {
+                                if ui.selectable_label(cur_style == *s, s.label()).clicked() { ed.apply_style(*s); }
+                            }
+                        });
+
                     let cur_text_font = ed.cur_fmt.font.unwrap_or(ed.base_font);
                     egui::ComboBox::from_id_salt("de_font_cb")
-                        .selected_text(egui::RichText::new(cur_text_font.label()).size(12.0)).width(112.0)
+                        .selected_text(egui::RichText::new(cur_text_font.label()).size(12.0))
+                        .width(112.0)
                         .show_ui(ui, |ui| {
                             if ui.selectable_label(ed.cur_fmt.font.is_none(), format!("Default ({})", ed.base_font.label())).clicked() {
                                 ed.apply_fmt_font(None);
@@ -228,60 +236,20 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                                 }
                             }
                         });
+
                     ui.label(egui::RichText::new("Font Size:").size(11.0).color(lc));
                     let mut sel_sz = ed.sel_font_size_pt();
-                    if ui.add(egui::DragValue::new(&mut sel_sz).range(4..=288).speed(1).suffix("pt")).changed() { ed.apply_fmt_size(sel_sz); }
+                    if ui.add(egui::DragValue::new(&mut sel_sz).range(4..=288).speed(1).suffix("pt")).changed() {
+                        ed.apply_fmt_size(sel_sz);
+                    }
+
                     ui.separator();
                     if fmt_btn(ui, egui::RichText::new("B").strong().size(13.0), ed.fmt_state_bold(), theme, "Bold (Ctrl+B)") { ed.apply_fmt_toggle_bold(); }
                     if fmt_btn(ui, egui::RichText::new("I").italics().size(13.0), ed.fmt_state_italic(), theme, "Italic (Ctrl+I)") { ed.apply_fmt_toggle_italic(); }
                     if fmt_btn(ui, egui::RichText::new("U").underline().size(13.0), ed.fmt_state_underline(), theme, "Underline (Ctrl+U)") { ed.apply_fmt_toggle_underline(); }
-                    if fmt_btn(ui, egui::RichText::new("S").strikethrough().size(13.0), ed.fmt_state_strike(), theme, "Strikethrough") { ed.apply_fmt_toggle_strike(); }
-                    if fmt_btn(ui, egui::RichText::new("x\u{00B2}").size(11.0), ed.fmt_state_sup(), theme, "Superscript") { ed.apply_fmt_toggle_sup(); }
-                    if fmt_btn(ui, egui::RichText::new("x\u{2082}").size(11.0), ed.fmt_state_sub(), theme, "Subscript") { ed.apply_fmt_toggle_sub(); }
-                    ui.separator();
-                    let is_bullet = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListBullet).unwrap_or(false);
-                    let is_num = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListOrdered).unwrap_or(false);
-                    let is_check = ed.paras.get(ed.focused_para).map(|p| p.style == ParaStyle::ListCheck).unwrap_or(false);
-                    if fmt_btn(ui, "\u{2022}", is_bullet, theme, "Bullet List") { ed.apply_style_toggle(ParaStyle::ListBullet); }
-                    if fmt_btn(ui, "1.", is_num, theme, "Numbered List") { ed.apply_style_toggle(ParaStyle::ListOrdered); }
-                    if fmt_btn(ui, "✔", is_check, theme, "Checklist") { ed.apply_style_toggle(ParaStyle::ListCheck); }
-                    if act_btn(ui, egui::RichText::new("<").size(11.0), theme, "Decrease Indent") {
-                        ed.push_undo();
-                        let mut changed = false;
-                        let target_paras = if let Some((from, to)) = ed.norm_sel() { from.para..=to.para } else { ed.focused_para..=ed.focused_para };
-                        for pi in target_paras {
-                            if ed.paras[pi].indent_left > 0.0 {
-                                ed.paras[pi].indent_left = (ed.paras[pi].indent_left - 36.0).max(0.0);
-                                changed = true;
-                            }
-                        }
-                        if changed { ed.dirty = true; ed.heights_dirty = true; } else { ed.undo_stack.pop_back(); }
-                    }
-                    if act_btn(ui, egui::RichText::new(">").size(11.0), theme, "Increase Indent") {
-                        ed.push_undo();
-                        let mut changed = false;
-                        let max_indent = (ed.layout.content_width() - 36.0).max(0.0);
-                        let target_paras = if let Some((from, to)) = ed.norm_sel() { from.para..=to.para } else { ed.focused_para..=ed.focused_para };
-                        for pi in target_paras {
-                            if ed.paras[pi].indent_left + 36.0 <= max_indent {
-                                ed.paras[pi].indent_left += 36.0;
-                                changed = true;
-                            }
-                        }
-                        if changed { ed.dirty = true; ed.heights_dirty = true; } else { ed.undo_stack.pop_back(); }
-                    }
-                    if act_btn(ui, "\u{2014}", theme, "Insert Horizontal Rule") {
-                        ed.push_undo();
-                        let idx = ed.focused_para;
-                        ed.paras.insert(idx + 1, DocParagraph::with_style(ParaStyle::HRule));
-                        if idx + 2 >= ed.paras.len() { ed.paras.push(DocParagraph::new()); }
-                        ed.focused_para = idx + 2;
-                        ed.pending_focus = Some(ed.focused_para);
-                        ed.sync_texts(); ed.dirty = true;
-                    }
-                    ui.separator();
-                    let cur_col = ed.cur_fmt.color.map(|c| egui::Color32::from_rgb(c[0],c[1],c[2]))
-                        .unwrap_or(if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22,22,22) });
+
+                    let cur_col = ed.cur_fmt.color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2]))
+                        .unwrap_or(if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22, 22, 22) });
                     let color_btn = ui.scope(|ui| {
                         let s = ui.style_mut();
                         s.visuals.widgets.inactive.bg_fill = if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 };
@@ -350,17 +318,16 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                         ed.paras[ed.focused_para].line_height = ed.line_spacing_input; ed.dirty = true; ed.heights_dirty = true;
                     }
                     ui.separator();
-                    if fmt_btn(ui, egui::RichText::new("Outline").size(11.0), ed.show_outline, theme, "Toggle document outline") { ed.show_outline = !ed.show_outline; }
-                    if act_btn(ui, egui::RichText::new("Page").size(11.0), theme, "Page layout settings") { ed.page_settings_draft = None; ed.show_page_settings = true; }
-                    ui.separator();
-                    ui.label(egui::RichText::new("Zoom:").size(11.0).color(lc));
-                    if act_btn(ui, "-", theme, "Zoom out (Ctrl+-)") { ed.zoom = (ed.zoom - 0.1).max(0.3); }
-                    ui.label(egui::RichText::new(format!("{:.0}%", ed.zoom * 100.0)).size(11.0).color(lc));
-                    if act_btn(ui, "+", theme, "Zoom in (Ctrl++)") { ed.zoom = (ed.zoom + 0.1).min(3.0); }
+                    ui.horizontal(|ui| {
+                        if act_btn(ui, "-", theme, "Zoom out (Ctrl+-)") { ed.zoom = (ed.zoom - 0.1).max(0.3); }
+                        ui.label(egui::RichText::new(format!("{:.0}%", ed.zoom * 100.0)).size(11.0).color(lc));
+                        if act_btn(ui, "+", theme, "Zoom in (Ctrl++)") { ed.zoom = (ed.zoom + 0.1).min(3.0); }
+                    });
                 });
             });
         });
 }
+
 
 fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
     let tc = if is_dark { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_800 };
@@ -979,12 +946,13 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             }
             if ed.pending_focus == Some(i) { ctx.memory_mut(|m| m.request_focus(id)); }
             let tab_keys = if i == focused {
-                ctx.input_mut(|inp| (
-                    inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab),
-                    inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab),
-                    inp.consume_key(egui::Modifiers::CTRL, egui::Key::M),
-                    inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::M),
-                ))
+                ctx.input_mut(|inp| {
+                    let shift_tab = inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab);
+                    let ctrl_shft_m = inp.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::M);
+                    let plain_tab = inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab);
+                    let ctrl_m = inp.consume_key(egui::Modifiers::CTRL, egui::Key::M);
+                    (plain_tab, shift_tab, ctrl_m, ctrl_shft_m)
+                })
             } else { (false, false, false, false) };
             let text_ref = &mut ed.para_texts[i];
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit_rect));
@@ -1051,9 +1019,21 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).clamp(0.0, max_indent);
                         changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
                     } else if caret_at_start {
-                        let before = ed.paras[i].indent_first;
-                        ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).clamp(0.0, max_indent);
-                        changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
+                        if shift_tab {
+                            if ed.paras[i].indent_first > 0.0 {
+                                let before = ed.paras[i].indent_first;
+                                ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).max(0.0);
+                                changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
+                            } else {
+                                let before = ed.paras[i].indent_left;
+                                ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).max(0.0);
+                                changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
+                            }
+                        } else {
+                            let before = ed.paras[i].indent_first;
+                            ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).clamp(0.0, max_indent);
+                            changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
+                        }
                     } else if shift_tab {
                         if caret_byte > 0 && ed.paras[i].text.as_bytes().get(caret_byte - 1) == Some(&b'\t') {
                             let mut new_text = ed.paras[i].text.clone();

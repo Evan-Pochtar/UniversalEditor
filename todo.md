@@ -129,8 +129,6 @@
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Header and footers
-- [ ] Clean up toolbar
-- [ ] Shift tab should remove indent
 
 ### CONVERTERS
 

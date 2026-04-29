@@ -288,6 +288,8 @@
 - [x] Checklists
 - [x] Headers should change font size
 - [x] Increase indent and decrease indent buttons
+- [x] Shift tab should remove indent
+- [x] Clean up toolbar
 
 ### CONVERTER: Img 2 Img
 

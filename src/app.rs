@@ -474,7 +474,8 @@ impl UniversalEditor {
                 if !contributions.image_items.is_empty() { let items = contributions.image_items.clone(); ui.menu_button("Image", |ui| { self.menu_items_ui(ui, &items); }); }
                 if !contributions.filter_items.is_empty() { let items = contributions.filter_items.clone(); ui.menu_button("Filter", |ui| { self.menu_items_ui(ui, &items); }); }
                 if !contributions.layer_items.is_empty() { let items = contributions.layer_items.clone(); ui.menu_button("Layer", |ui| { self.menu_items_ui(ui, &items); }); }
-                if !contributions.insert_items.is_empty() { let items = contributions.layer_items.clone(); ui.menu_button("Layer", |ui| { self.menu_items_ui(ui, &items); }); }
+                if !contributions.insert_items.is_empty() { let items = contributions.insert_items.clone(); ui.menu_button("Insert", |ui| { self.menu_items_ui(ui, &items); }); }
+                if !contributions.format_items.is_empty() { let items = contributions.format_items.clone(); ui.menu_button("Format", |ui| { self.menu_items_ui(ui, &items); }); }
             });
             ui.add_space(4.0);
         });
@@ -1025,7 +1026,7 @@ impl UniversalEditor {
                             ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
                             ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
                             ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
-                            ("W", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export.", ColorPalette::GREEN_500),
+                            ("D", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export.", ColorPalette::GREEN_500),
                             ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
                             ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_600),
                             ("A", "Archive Converter", "Convert structured data between ZIP, TAR, TAR.GZ, TAR.BZ2, and 7z archive formats with compression level settings.", ColorPalette::AMBER_600),

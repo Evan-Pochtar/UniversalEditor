@@ -54,7 +54,7 @@ pub static SCREENS: &[ScreenDef] = &[
     ScreenDef {
         id: "doc_editor",
         name: "Document Editor",
-        description: "Write and format documents, export as DOCX",
+        description: "Write, format, and export documents",
         color: ColorPalette::GREEN_500,
         sidebar_letter: "D",
         accepted_extensions: &["docx", "doc", "odt"],

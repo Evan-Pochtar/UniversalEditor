@@ -370,24 +370,11 @@ impl DocumentEditor {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.underline); } }
         self.cur_fmt.underline
     }
-    pub(super) fn fmt_state_strike(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.strike); } }
-        self.cur_fmt.strike
-    }
-    pub(super) fn fmt_state_sup(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.sup); } }
-        self.cur_fmt.sup
-    }
-    pub(super) fn fmt_state_sub(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.sub); } }
-        self.cur_fmt.sub
-    }
 
     pub(super) fn apply_fmt_font(&mut self, font: Option<FontChoice>) {
         if self.set_single_para_fmt(|f| f.font = font) { return; }
         self.cur_fmt.font = font;
     }
-
     pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
         if self.set_single_para_fmt(|f| f.color = color) { return; }
         self.cur_fmt.color = color;
@@ -420,6 +407,35 @@ impl DocumentEditor {
         } else {
             self.cur_fmt.link = link;
         }
+    }
+
+    pub(super) fn adjust_indent_selection(&mut self, delta: f32) {
+        self.push_undo();
+        let max_indent = (self.layout.content_width() - 36.0).max(0.0);
+        let mut changed = false;
+        let target_paras = if let Some((from, to)) = self.norm_sel() { from.para..=to.para } else { self.focused_para..=self.focused_para };
+        for pi in target_paras {
+            let before = self.paras[pi].indent_left;
+            self.paras[pi].indent_left = (self.paras[pi].indent_left + delta).clamp(0.0, max_indent);
+            changed |= (self.paras[pi].indent_left - before).abs() > f32::EPSILON;
+        }
+        if changed {
+            self.dirty = true;
+            self.heights_dirty = true;
+        } else {
+            self.undo_stack.pop_back();
+        }
+    }
+
+    pub(super) fn insert_horizontal_rule_after_focus(&mut self) {
+        self.push_undo();
+        let idx = self.focused_para;
+        self.paras.insert(idx + 1, DocParagraph::with_style(ParaStyle::HRule));
+        if idx + 2 >= self.paras.len() { self.paras.push(DocParagraph::new()); }
+        self.focused_para = idx + 2;
+        self.pending_focus = Some(self.focused_para);
+        self.sync_texts();
+        self.dirty = true;
     }
 
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
@@ -467,7 +483,22 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Zoom Out".into(), shortcut: Some("Ctrl+-".into()), enabled: true }, MenuAction::Custom("ZoomOut".into())),
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
             ],
-            image_items: vec![], filter_items: vec![], layer_items: vec![], insert_items: vec![],
+            insert_items: vec![
+                (MenuItem { label: "Bullet List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertBulletList".into())),
+                (MenuItem { label: "Numbered List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertNumberedList".into())),
+                (MenuItem { label: "Checklist".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertChecklist".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Horizontal Line".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertHorizontalRule".into())),
+            ],
+            format_items: vec![
+                (MenuItem { label: "Strikethrough".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleStrike".into())),
+                (MenuItem { label: "Superscript".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleSuperscript".into())),
+                (MenuItem { label: "Subscript".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleSubscript".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Increase Indent".into(), shortcut: None, enabled: true }, MenuAction::Custom("IncreaseIndent".into())),
+                (MenuItem { label: "Decrease Indent".into(), shortcut: None, enabled: true }, MenuAction::Custom("DecreaseIndent".into())),
+            ],
+            image_items: vec![], filter_items: vec![], layer_items: vec![],
         }
     }
     fn handle_menu_action(&mut self, action: MenuAction) -> bool {
@@ -482,6 +513,15 @@ impl EditorModule for DocumentEditor {
                 "ZoomIn"  => { self.zoom = (self.zoom + 0.1).min(3.0); self.heights_dirty = true; true }
                 "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); self.heights_dirty = true; true }
                 "ZoomReset" => { self.auto_zoom_done = false; true }
+                "InsertBulletList" => { self.apply_style_toggle(ParaStyle::ListBullet); true }
+                "InsertNumberedList" => { self.apply_style_toggle(ParaStyle::ListOrdered); true }
+                "InsertChecklist" => { self.apply_style_toggle(ParaStyle::ListCheck); true }
+                "InsertHorizontalRule" => { self.insert_horizontal_rule_after_focus(); true }
+                "ToggleStrike" => { self.apply_fmt_toggle_strike(); true }
+                "ToggleSuperscript" => { self.apply_fmt_toggle_sup(); true }
+                "ToggleSubscript" => { self.apply_fmt_toggle_sub(); true }
+                "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
+                "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
                 _ => false,
             },
             _ => false,
