@@ -278,6 +278,7 @@
 - **DOCUMENT EDITOR**: Added increase/decrease paragraph indent buttons (will be moved to top toolbar in the future)
 - **DOCUMENT EDITOR**: Shift tab now works to remove tab indents/paragraph indents
 - **DOCUMENT EDITOR**: Toolbar cleaned up, moved options to the top menu bar
+- **DOCUMENT EDITOR**: Measurements added to page sizes in the page settings modal
 
 #### Debugging
 
@@ -291,3 +292,6 @@
 - **DOCUMENT EDITOR**: Tab indents and paragraph indents now the same size
 - **DOCUMENT EDITOR**: Undoing tabs no longer moves the cursor one space too far
 - **DOCUMENT EDITOR**: Multi-line highlights now properly align with letters regardless of font size
+- **DOCUMENT EDITOR**: Cursor now properly follows text after a page break
+- **DOCUMENT EDITOR**: Paragraphs now no longer disconnect after a page break
+- **DOCUMENT EDITOR**: Page breaks no longer occur in the middle of a word

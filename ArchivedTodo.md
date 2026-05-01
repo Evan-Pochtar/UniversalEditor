@@ -164,6 +164,8 @@
 - [x] Undoing a tab/indent moves cursor one character too far
 - [x] Paragraph indent and tab indent aren't the same size
 - [x] Highlighting seems to not align perfectly with letters, especially with large font sizes
+- [x] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
+- [x] Sometimes page breaks cut a paragraph in the middle of a word
 
 ### Other Bugs
 
@@ -291,6 +293,7 @@
 - [x] Increase indent and decrease indent buttons
 - [x] Shift tab should remove indent
 - [x] Clean up toolbar
+- [x] Add measurements to page sizes in the page settings panel
 
 ### CONVERTER: Img 2 Img
 

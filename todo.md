@@ -69,9 +69,6 @@
   - [ ] Highlights do not export correctly
   - [ ] Links do not export correctly
   - [ ] Lists do not export correctly
-- [ ] Page Break
-  - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
-  - [ ] Sometimes page breaks cut a paragraph in the middle of a word
 
 ### Other Bugs
 
@@ -121,12 +118,13 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Export to PDF, MD, txt, rtf, epub, html
+- [ ] Export to PDF, MD, rtf, epub, html
 - [ ] Tables
 - [ ] Images
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Header and footers
+- [ ] Improve look of find/replace panel
 
 ### CONVERTERS
 

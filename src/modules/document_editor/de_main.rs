@@ -439,11 +439,23 @@ impl DocumentEditor {
     }
 
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
+        let mut save_paras = self.paras.clone();
+        let mut j = 0;
+        while j < save_paras.len() {
+            if save_paras[j].is_split && j > 0 {
+                let orig_space_after = save_paras[j].space_after;
+                merge_paragraphs(&mut save_paras, j - 1);
+                save_paras[j - 1].space_after = orig_space_after;
+                save_paras[j - 1].is_split = false;
+            } else {
+                j += 1;
+            }
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         match ext.as_str() {
-            "docx" | "doc" => save_docx(&path, &self.paras, &self.layout)?,
-            "odt" => save_odt(&path, &self.paras, &self.layout)?,
-            _ => { let t: String = self.paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
+            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout)?,
+            "odt" => save_odt(&path, &save_paras, &self.layout)?,
+            _ => { let t: String = save_paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
         }
         self.file_path = Some(path); self.dirty = false; Ok(())
     }

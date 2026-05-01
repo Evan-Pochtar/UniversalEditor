@@ -429,51 +429,86 @@ fn split_spans_at_byte(spans: &[DocSpan], split_byte: usize) -> (Vec<DocSpan>, V
 fn split_para_at_byte(src: &DocParagraph, split_byte: usize) -> (DocParagraph, DocParagraph) {
     let split_byte = split_byte.min(src.text.len());
     let (left_spans, right_spans) = split_spans_at_byte(&src.spans, split_byte);
-
     let mut left = src.clone();
     left.text = src.text[..split_byte].to_string();
     left.spans = if left_spans.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] } else { left_spans };
     left.space_after = 0.0;
+    left.is_split = false;
     merge_adjacent(&mut left);
-
     let mut right = src.clone();
     right.text = src.text[split_byte..].to_string();
     right.spans = if right_spans.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] } else { right_spans };
     right.space_before = 0.0;
+    right.indent_first = right.indent_left;
+    right.is_split = true;
     merge_adjacent(&mut right);
-
     (left, right)
 }
 
-fn find_split_byte_fit(ctx: &egui::Context, para: &DocParagraph, base_font: FontChoice, base_size: u32, wrap_w: f32, max_total_h: f32, zoom: f32, is_dark: bool,) -> usize {
-    let mut char_bytes: Vec<usize> = para.text.char_indices().map(|(b, _)| b).collect();
-    char_bytes.push(para.text.len());
-    if char_bytes.len() <= 2 { return para.text.len(); }
-
-    let (mut lo, mut hi, mut best) = (1usize, char_bytes.len() - 1, char_bytes[1]);
-    while lo <= hi {
-        let mid = (lo + hi) / 2;
-        let split = char_bytes[mid];
-        if split == 0 || split >= para.text.len() { break; }
-        let (left, _) = split_para_at_byte(para, split);
-        let h = measure_para_total_height(ctx, &left, base_font, base_size, wrap_w, zoom, is_dark);
-        if h <= max_total_h + 0.5 { best = split; lo = mid + 1; }
-        else { if mid == 0 { break; } hi = mid.saturating_sub(1); }
+fn find_split_byte_fit(ctx: &egui::Context, para: &DocParagraph, base_font: FontChoice, base_size: u32, wrap_w: f32, max_total_h: f32, zoom: f32, is_dark: bool) -> usize {
+    let job = build_layout_job(&para.spans, &para.text, para, base_font, base_size, wrap_w, is_dark, zoom);
+    let galley = ctx.fonts_mut(|f| f.layout_job(job));
+    let mut split_char = para.text.chars().count();
+    let mut char_pos = 0usize;
+    for row in &galley.rows {
+        let row_bottom = para.space_before * zoom + row.rect().max.y;
+        if row_bottom > max_total_h {
+            split_char = char_pos;
+            break;
+        }
+        char_pos += row.glyphs.len();
+        if row.ends_with_newline {
+            char_pos += 1;
+        }
     }
-    best
+    if split_char == 0 {
+        return 0;
+    }
+    para.text.char_indices().nth(split_char).map(|(b, _)| b).unwrap_or(para.text.len())
 }
 
 fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
+    if !ed.heights_dirty { return; }
+    let mut focus_p = ed.focused_para;
+    let mut focus_b = 0;
+    if focus_p < ed.paras.len() && focus_p < ed.para_ids.len() {
+        if let Some(state) = egui::TextEdit::load_state(ctx, ed.para_ids[focus_p]) {
+            if let Some(cr) = state.cursor.char_range() {
+                let text = &ed.paras[focus_p].text;
+                let char_idx = cr.primary.index;
+                focus_b = text.char_indices().nth(char_idx).map(|(b, _)| b).unwrap_or(text.len());
+            }
+        }
+    }
+
     let page_content_h = ed.layout.content_height() * ed.zoom;
     let cw = ed.layout.content_width() * ed.zoom;
     let bs = ed.base_size as f32 * ed.zoom;
     let font = ed.base_font;
     let mt = ed.layout.margin_top * ed.zoom;
     let min_fill = bs * 2.0;
-    let mut changed = false;
+
+    let mut j = 0;
+    while j < ed.paras.len() {
+        if ed.paras[j].is_split && j > 0 {
+            let prev_len = ed.paras[j - 1].text.len();
+            let orig_space_after = ed.paras[j].space_after;
+            if focus_p == j {
+                focus_p = j - 1;
+                focus_b += prev_len;
+            } else if focus_p > j {
+                focus_p -= 1;
+            }
+            merge_paragraphs(&mut ed.paras, j - 1);
+            ed.paras[j - 1].space_after = orig_space_after;
+            ed.paras[j - 1].is_split = false;
+        } else {
+            j += 1;
+        }
+    }
+
     let mut cur_y = mt;
     let mut i = 0usize;
-
     while i < ed.paras.len() {
         let para = ed.paras[i].clone();
         if para.style == ParaStyle::HRule {
@@ -493,20 +528,26 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
             i += 1;
             continue;
         }
-
+        
         if !para.text.is_empty() && cur_y > mt && remaining > min_fill {
             let split = find_split_byte_fit(ctx, &para, font, ed.base_size, wrap_w, remaining, ed.zoom, is_dark);
             if split > 0 && split < para.text.len() {
                 let (left, right) = split_para_at_byte(&para, split);
                 ed.paras[i] = left;
                 ed.paras.insert(i + 1, right);
-                changed = true;
+                if focus_p == i {
+                    if focus_b >= split {
+                        focus_p = i + 1;
+                        focus_b -= split;
+                    }
+                } else if focus_p > i {
+                    focus_p += 1;
+                }
                 continue;
             }
         }
-
         cur_y = mt;
-
+        
         if !para.text.is_empty() && h > page_content_h + 0.5 {
             let split = find_split_byte_fit(ctx, &para, font, ed.base_size, wrap_w, page_content_h, ed.zoom, is_dark);
             let split = split.max(para.text.char_indices().nth(1).map(|(b, _)| b).unwrap_or(para.text.len()));
@@ -514,17 +555,45 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
                 let (left, right) = split_para_at_byte(&para, split);
                 ed.paras[i] = left;
                 ed.paras.insert(i + 1, right);
-                changed = true;
+                if focus_p == i {
+                    if focus_b >= split {
+                        focus_p = i + 1;
+                        focus_b -= split;
+                    }
+                } else if focus_p > i {
+                    focus_p += 1;
+                }
                 continue;
             }
         }
-
+        
         cur_y = (cur_y + h).min(mt + page_content_h);
         if cur_y >= mt + page_content_h { cur_y = mt; }
         i += 1;
     }
+    
+    let n = ed.paras.len();
+    ed.para_texts.resize(n, String::new());
+    ed.para_ids.resize_with(n, || egui::Id::new(egui::Id::NULL));
+    ed.para_heights.resize(n, 0.0);
+    for k in 0..n {
+        ed.para_texts[k] = ed.paras[k].text.clone();
+        ed.para_ids[k] = egui::Id::new(("de_para", k as u64));
+    }
 
-    if changed { ed.sync_texts(); ed.heights_dirty = true; ed.find_stale = true; }
+    if focus_p < n {
+        ed.focused_para = focus_p;
+        ed.pending_focus = Some(focus_p);
+        let text = &ed.para_texts[focus_p];
+        let safe_b = focus_b.min(text.len());
+        let char_idx = text[..safe_b].chars().count();
+        
+        let id = ed.para_ids[focus_p];
+        let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(char_idx))));
+        egui::TextEdit::store_state(ctx, id, state);
+    }
+    ed.find_stale = true;
 }
 
 fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context, is_dark: bool) {
@@ -544,8 +613,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let cw = ed.layout.content_width() * ed.zoom;
     let bs = ed.base_size as f32 * ed.zoom;
     let font = ed.base_font;
-    let n = ed.paras.len();
     reflow_overflow_paragraphs(ed, ctx, is_dark);
+    let n = ed.paras.len();
 
     if ed.heights_dirty || ed.para_heights.len() != n {
         ed.para_heights.resize(n, 0.0);
@@ -1305,7 +1374,7 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
     let mut cancel = false;
     let mut open = true;
 
-    egui::Window::new("Page Setup")
+    let page_win = egui::Window::new("Page Setup")
         .collapsible(false).resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .fixed_size(egui::vec2(400.0, 0.0))
@@ -1320,6 +1389,7 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
             let cols = 3usize;
             let rows = (presets.len() + cols - 1) / cols;
             let btn_w = (ui.available_width() - (cols as f32 - 1.0) * 6.0) / cols as f32;
+            let sizes = ["8.5 x 11 in", "8.5 x 11 in", "210 x 297 mm", "8.5 x 14 in", "297 x 420 mm", "148 x 210 mm", "7.25 x 10.5 in", "11 x 17 in", "176 x 250 mm"];
             for row in 0..rows {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
@@ -1327,29 +1397,36 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
                         let idx = row * cols + col;
                         let Some((name, _)) = presets.get(idx) else { continue; };
                         let sel = draft.1 == idx;
+                        let size_str = sizes.get(idx).copied().unwrap_or("");
                         let (fill, stroke, label_col) = if sel {
                             (if is_dark { egui::Color32::from_rgb(28,52,100) } else { egui::Color32::from_rgb(225,238,255) },
-                             egui::Stroke::new(1.5, if is_dark { ColorPalette::BLUE_500 } else { ColorPalette::BLUE_400 }),
-                             if is_dark { egui::Color32::WHITE } else { ColorPalette::BLUE_700 })
+                            egui::Stroke::new(1.5, if is_dark { ColorPalette::BLUE_500 } else { ColorPalette::BLUE_400 }),
+                            if is_dark { egui::Color32::WHITE } else { ColorPalette::BLUE_700 })
                         } else {
                             (if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 },
-                             egui::Stroke::new(1.0, if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }),
-                             tc)
+                            egui::Stroke::new(1.0, if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 }),
+                            tc)
+                        };
+                        let size_col = if sel {
+                            egui::Color32::from_rgba_unmultiplied(label_col.r(), label_col.g(), label_col.b(), 160)
+                        } else {
+                            muted
                         };
                         let (tag_bg, tag_col, badge) = match idx {
                             0 => (tag_bg_gd, tag_col_gd, Some("Docs")),
                             1 => (tag_bg_wd, tag_col_wd, Some("Word")),
                             _ => (egui::Color32::TRANSPARENT, egui::Color32::TRANSPARENT, None),
                         };
-                        let (cell, _) = ui.allocate_exact_size(egui::vec2(btn_w, 44.0), egui::Sense::hover());
+                        let (cell, _) = ui.allocate_exact_size(egui::vec2(btn_w, 56.0), egui::Sense::hover());
                         if ui.is_rect_visible(cell) {
                             let painter = ui.painter_at(cell);
                             painter.rect(cell, 6.0, fill, stroke, egui::StrokeKind::Inside);
-                            let ty = if badge.is_some() { cell.min.y + 13.0 } else { cell.center().y };
-                            painter.text(egui::pos2(cell.center().x, ty), egui::Align2::CENTER_CENTER, *name, egui::FontId::proportional(12.0), label_col);
+                            let name_y = if badge.is_some() { cell.min.y + 15.0 } else { cell.center().y - 8.0 };
+                            painter.text(egui::pos2(cell.center().x, name_y), egui::Align2::CENTER_CENTER, *name, egui::FontId::proportional(12.0), label_col);
+                            painter.text(egui::pos2(cell.center().x, name_y + 14.0), egui::Align2::CENTER_CENTER, size_str, egui::FontId::proportional(9.5), size_col);
                             if let Some(b) = badge {
                                 let bw = 34.0_f32;
-                                let br = egui::Rect::from_min_size(egui::pos2(cell.center().x - bw/2.0, cell.max.y - 14.0), egui::vec2(bw, 11.0));
+                                let br = egui::Rect::from_min_size(egui::pos2(cell.center().x - bw/2.0, cell.max.y - 13.0), egui::vec2(bw, 11.0));
                                 painter.rect_filled(br, 3.0, tag_bg);
                                 painter.text(br.center(), egui::Align2::CENTER_CENTER, b, egui::FontId::proportional(8.0), tag_col);
                             }
@@ -1403,6 +1480,11 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
                 if ui.button("Cancel").clicked() { cancel = true; }
             });
         });
+
+    if let Some(r) = &page_win {
+        let clicked_outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !r.response.rect.contains(p)));
+        if clicked_outside { cancel = true; }
+    }
 
     if apply {
         let (layout, preset, base_size) = ed.page_settings_draft.take().unwrap();

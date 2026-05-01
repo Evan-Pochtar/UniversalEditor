@@ -112,13 +112,13 @@ pub struct DocSpan { pub len: usize, pub fmt: SpanFmt }
 pub struct DocParagraph {
     pub text: String, pub spans: Vec<DocSpan>, pub style: ParaStyle, pub align: Align,
     pub indent_left: f32, pub indent_first: f32, pub space_before: f32, pub space_after: f32,
-    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool,
+    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool,
 }
 impl DocParagraph {
     pub fn new() -> Self {
         Self { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }],
             style: ParaStyle::Normal, align: Align::Left, indent_left: 0.0, indent_first: 0.0,
-            space_before: 0.0, space_after: 6.0, line_height: 1.15, list_num: None, checked: false }
+            space_before: 0.0, space_after: 6.0, line_height: 1.15, list_num: None, checked: false, is_split: false }
     }
     pub fn with_style(s: ParaStyle) -> Self {
         let mut p = Self::new();
