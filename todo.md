@@ -57,6 +57,7 @@
 ### Document Editor Bugs
 
 - [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
+- [ ] Cannot highlight and scroll at the same time
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
   - [ ] Doesn't load checklists properly (.docx and .odt)
@@ -68,9 +69,6 @@
   - [ ] Highlights do not export correctly
   - [ ] Links do not export correctly
   - [ ] Lists do not export correctly
-- [ ] Highlighting
-  - [ ] Cannot highlight and scroll at the same time
-  - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
 - [ ] Page Break
   - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
   - [ ] Sometimes page breaks cut a paragraph in the middle of a word

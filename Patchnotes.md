@@ -290,3 +290,4 @@
 - **DOCUMENT EDITOR**: Headers, Titles, Subtitles, etc. now export correctly
 - **DOCUMENT EDITOR**: Tab indents and paragraph indents now the same size
 - **DOCUMENT EDITOR**: Undoing tabs no longer moves the cursor one space too far
+- **DOCUMENT EDITOR**: Multi-line highlights now properly align with letters regardless of font size

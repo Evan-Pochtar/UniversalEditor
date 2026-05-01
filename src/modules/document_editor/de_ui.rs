@@ -7,9 +7,10 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
-fn multiline_highlight(galley: &egui::Galley,text: &str,start_byte: usize,end_byte: usize) -> Vec<egui::Rect> {
+fn multiline_highlight(galley: &egui::Galley, text: &str, start_byte: usize, end_byte: usize) -> Vec<egui::Rect> {
     let start_byte = start_byte.min(text.len()); let end_byte = end_byte.min(text.len());
     let start_char = text[..start_byte].chars().count(); let end_char = text[..end_byte].chars().count();
+    let start_adjust = 4.0; let end_adjust = 4.0;
     let mut rects = Vec::new();
     let mut char_pos = 0usize;
 
@@ -18,30 +19,40 @@ fn multiline_highlight(galley: &egui::Galley,text: &str,start_byte: usize,end_by
         let glyph_count = row.glyphs.len();
         let row_end = char_pos + glyph_count;
         if start_char < row_end && end_char > row_start {
-            let local_start = start_char.saturating_sub(row_start).min(glyph_count); let local_end = (end_char - row_start).min(glyph_count);
+            let local_start = start_char.saturating_sub(row_start).min(glyph_count);
+            let local_end = (end_char - row_start).min(glyph_count);
             let x0 = if local_start == 0 {
-                row.rect().min.x
+                row.rect().min.x + start_adjust
             } else {
-                row.glyphs.get(local_start).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+                row.glyphs.get(local_start).map(|g| g.pos.x + start_adjust).unwrap_or(row.rect().max.x)
             };
             let x1 = if local_end >= glyph_count {
-                row.rect().max.x
+                row.rect().max.x + end_adjust
             } else {
-                row.glyphs.get(local_end).map(|g| g.pos.x).unwrap_or(row.rect().max.x)
+                row.glyphs.get(local_end).map(|g| g.pos.x + end_adjust).unwrap_or(row.rect().max.x)
             };
             if x1 >= x0 {
-                rects.push(egui::Rect::from_min_max(egui::pos2(x0, row.rect().min.y), egui::pos2(x1.max(x0 + 4.0), row.rect().max.y)));
+                rects.push(egui::Rect::from_min_max(
+                    egui::pos2(x0, row.rect().min.y),
+                    egui::pos2(x1.max(x0 + 4.0), row.rect().max.y),
+                ));
             }
         }
         char_pos = row_end;
-        if row.ends_with_newline { char_pos += 1; }
+        if row.ends_with_newline {
+            char_pos += 1;
+        }
     }
 
     if rects.is_empty() && start_byte == 0 && end_byte >= text.len() {
         if let Some(row) = galley.rows.first() {
-            rects.push(egui::Rect::from_min_max(egui::pos2(row.rect().min.x, row.rect().min.y), egui::pos2(row.rect().min.x + 8.0, row.rect().max.y)));
+            rects.push(egui::Rect::from_min_max(
+                egui::pos2(row.rect().min.x + start_adjust, row.rect().min.y),
+                egui::pos2(row.rect().min.x + 8.0 + end_adjust, row.rect().max.y),
+            ));
         }
     }
+
     rects
 }
 
@@ -804,8 +815,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         let job = build_layout_job(&para.spans, &para.text, para, font, ed.base_size, wrap_w, is_dark, ed.zoom);
                         let galley = ctx.fonts_mut(|f| f.layout_job(job));
                         let align_offset = match para.align {
-                            Align::Center => ((edit_w - galley.rect.width()) / 2.0).max(0.0),
-                            Align::Right  => (edit_w - galley.rect.width()).max(0.0),
+                            Align::Center => ((edit_w - galley.rect.width() - 8.0) / 2.0).max(0.0),
+                            Align::Right => (edit_w - galley.rect.width() - 8.0).max(0.0),
                             _ => 0.0,
                         };
                         let base_x = edit_x + align_offset;

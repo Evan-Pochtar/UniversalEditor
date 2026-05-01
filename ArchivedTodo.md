@@ -163,6 +163,7 @@
 - [x] Headers/Titles do not export correctly
 - [x] Undoing a tab/indent moves cursor one character too far
 - [x] Paragraph indent and tab indent aren't the same size
+- [x] Highlighting seems to not align perfectly with letters, especially with large font sizes
 
 ### Other Bugs
 
