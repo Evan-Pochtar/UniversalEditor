@@ -1020,30 +1020,42 @@ impl UniversalEditor {
                             .show(ui, |ui| { ui.label(egui::RichText::new(label).size(10.0).color(section_col).strong()); });
                     };
 
-                    section(ui, "MODULES");
+                    let draw_card = |ui: &mut egui::Ui, letter: &str, name: &str, desc: &str, accent: egui::Color32| {
+                        egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(8.0).inner_margin(14.0).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let (br, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
+                                ui.painter().rect_filled(br, 6.0, accent.linear_multiply(if is_dark { 0.25 } else { 0.12 }));
+                                ui.painter().text(br.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(13.0).into(), accent);
+                                ui.add_space(8.0);
+                                ui.label(egui::RichText::new(name).size(13.0).strong().color(title_col));
+                            });
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new(desc).size(11.5).color(text_col));
+                        });
+                        ui.add_space(8.0);
+                    };
+
+                    section(ui, "SCREENS");
                     ui.columns(2, |cols| {
                         for (i, &(letter, name, desc, accent)) in [
                             ("T", "Text Editor", "Markdown & plain text editing with live preview, formatting shortcuts, heading styles, tables, checklists, and inline code rendering.", ColorPalette::BLUE_500),
                             ("I", "Image Editor", "Layer-based raster editor with brushes, eraser, fill, text layers, crop, retouch tools, blend modes, and filter adjustments.", ColorPalette::PURPLE_500),
                             ("J", "JSON Editor", "Tree and raw text views for JSON with inline editing, undo/redo, sorting, search, breadcrumb navigation, and schema-free editing.", ColorPalette::AMBER_500),
                             ("D", "Document Editor", "Write and format rich documents with paragraph styles, heading hierarchy, inline formatting, alignment, indentation, and export.", ColorPalette::GREEN_500),
+                        ].iter().enumerate() {
+                            draw_card(&mut cols[i % 2], letter, name, desc, accent);
+                        }
+                    });
+
+                    ui.add_space(4.0);
+                    section(ui, "CONVERTERS");
+                    ui.columns(2, |cols| {
+                        for (i, &(letter, name, desc, accent)) in [
                             ("C", "Image Converter", "Batch-convert images between JPEG, PNG, WebP, BMP, TIFF, ICO, and AVIF with per-format quality controls and custom output paths.", ColorPalette::TEAL_500),
                             ("D", "Data Converter", "Convert structured data between JSON, YAML, TOML, XML, and CSV formats with pretty-print options and overwrite controls.", ColorPalette::GREEN_600),
                             ("A", "Archive Converter", "Convert structured data between ZIP, TAR, TAR.GZ, TAR.BZ2, and 7z archive formats with compression level settings.", ColorPalette::AMBER_600),
                         ].iter().enumerate() {
-                            let col = &mut cols[i % 2];
-                            egui::Frame::new().fill(card_bg).stroke(egui::Stroke::new(1.0, card_border)).corner_radius(8.0).inner_margin(14.0).show(col, |ui| {
-                                ui.horizontal(|ui| {
-                                    let (br, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
-                                    ui.painter().rect_filled(br, 6.0, accent.linear_multiply(if is_dark { 0.25 } else { 0.12 }));
-                                    ui.painter().text(br.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(13.0).into(), accent);
-                                    ui.add_space(8.0);
-                                    ui.label(egui::RichText::new(name).size(13.0).strong().color(title_col));
-                                });
-                                ui.add_space(6.0);
-                                ui.label(egui::RichText::new(desc).size(11.5).color(text_col));
-                            });
-                            col.add_space(8.0);
+                            draw_card(&mut cols[i % 2], letter, name, desc, accent);
                         }
                     });
 

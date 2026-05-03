@@ -58,6 +58,7 @@
 
 - [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 - [ ] Cannot highlight and scroll at the same time
+- [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
   - [ ] Doesn't load checklists properly (.docx and .odt)
