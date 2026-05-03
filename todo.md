@@ -105,9 +105,7 @@
 
 ### Json Editor
 
-- [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
-- [ ] Search should only show up when clicking ctrl+f
 - [ ] Make navigation bigger and more noticeable
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)

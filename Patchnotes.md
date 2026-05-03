@@ -269,6 +269,8 @@
 
 #### Features
 
+- **JSON EDITOR**: Search is now opened with top toolbar or ctrl+f, no longer open by default
+- **JSON EDITOR**: Added further sorting methods
 - **DOCUMENT EDITOR**: Font now works per character not for the whole document at once
 - **DOCUMENT EDITOR**: Added the ability to create links
 - **DOCUMENT EDITOR**: Added the ability to highlight text

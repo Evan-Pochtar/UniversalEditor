@@ -275,6 +275,8 @@
 - [x] Create JSON styling file, move out of ui file
 - [x] Add line numbers to text view
 - [x] Change cursor when hovering over buttons/navigation
+- [x] Search should only show up when clicking ctrl+f
+- [x] Make the sorting make a little more sense
 
 ### Document Editor
 
