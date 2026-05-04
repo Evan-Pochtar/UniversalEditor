@@ -296,6 +296,7 @@
 - [x] Shift tab should remove indent
 - [x] Clean up toolbar
 - [x] Add measurements to page sizes in the page settings panel
+- [x] Tables
 
 ### CONVERTER: Img 2 Img
 

@@ -281,6 +281,8 @@
 - **DOCUMENT EDITOR**: Shift tab now works to remove tab indents/paragraph indents
 - **DOCUMENT EDITOR**: Toolbar cleaned up, moved options to the top menu bar
 - **DOCUMENT EDITOR**: Measurements added to page sizes in the page settings modal
+- **DOCUMENT EDITOR**: Removed space after for regular text to condense text and prevent gaps between paragraphs
+- **DOCUMENT EDITOR**: Added the ability to create, load, and export tables
 
 #### Debugging
 

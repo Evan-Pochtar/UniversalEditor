@@ -42,6 +42,9 @@ pub struct DocumentEditor {
     pub(super) doc_sel: Option<[DocPos; 2]>,
     pub(super) page_settings_draft: Option<(PageLayout, usize, u32)>,
     pub(super) last_edit_action: u8,
+    pub(super) table_picker_hover: (usize, usize),
+    pub(super) active_table: Option<(usize, usize, usize)>,
+    pub(super) cell_edit_buf: String,
 }
 
 impl DocumentEditor {
@@ -77,6 +80,7 @@ impl DocumentEditor {
             para_heights: vec![0.0; n], heights_dirty: true,
             preset_idx: 0, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
+            table_picker_hover: (0, 0), active_table: None, cell_edit_buf: String::new(),
         }
     }
 
@@ -425,6 +429,21 @@ impl DocumentEditor {
         } else {
             self.undo_stack.pop_back();
         }
+    }
+
+    pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
+        self.push_undo();
+        let make_cell = || TableCell { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }] };
+        let mut p = DocParagraph::with_style(ParaStyle::Table);
+        p.table = Some(Box::new(TableData {
+            rows: (0..rows).map(|_| (0..cols).map(|_| make_cell()).collect()).collect(),
+        }));
+        let idx = (self.focused_para + 1).min(self.paras.len());
+        self.paras.insert(idx, p);
+        self.focused_para = idx;
+        self.sync_texts();
+        self.dirty = true;
+        self.heights_dirty = true;
     }
 
     pub(super) fn insert_horizontal_rule_after_focus(&mut self) {

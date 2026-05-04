@@ -59,6 +59,8 @@
 - [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
+- [ ] Cannot navigate up or down paste tables
+- [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.docx and .odt)
   - [ ] Doesn't load checklists properly (.docx and .odt)
@@ -117,13 +119,18 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Export to PDF, MD, rtf, epub, html
-- [ ] Tables
+- [ ] Export
+  - [ ] PDF
+  - [ ] MD
+  - [ ] rtf
+  - [ ] epub
+  - [ ] html
 - [ ] Images
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Improve look of find/replace panel
+- [ ] Further Table options (border color, border thickness, fill color)
 
 ### CONVERTERS
 

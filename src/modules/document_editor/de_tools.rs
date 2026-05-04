@@ -24,7 +24,7 @@ impl FontChoice {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ParaStyle {
     #[default] Normal, H1, H2, H3, H4, H5, H6,
-    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule,
+    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule, Table,
 }
 impl ParaStyle {
     pub fn label(self) -> &'static str {
@@ -34,7 +34,7 @@ impl ParaStyle {
             Self::H6 => "Heading 6", Self::Title => "Title", Self::Subtitle => "Subtitle",
             Self::BlockQuote => "Block Quote", Self::Code => "Code Block",
             Self::ListBullet => "Bullet List", Self::ListOrdered => "Numbered List", Self::ListCheck => "Checklist",
-            Self::HRule => "Horizontal Rule",
+            Self::HRule => "Horizontal Rule", Self::Table => "Table",
         }
     }
     pub fn all() -> &'static [ParaStyle] {
@@ -60,7 +60,7 @@ impl ParaStyle {
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
     pub fn default_font_size_pt(self, base_size: u32) -> u32 { (base_size as f32 * self.size_scale()).round() as u32 }
     pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
-    pub fn space_after(self) -> f32 { match self { Self::H1|Self::H2 => 8.0, Self::H3|Self::H4|Self::HRule => 8.0, _ => 6.0 } }
+    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 | Self::HRule => 8.0, Self::Normal | Self::Table => 0.0, _ => 6.0, } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
     pub fn outline_depth(self) -> Option<u8> {
         match self { Self::Title|Self::Subtitle => Some(0), Self::H1 => Some(1), Self::H2 => Some(2), Self::H3 => Some(3), Self::H4 => Some(4), Self::H5 => Some(5), Self::H6 => Some(6), _ => None }
@@ -70,7 +70,7 @@ impl ParaStyle {
             Self::H4 => "Heading4", Self::H5 => "Heading5", Self::H6 => "Heading6",
             Self::Title => "Title", Self::Subtitle => "Subtitle", Self::BlockQuote => "Quote",
             Self::Code => "CodeBlock", Self::ListBullet => "ListBullet", Self::ListOrdered => "ListNumber", Self::ListCheck => "ListCheck",
-            Self::HRule => "HRule" }
+            Self::HRule => "HRule", Self::Table => "Table", }
     }
     pub fn from_docx_id(s: &str) -> Self {
         match s {
@@ -108,17 +108,22 @@ pub struct SpanFmt {
 #[derive(Debug, Clone)]
 pub struct DocSpan { pub len: usize, pub fmt: SpanFmt }
 
+#[derive(Debug, Clone, Default)]
+pub struct TableCell { pub text: String, pub spans: Vec<DocSpan> }
+#[derive(Debug, Clone)]
+pub struct TableData { pub rows: Vec<Vec<TableCell>> }
+
 #[derive(Debug, Clone)]
 pub struct DocParagraph {
     pub text: String, pub spans: Vec<DocSpan>, pub style: ParaStyle, pub align: Align,
     pub indent_left: f32, pub indent_first: f32, pub space_before: f32, pub space_after: f32,
-    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool,
+    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool, pub table: Option<Box<TableData>>,
 }
 impl DocParagraph {
     pub fn new() -> Self {
         Self { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }],
             style: ParaStyle::Normal, align: Align::Left, indent_left: 0.0, indent_first: 0.0,
-            space_before: 0.0, space_after: 6.0, line_height: 1.15, list_num: None, checked: false, is_split: false }
+            space_before: 0.0, space_after: 0.0, line_height: 1.15, list_num: None, checked: false, is_split: false, table: None, }
     }
     pub fn with_style(s: ParaStyle) -> Self {
         let mut p = Self::new();
@@ -440,8 +445,18 @@ pub fn convert_leading_tabs_to_indent(paras: &mut Vec<DocParagraph>) {
     }
 }
 
-pub fn word_count(paras: &[DocParagraph]) -> usize { paras.iter().map(|p| p.text.split_whitespace().count()).sum() }
-pub fn char_count(paras: &[DocParagraph]) -> usize { paras.iter().map(|p| p.text.chars().count()).sum() }
+pub fn word_count(paras: &[DocParagraph]) -> usize {
+    paras.iter().map(|p| {
+        p.text.split_whitespace().count()
+            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.split_whitespace().count()).sum::<usize>()).unwrap_or(0)
+    }).sum()
+}
+pub fn char_count(paras: &[DocParagraph]) -> usize {
+    paras.iter().map(|p| {
+        p.text.chars().count()
+            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.chars().count()).sum::<usize>()).unwrap_or(0)
+    }).sum()
+}
 
 const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#;
 const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
@@ -465,6 +480,7 @@ fn style_size_hp(style: ParaStyle) -> Option<u32> {
 fn docx_pstyle_block(style: ParaStyle) -> String {
     let (style_id, display_name, based_on, outline, spacing_before, spacing_after, indent_left, size_hp, bold, italic, font_name) = match style {
         ParaStyle::Normal => return String::new(),
+        ParaStyle::Table => return String::new(),
         ParaStyle::H1 => ("Heading1", "Heading 1", Some("Normal"), Some(0), 320, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H2 => ("Heading2", "Heading 2", Some("Normal"), Some(1), 240, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H3 => ("Heading3", "Heading 3", Some("Normal"), Some(2), 200, 60, None, style_size_hp(style), true, false, None),
@@ -509,9 +525,37 @@ fn build_docx_styles_xml() -> String {
 }
 
 fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
+fn build_table_xml(tbl: &TableData) -> String {
+    let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+    let cw = 5000 / ncols;
+    let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"4\" w:color=\"auto\"/>", s);
+    let mut out = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
+        b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV")
+    );
+    for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", cw * 120)); }
+    out.push_str("</w:tblGrid>");
+    for row in &tbl.rows {
+        out.push_str("<w:tr>");
+        for cell in row {
+            out.push_str(&format!(
+                "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"pct\"/></w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
+                cw, xml_esc(&cell.text)
+            ));
+        }
+        out.push_str("</w:tr>");
+    }
+    out.push_str("</w:tbl>");
+    out
+}
+
 fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:body>\n");
     for para in paras {
+        if para.style == ParaStyle::Table {
+            if let Some(ref t) = para.table { out.push_str(&build_table_xml(t)); }
+            continue;
+        }
         if para.style == ParaStyle::HRule {
             out.push_str("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"auto\"/></w:pBdr></w:pPr></w:p>\n");
             continue;
@@ -699,12 +743,16 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
     let mut in_pbdr = false; let mut has_hborder = false;
     let mut in_numpr = false; let mut pending_num_id: Option<u32> = None;
     let mut cur_link_url: Option<String> = None;
+    let (mut in_tbl, mut in_tc) = (false, false);
+    let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
+    let mut cur_tbl_row: Vec<TableCell> = Vec::new();
+    let mut cur_tc_text = String::new();
 
     loop {
         match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(ref e) => {
                 match e.local_name().as_ref() {
-                    b"p" => { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; }
+                    b"p" => if !in_tbl { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; }
                     b"pPr" => in_ppr = true,
                     b"pBdr" => if in_ppr { in_pbdr = true; },
                     b"numPr" => if in_ppr { in_numpr = true; },
@@ -723,6 +771,9 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
                     b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"tbl" => { in_tbl = true; cur_tbl_rows.clear(); }
+                    b"tr" if in_tbl => { cur_tbl_row.clear(); }
+                    b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
                     b"vertAlign" => {
                         if in_rpr {
                             if let Some(v) = get_attr(e, b"val") {
@@ -869,7 +920,21 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
             }
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
-                    b"p" => { if let Some(mut p) = cur_para.take() { if has_hborder && p.text.trim().is_empty() { p.style = ParaStyle::HRule; } paras.push(p); } has_hborder = false; }
+                    b"tbl" => {
+                        in_tbl = false; in_tc = false;
+                        let mut p = DocParagraph::with_style(ParaStyle::Table);
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows) }));
+                        paras.push(p);
+                    }
+                    b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
+                    b"tc" if in_tbl => {
+                        let text = std::mem::take(&mut cur_tc_text);
+                        let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
+                            else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
+                        cur_tbl_row.push(TableCell { text, spans });
+                        in_tc = false;
+                    }
+                    b"p" => if !in_tbl { if let Some(mut p) = cur_para.take() { if has_hborder && p.text.trim().is_empty() { p.style = ParaStyle::HRule; } paras.push(p); } has_hborder = false; }
                     b"pPr" => {
                         in_ppr = false;
                         if let (Some(nid), Some(ref mut p)) = (pending_num_id.take(), cur_para.as_mut()) {
@@ -887,7 +952,8 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => in_pbdr = false,
                     b"r" => {
                         in_run = false;
-                        if let Some(ref mut para) = cur_para {
+                        if in_tbl && in_tc { cur_tc_text.push_str(&cur_run_text); }
+                        else if let Some(ref mut para) = cur_para {
                             let blen = cur_run_text.len();
                             para.text.push_str(&cur_run_text);
                             if para.spans.last().map(|s| s.fmt == cur_fmt && s.len > 0).unwrap_or(false) { para.spans.last_mut().unwrap().len += blen; }
@@ -1008,7 +1074,7 @@ fn para_to_odt_style(s: ParaStyle) -> &'static str {
         ParaStyle::H6=>"Heading_20_6", ParaStyle::Title=>"Title", ParaStyle::Subtitle=>"Subtitle",
         ParaStyle::BlockQuote=>"Quotations", ParaStyle::Code=>"Preformatted_20_Text",
         ParaStyle::ListBullet=>"List_20_Bullet", ParaStyle::ListOrdered=>"List_20_Number", ParaStyle::ListCheck=>"List_20_Check",
-        ParaStyle::HRule=>"Standard",
+        ParaStyle::HRule=>"Standard", ParaStyle::Table => "Standard",
     }
 }
 
@@ -1075,8 +1141,7 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     for p in paras {
         for s in &p.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } }
     }
-    let ns = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"";
-    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content {}><office:automatic-styles>", ns);
+    let ns = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"";    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content {}><office:automatic-styles>", ns);
     for (id, fmt) in &span_styles {
         out.push_str(&format!("<style:style style:name=\"{}\" style:family=\"text\"><style:text-properties", id));
         if fmt.bold { out.push_str(" fo:font-weight=\"bold\""); }
@@ -1091,6 +1156,22 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     }
     out.push_str("</office:automatic-styles><office:body><office:text>");
     for para in paras {
+        if para.style == ParaStyle::Table {
+            if let Some(ref tbl) = para.table {
+                let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1);
+                out.push_str("<table:table table:name=\"Table\">");
+                for _ in 0..ncols { out.push_str("<table:table-column/>"); }
+                for row in &tbl.rows {
+                    out.push_str("<table:table-row>");
+                    for cell in row {
+                        out.push_str(&format!("<table:table-cell><text:p>{}</text:p></table:table-cell>", xml_esc(&cell.text)));
+                    }
+                    out.push_str("</table:table-row>");
+                }
+                out.push_str("</table:table>");
+            }
+            continue;
+        }
         if para.style == ParaStyle::HRule { out.push_str("<text:p text:style-name=\"Standard\"><text:s/></text:p>"); continue; }
         let sname = para_to_odt_style(para.style);
         let is_h = matches!(para.style, ParaStyle::H1|ParaStyle::H2|ParaStyle::H3|ParaStyle::H4|ParaStyle::H5|ParaStyle::H6);
@@ -1138,6 +1219,10 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
     let (mut in_auto, mut in_body) = (false, false);
+    let (mut in_tbl, mut in_tc_odt) = (false, false);
+    let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
+    let mut cur_tbl_row: Vec<TableCell> = Vec::new();
+    let mut cur_tc_text = String::new();
     let mut cur_sty: Option<(String, OdtStyle)> = None;
     let mut para_state: Option<(DocParagraph, Vec<(SpanFmt, String)>)> = None;
     let mut span_stack: Vec<(SpanFmt, String)> = Vec::new();
@@ -1158,6 +1243,9 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "style" if in_auto => { cur_sty = Some((odt_attr(e, b"name").unwrap_or_default(), OdtStyle { parent: odt_attr(e, b"parent-style-name").unwrap_or_default(), ..Default::default() })); }
                     "list-style" if in_auto => { cur_list_style = odt_attr(e, b"name"); }
                     "text-properties" if cur_sty.is_some() => { if let Some((_, ref mut s)) = cur_sty { odt_apply_text_props(e, s); } }
+                    "table" if in_body => { in_tbl = true; cur_tbl_rows.clear(); }
+                    "table-row" if in_tbl => { cur_tbl_row.clear(); }
+                    "table-cell" if in_tbl => { in_tc_odt = true; cur_tc_text.clear(); }
                     "paragraph-properties" if cur_sty.is_some() => { 
                         if let Some((_, ref mut s)) = cur_sty { 
                             if let Some(v) = odt_attr(e, b"text-align") { s.align = match v.as_str() { "center"=>Align::Center,"right"|"end"=>Align::Right,"justify"=>Align::Justify,_=>Align::Left }; }
@@ -1169,7 +1257,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                         list_stack.push(list_style_map.get(&sname).copied().unwrap_or((ParaStyle::ListBullet, None)));
                     }
                     "list-item" if in_body => in_list_item = true,
-                    "p" | "h" if in_body => {
+                    "p" | "h" if in_body => if !in_tbl {
                         let sname = odt_attr(e, b"style-name").unwrap_or_default();
                         let outline: u8 = if tag=="h" { odt_attr(e, b"outline-level").and_then(|v| v.parse().ok()).unwrap_or(1) } else { 0 };
                         let (mut ps, align, h_border) = odt_resolve_para(&sname, &smap, outline);
@@ -1218,8 +1306,15 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     }
                     "list-level-style-number" => if let Some(ref n) = cur_list_style { list_style_map.insert(n.clone(), (ParaStyle::ListOrdered, None)); }
                     "line-break" => push_text(&mut para_state, &mut span_stack, "\n"),
-                    "s" => { let n = odt_attr(e, b"c").and_then(|v| v.parse().ok()).unwrap_or(1usize); push_text(&mut para_state, &mut span_stack, &" ".repeat(n)); }
-                    "tab" => push_text(&mut para_state, &mut span_stack, "\t"),
+                    "s" => {
+                        let n = odt_attr(e, b"c").and_then(|v| v.parse().ok()).unwrap_or(1usize);
+                        if in_tbl && in_tc_odt { cur_tc_text.push_str(&" ".repeat(n)); }
+                        else { push_text(&mut para_state, &mut span_stack, &" ".repeat(n)); }
+                    }
+                    "tab" => {
+                        if in_tbl && in_tc_odt { cur_tc_text.push('\t'); }
+                        else { push_text(&mut para_state, &mut span_stack, "\t"); }
+                    }
                     _ => {}
                 }
             }
@@ -1232,7 +1327,21 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "list-style" => cur_list_style = None,
                     "list" => { list_stack.pop(); }
                     "list-item" => in_list_item = false,
-                    "p" | "h" if in_body => {
+                    "table" if in_tbl => {
+                        in_tbl = false; in_tc_odt = false;
+                        let mut p = DocParagraph::with_style(ParaStyle::Table);
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows) }));
+                        paras.push(p);
+                    }
+                    "table-row" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
+                    "table-cell" if in_tbl => {
+                        let text = std::mem::take(&mut cur_tc_text);
+                        let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
+                            else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
+                        cur_tbl_row.push(TableCell { text, spans });
+                        in_tc_odt = false;
+                    }
+                    "p" | "h" if in_body && !in_tbl => {
                         while let Some((fmt, text)) = span_stack.pop() { if !text.is_empty() { if let Some((_, chunks)) = para_state.as_mut() { chunks.push((fmt, text)); } } }
                         if let Some((mut p, chunks)) = para_state.take() {
                             for (fmt, text) in &chunks {
@@ -1249,7 +1358,12 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     _ => {}
                 }
             }
-            Event::Text(ref e) => { if para_state.is_some() { if let Ok(s) = std::str::from_utf8(e.as_ref()) { push_text(&mut para_state, &mut span_stack, s); } } }
+            Event::Text(ref e) => {
+                if let Ok(s) = std::str::from_utf8(e.as_ref()) {
+                    if in_tbl && in_tc_odt { cur_tc_text.push_str(s); }
+                    else if para_state.is_some() { push_text(&mut para_state, &mut span_stack, s); }
+                }
+            }
             Event::Eof => break,
             _ => {}
         }
