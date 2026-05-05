@@ -67,7 +67,7 @@ fn text_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool,
     let lc = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
     ui.label(egui::RichText::new("Text Color").size(11.0).color(lc));
     ui.add_space(4.0);
-    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(11.0)).min_size(egui::vec2(120.0, 20.0))).clicked() {
+    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(11.0)).min_size(egui::vec2(120.0, 20.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         ed.apply_fmt_color(None);
         egui::Popup::close_id(ui.ctx(), popup_id);
     }
@@ -81,7 +81,7 @@ fn text_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: bool,
                     .stroke(egui::Stroke::new(1.0, border))
                     .min_size(egui::vec2(20.0, 20.0))
                     .corner_radius(3.0))
-                    .on_hover_text(name).clicked()
+                    .on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
                 {
                     ed.apply_fmt_color(Some(c));
                     egui::Popup::close_id(ui.ctx(), popup_id);
@@ -101,7 +101,7 @@ fn highlight_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: 
     let lc = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
     ui.label(egui::RichText::new("Highlight").size(11.0).color(lc));
     ui.add_space(4.0);
-    if ui.add(egui::Button::new(egui::RichText::new("No Highlight").size(11.0)).min_size(egui::vec2(120.0, 20.0))).clicked() {
+    if ui.add(egui::Button::new(egui::RichText::new("No Highlight").size(11.0)).min_size(egui::vec2(120.0, 20.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         ed.apply_fmt_highlight(None);
         egui::Popup::close_id(ui.ctx(), popup_id);
     }
@@ -115,7 +115,7 @@ fn highlight_color_palette(ui: &mut egui::Ui, ed: &mut DocumentEditor, is_dark: 
                     .stroke(egui::Stroke::new(1.0, border))
                     .min_size(egui::vec2(26.0, 22.0))
                     .corner_radius(3.0))
-                    .on_hover_text(name).clicked()
+                    .on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
                 {
                     ed.apply_fmt_highlight(Some(c));
                     egui::Popup::close_id(ui.ctx(), popup_id);
@@ -229,7 +229,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                         .width(130.0)
                         .show_ui(ui, |ui| {
                             for s in ParaStyle::all() {
-                                if ui.selectable_label(cur_style == *s, s.label()).clicked() { ed.apply_style(*s); }
+                                if ui.selectable_label(cur_style == *s, s.label()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.apply_style(*s); }
                             }
                         });
 
@@ -238,11 +238,11 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                         .selected_text(egui::RichText::new(cur_text_font.label()).size(12.0))
                         .width(112.0)
                         .show_ui(ui, |ui| {
-                            if ui.selectable_label(ed.cur_fmt.font.is_none(), format!("Default ({})", ed.base_font.label())).clicked() {
+                            if ui.selectable_label(ed.cur_fmt.font.is_none(), format!("Default ({})", ed.base_font.label())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                 ed.apply_fmt_font(None);
                             }
                             for f in FontChoice::all() {
-                                if ui.selectable_label(ed.cur_fmt.font == Some(*f), f.label()).clicked() {
+                                if ui.selectable_label(ed.cur_fmt.font == Some(*f), f.label()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                     ed.apply_fmt_font(Some(*f));
                                 }
                             }
@@ -306,12 +306,12 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                             ui.label(egui::RichText::new("Link URL").size(11.0).color(lc));
                             ui.add(egui::TextEdit::singleline(&mut ed.link_input).desired_width(190.0).hint_text("https://..."));
                             ui.horizontal(|ui| {
-                                if ui.button("Apply").clicked() {
+                                if ui.button("Apply").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                     let url = ed.link_input.trim().to_string();
                                     ed.apply_fmt_link(if url.is_empty() { None } else { Some(url) });
                                     egui::Popup::close_id(ui.ctx(), link_popup_id);
                                 }
-                                if ui.button("Remove").clicked() {
+                                if ui.button("Remove").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                     ed.apply_fmt_link(None);
                                     egui::Popup::close_id(ui.ctx(), link_popup_id);
                                 }
@@ -339,7 +339,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                                         ui.painter().rect_filled(r, 2.0, if lit { hi } else { def });
                                         ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.0, bdr), egui::StrokeKind::Middle);
                                         if resp.hovered() { ed.table_picker_hover = (row, col); }
-                                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                             ed.insert_table(row + 1, col + 1);
                                             egui::Popup::close_id(ui.ctx(), tbl_pid);
                                         }
@@ -662,8 +662,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             if p.style == ParaStyle::HRule { ed.para_heights[i] = p.space_before * ed.zoom + 12.0 + p.space_after * ed.zoom; continue; }
             if p.style == ParaStyle::Table {
                 let n = p.table.as_ref().map(|t| t.rows.len()).unwrap_or(0);
-                let table_top_pad = 2.0 * ed.zoom;
-                ed.para_heights[i] = p.space_before * ed.zoom + table_top_pad + (n as f32 * bs * 1.6) + 12.0 + p.space_after * ed.zoom;
+                let table_top_pad = 6.0 * ed.zoom;
+                ed.para_heights[i] = p.space_before * ed.zoom + table_top_pad + (n as f32 * bs * 1.6) + p.space_after * ed.zoom;
                 continue;
             }
             let indent = p.indent_left * ed.zoom;
@@ -789,7 +789,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 }
             }
 
-            if edit_rect.expand(2.0).contains(pp) {
+            if edit_rect.contains(pp) {
                 if para.style == ParaStyle::Table {
                     if btn_pressed {
                         if let Some(ref tbl) = ed.paras[i].table {
@@ -797,7 +797,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             let nc = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
                             let col_w = cw / nc as f32;
                             for (ri, row) in tbl.rows.iter().enumerate() {
-                                let rr = egui::Rect::from_min_size(egui::pos2(pm.x + ml, (text_y + 2.0 * ed.zoom) + ri as f32 * row_h), egui::vec2(cw, row_h));
+                                let rr = egui::Rect::from_min_size(egui::pos2(pm.x + ml, (text_y + 6.0 * ed.zoom) + ri as f32 * row_h), egui::vec2(cw, row_h));
                                 if rr.contains(pp) {
                                     let cc = (((pp.x - (pm.x + ml)) / col_w) as usize).min(row.len().saturating_sub(1));
                                     if let Some((old_i, old_r, old_c)) = ed.active_table {
@@ -884,7 +884,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 if para.style == ParaStyle::Table {
                     if let Some(ref tbl) = para.table {
                         let row_h = bs * 1.6;
-                        let table_top_pad = 2.0 * ed.zoom;
+                        let table_top_pad = 6.0 * ed.zoom;
                         let table_y = text_y + table_top_pad;
                         let n_rows = tbl.rows.len();
                         let tbl_bg = if is_dark { egui::Color32::from_rgb(28, 28, 36) } else { egui::Color32::WHITE };
@@ -895,7 +895,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         let hdr_tc = if is_dark { egui::Color32::WHITE } else { ColorPalette::GRAY_900 };
 
                         for (ri, row) in tbl.rows.iter().enumerate() {
-                            let ry = text_y + ri as f32 * row_h;
+                            let ry = table_y + ri as f32 * row_h;
                             let rw = cw / row.len().max(1) as f32;
                             painter.rect_filled(egui::Rect::from_min_size(egui::pos2(pm.x + ml, ry), egui::vec2(cw, row_h)),
                                 0.0, if ri == 0 { hdr_bg } else if ri % 2 == 0 { alt_bg } else { tbl_bg });
@@ -905,14 +905,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 if is_active {
                                     painter.rect_filled(egui::Rect::from_min_size(egui::pos2(cx, ry), egui::vec2(rw, row_h)), 0.0,
                                         egui::Color32::from_rgba_unmultiplied(59, 130, 246, 50));
-                                    let cr = egui::Rect::from_min_size(egui::pos2(cx + 4.0, ry + 2.0), egui::vec2(rw - 8.0, row_h - 4.0));
-                                    let cell_id = ui.id().with(("table_cell", i, ri, ci)); // Match the ID created in the click handler
+                                    let cr = egui::Rect::from_min_size(egui::pos2(cx + 4.0, ry + 1.0), egui::vec2(rw - 8.0, row_h - 4.0));
+                                    let cell_id = ui.id().with(("table_cell", i, ri, ci));
                                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
-                                    let te = egui::TextEdit::singleline(&mut ed.cell_edit_buf)
-                                        .id(cell_id) // explicitly set the ID
-                                        .frame(false)
-                                        .font(egui::FontId::new(bs * 0.9, font.egui_family(ri == 0, false)))
-                                        .show(&mut child);
+                                    let te = egui::TextEdit::singleline(&mut ed.cell_edit_buf).id(cell_id)
+                                        .font(egui::FontId::new(bs * 0.9, font.egui_family(ri == 0, false))).show(&mut child);
                                     if te.response.lost_focus() || ctx.input(|inp| inp.key_pressed(egui::Key::Escape)) {
                                         table_cell_change = Some((i, ri, ci, ed.cell_edit_buf.clone()));
                                         ed.active_table = None;
@@ -928,7 +925,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         }
                         painter.rect_stroke(
                             egui::Rect::from_min_size(egui::pos2(pm.x + ml, table_y), egui::vec2(cw, n_rows as f32 * row_h)),
-                            2.0, egui::Stroke::new(1.0, bdr), egui::StrokeKind::Outside);
+                            0.0, egui::Stroke::new(1.0, bdr), egui::StrokeKind::Outside);
                     }
                     continue;
                 }
@@ -936,7 +933,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 if i == focused {
                     painter.rect_filled(
                         egui::Rect::from_min_size(egui::pos2(pm.x + ml, text_y - 2.0), egui::vec2(cw, text_h + 4.0)),
-                        2.0, focus_bg,
+                        0.0, focus_bg,
                     );
                 }
 
@@ -1164,10 +1161,16 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 })
             } else { (false, false, false, false) };
             let text_ref = &mut ed.para_texts[i];
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit_rect));
+            let effective_rect = if i + 1 < n && ed.paras[i + 1].style == ParaStyle::Table {
+                let tpg = pl.para_page[i + 1];
+                let table_top = outer.min.y + pl.page_tops[tpg] + pl.para_content_y[i + 1];
+                egui::Rect::from_min_max(edit_rect.min, egui::pos2(edit_rect.max.x, table_top.min(edit_rect.max.y)))
+            } else { edit_rect };
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(effective_rect));
             let output = egui::TextEdit::multiline(text_ref)
                 .id(id)
                 .desired_width(edit_w)
+                .desired_rows(1)
                 .frame(false)
                 .lock_focus(true)
                 .horizontal_align(para.align.egui_align())
@@ -1446,21 +1449,27 @@ fn render_find_bar(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) 
                 ui.label(egui::RichText::new("Find:").size(12.0).color(muted));
                 let r = ui.add(egui::TextEdit::singleline(&mut ed.find_text).desired_width(200.0).hint_text("Search..."));
                 if r.changed() { ed.find_stale = true; ed.run_find(); }
-                if ui.small_button("x").clicked() { ed.find_text.clear(); ed.find_results.clear(); }
+                if ui.small_button("x").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.find_text.clear(); ed.find_results.clear(); }
             });
             if !ed.find_text.is_empty() {
                 let (c, t) = (if ed.find_results.is_empty() { 0 } else { ed.find_cursor + 1 }, ed.find_results.len());
                 ui.label(egui::RichText::new(format!("{}/{}", c, t)).size(11.0).color(if t == 0 { ColorPalette::RED_400 } else { muted }));
             }
-            ui.horizontal(|ui| { if ui.button("Prev").clicked() { ed.find_prev(); } if ui.button("Next").clicked() { ed.find_next(); } });
+            ui.horizontal(|ui| { 
+                if ui.button("Prev").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.find_prev(); } 
+                if ui.button("Next").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.find_next(); } 
+            });
             ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Replace:").size(12.0).color(muted));
                 ui.add(egui::TextEdit::singleline(&mut ed.replace_text).desired_width(200.0).hint_text("Replacement..."));
             });
-            ui.horizontal(|ui| { if ui.button("Replace").clicked() { ed.replace_current(); } if ui.button("Replace All").clicked() { ed.replace_all(); } });
+            ui.horizontal(|ui| {
+                if ui.button("Replace").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.replace_current(); }
+                if ui.button("Replace All").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.replace_all(); } 
+            });
             ui.add_space(4.0);
-            if ui.button("Close").clicked() { ed.show_find = false; }
+            if ui.button("Close").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.show_find = false; }
         });
 
     if let Some(win) = win {
@@ -1493,7 +1502,7 @@ fn render_stats_modal(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
             row(ui, "Paragraphs", ed.paras.len().to_string());
             row(ui, "Headings", ed.paras.iter().filter(|p| p.style.is_heading()).count().to_string());
             row(ui, "Page size", format!("{:.0} x {:.0} pt", ed.layout.width, ed.layout.height));
-            ui.add_space(8.0); if ui.button("Close").clicked() { ed.show_stats = false; }
+            ui.add_space(8.0); if ui.button("Close").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { ed.show_stats = false; }
         });
     if !open { ed.show_stats = false; }
     if let Some(win) = win {
@@ -1582,8 +1591,7 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
                             }
                         }
                         let resp = ui.interact(cell, ui.id().with(("ps", idx)), egui::Sense::click());
-                        if resp.hovered() { ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand); }
-                        if resp.clicked() { draft.1 = idx; draft.0 = PageLayout::from_preset(idx); }
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { draft.1 = idx; draft.0 = PageLayout::from_preset(idx); }
                     }
                 });
             }
@@ -1626,8 +1634,8 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
 
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.button("Apply").clicked() { apply = true; }
-                if ui.button("Cancel").clicked() { cancel = true; }
+                if ui.button("Apply").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { apply = true; }
+                if ui.button("Cancel").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { cancel = true; }
             });
         });
 

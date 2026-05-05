@@ -299,3 +299,5 @@
 - **DOCUMENT EDITOR**: Cursor now properly follows text after a page break
 - **DOCUMENT EDITOR**: Paragraphs now no longer disconnect after a page break
 - **DOCUMENT EDITOR**: Page breaks no longer occur in the middle of a word
+- **DOCUMENT EDITOR**: Clicking the first three rows of the table no longer jumps the cursor back to the line before it
+- **DOCUMENT EDITOR**: More buttons now properly change the cursor when hovering
