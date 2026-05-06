@@ -111,7 +111,7 @@ pub struct DocSpan { pub len: usize, pub fmt: SpanFmt }
 #[derive(Debug, Clone, Default)]
 pub struct TableCell { pub text: String, pub spans: Vec<DocSpan> }
 #[derive(Debug, Clone)]
-pub struct TableData { pub rows: Vec<Vec<TableCell>> }
+pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32> }
 
 #[derive(Debug, Clone)]
 pub struct DocParagraph {
@@ -923,7 +923,7 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"tbl" => {
                         in_tbl = false; in_tc = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows) }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
                         paras.push(p);
                     }
                     b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
@@ -1330,7 +1330,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "table" if in_tbl => {
                         in_tbl = false; in_tc_odt = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows) }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
                         paras.push(p);
                     }
                     "table-row" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }

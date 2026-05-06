@@ -437,6 +437,7 @@ impl DocumentEditor {
         let mut p = DocParagraph::with_style(ParaStyle::Table);
         p.table = Some(Box::new(TableData {
             rows: (0..rows).map(|_| (0..cols).map(|_| make_cell()).collect()).collect(),
+            col_widths: Vec::new(),
         }));
         let idx = (self.focused_para + 1).min(self.paras.len());
         self.paras.insert(idx, p);
@@ -457,7 +458,34 @@ impl DocumentEditor {
         self.dirty = true;
     }
 
+    pub(super) fn commit_active_table_cell(&mut self) -> bool {
+        let (pi, row, col) = match self.active_table.take() {
+            Some(pos) => pos,
+            None => return false,
+        };
+        if pi >= self.paras.len() { return false; }
+        self.push_undo();
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            if let Some(r) = tbl.rows.get_mut(row) {
+                if let Some(c) = r.get_mut(col) {
+                    let text = self.cell_edit_buf.clone();
+                    c.text = text.clone();
+                    c.spans = if text.is_empty() {
+                        vec![DocSpan { len: 0, fmt: SpanFmt::default() }]
+                    } else {
+                        vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }]
+                    };
+                    self.dirty = true;
+                    self.heights_dirty = true;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
+        let _ = self.commit_active_table_cell();
         let mut save_paras = self.paras.clone();
         let mut j = 0;
         while j < save_paras.len() {

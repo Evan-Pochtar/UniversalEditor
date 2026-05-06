@@ -283,6 +283,7 @@
 - **DOCUMENT EDITOR**: Measurements added to page sizes in the page settings modal
 - **DOCUMENT EDITOR**: Removed space after for regular text to condense text and prevent gaps between paragraphs
 - **DOCUMENT EDITOR**: Added the ability to create, load, and export tables
+- **DOCUMENT EDITOR**: Table columns can now be resized to whatever size needed
 
 #### Debugging
 
@@ -301,3 +302,4 @@
 - **DOCUMENT EDITOR**: Page breaks no longer occur in the middle of a word
 - **DOCUMENT EDITOR**: Clicking the first three rows of the table no longer jumps the cursor back to the line before it
 - **DOCUMENT EDITOR**: More buttons now properly change the cursor when hovering
+- **DOCUMENT EDITOR**: Cells in the table functionality now properly resize depending on cell text
