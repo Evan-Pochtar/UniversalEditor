@@ -299,8 +299,8 @@ impl JsonEditor {
                         }
                     }
                 });
+                ui.separator();
             }
-            ui.separator();
             match self.view_mode {
                 JsonViewMode::Tree => self.render_table_view(ui, dark),
                 JsonViewMode::Text => self.render_text_view(ui, ctx, dark),

@@ -167,6 +167,7 @@
 - [x] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
 - [x] Sometimes page breaks cut a paragraph in the middle of a word
 - [x] When clicking to edit a tables cell, the box that shows up is dependant on the zoom of the page
+- [x] Cannot navigate up or down past/through tables
 
 ### Other Bugs
 

@@ -59,7 +59,6 @@
 - [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
-- [ ] Cannot navigate up or down paste tables
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
 - [ ] External loading

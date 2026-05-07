@@ -194,6 +194,7 @@ fn apply_dark_theme(style: &mut egui::Style) {
     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
     style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(60, 120, 240, 100);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, ColorPalette::ZINC_200);
+    style.visuals.text_cursor.stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
     style.visuals.hyperlink_color = ColorPalette::BLUE_400;
 }
 
@@ -221,6 +222,7 @@ fn apply_light_theme(style: &mut egui::Style) {
     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::BLACK);
     style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(60, 120, 240, 80);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, ColorPalette::BLUE_600);
+    style.visuals.text_cursor.stroke = egui::Stroke::new(2.0, egui::Color32::BLACK);
     style.visuals.hyperlink_color = ColorPalette::BLUE_600;
 }
 
