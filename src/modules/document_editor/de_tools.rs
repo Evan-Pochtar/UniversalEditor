@@ -736,12 +736,16 @@ fn parse_docx_numbering(arch: &mut zip::ZipArchive<std::fs::File>) -> std::colle
 fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle, Option<bool>)>, rels_map: &std::collections::HashMap<String, String>) -> Result<(Vec<DocParagraph>, PageLayout), String> {
     use quick_xml::{Reader, events::Event};
     let mut reader = Reader::from_str(xml); reader.config_mut().trim_text(false);
-    let mut paras: Vec<DocParagraph> = Vec::new(); let mut layout = PageLayout::default();
-    let mut cur_para: Option<DocParagraph> = None; let mut cur_fmt = SpanFmt::default();
+    let mut paras: Vec<DocParagraph> = Vec::new();
+    let mut para_numids: Vec<Option<u32>> = Vec::new();
+    let mut layout = PageLayout::default();
+    let mut cur_para: Option<DocParagraph> = None;
+    let mut cur_fmt = SpanFmt::default();
     let mut cur_run_text = String::new();
     let mut in_run = false; let mut in_rpr = false; let mut in_ppr = false; let mut in_t = false;
-    let mut in_pbdr = false; let mut has_hborder = false;
+    let mut in_pbdr = false; let mut has_hborder = false; let mut in_pict = false;
     let mut in_numpr = false; let mut pending_num_id: Option<u32> = None;
+    let mut cur_para_numid: Option<u32> = None;
     let mut cur_link_url: Option<String> = None;
     let (mut in_tbl, mut in_tc) = (false, false);
     let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
@@ -752,10 +756,11 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
         match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(ref e) => {
                 match e.local_name().as_ref() {
-                    b"p" => if !in_tbl { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; }
+                    b"p" => if !in_tbl { cur_para = Some(DocParagraph::new()); in_ppr = false; has_hborder = false; cur_para_numid = None; }
                     b"pPr" => in_ppr = true,
                     b"pBdr" => if in_ppr { in_pbdr = true; },
                     b"numPr" => if in_ppr { in_numpr = true; },
+                    b"pict" => in_pict = true,
                     b"bottom" | b"top" => if in_pbdr { has_hborder = true; },
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
@@ -775,77 +780,74 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"tr" if in_tbl => { cur_tbl_row.clear(); }
                     b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
                     b"vertAlign" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val") {
-                                if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
-                                else if v.eq_ignore_ascii_case("superscript") { cur_fmt.sup = true; cur_fmt.sub = false; }
-                            }
-                        }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val") {
+                            if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
+                            else if v.eq_ignore_ascii_case("superscript") { cur_fmt.sup = true; cur_fmt.sub = false; }
+                        } }
                     }
                     b"position" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse::<i32>().ok()) {
-                                if v < 0 { cur_fmt.sub = true; cur_fmt.sup = false; }
-                                else if v > 0 { cur_fmt.sup = true; cur_fmt.sub = false; }
-                            }
-                        }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse::<i32>().ok()) {
+                            if v < 0 { cur_fmt.sub = true; cur_fmt.sup = false; }
+                            else if v > 0 { cur_fmt.sup = true; cur_fmt.sub = false; }
+                        } }
                     }
                     b"sz" => { if in_rpr { if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse().ok()) { cur_fmt.size_hp = Some(v); } } }
                     b"color" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val") {
-                                if v != "auto" && v != "000000" && v.len() == 6 {
-                                    if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); }
-                                }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val") {
+                            if v != "auto" && v != "000000" && v.len() == 6 {
+                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); }
                             }
-                        }
+                        } }
                     }
                     b"highlight" => {
-                        if in_rpr {
-                            if let Some(val) = get_attr(e, b"val") {
-                                let rgb = match val.as_str() {
-                                    "yellow" => Some([255, 235, 59]), "green" => Some([167, 243, 208]), "cyan" => Some([125, 211, 252]),
-                                    "magenta" => Some([196, 181, 253]), "blue" => Some([147, 197, 253]), "red" => Some([255, 171, 145]),
-                                    "darkBlue" => Some([59, 130, 246]), "darkCyan" => Some([20, 184, 166]), "darkGreen" => Some([22, 163, 74]),
-                                    "darkMagenta" => Some([168, 85, 247]), "darkRed" => Some([220, 38, 38]), "darkYellow" => Some([234, 179, 8]),
-                                    "darkGray" => Some([102, 102, 102]), "lightGray" => Some([204, 204, 204]), "black" => Some([0, 0, 0]),
-                                    _ => None,
-                                };
-                                if rgb.is_some() { cur_fmt.highlight = rgb; }
-                            }
-                        }
+                        if in_rpr { if let Some(val) = get_attr(e, b"val") {
+                            let rgb = match val.as_str() {
+                                "yellow" => Some([255, 235, 59]), "green" => Some([167, 243, 208]), "cyan" => Some([125, 211, 252]),
+                                "magenta" => Some([196, 181, 253]), "blue" => Some([147, 197, 253]), "red" => Some([255, 171, 145]),
+                                "darkBlue" => Some([59, 130, 246]), "darkCyan" => Some([20, 184, 166]), "darkGreen" => Some([22, 163, 74]),
+                                "darkMagenta" => Some([168, 85, 247]), "darkRed" => Some([220, 38, 38]), "darkYellow" => Some([234, 179, 8]),
+                                "darkGray" => Some([102, 102, 102]), "lightGray" => Some([204, 204, 204]), "black" => Some([0, 0, 0]),
+                                _ => None,
+                            };
+                            if rgb.is_some() { cur_fmt.highlight = rgb; }
+                        } }
                     }
                     b"shd" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"fill") {
-                                if v != "auto" && v.len() == 6 {
-                                    if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
-                                }
+                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
+                            if v != "auto" && v.len() == 6 {
+                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
                             }
-                        }
+                        } }
                     }
                     b"rFonts" => {
-                        if in_rpr {
-                            if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
-                                cur_fmt.font = match font_name.as_str() {
-                                    "Ubuntu" => Some(FontChoice::Ubuntu), "Roboto" => Some(FontChoice::Roboto),
-                                    "Google Sans" => Some(FontChoice::GoogleSans), "Open Sans" => Some(FontChoice::OpenSans),
-                                    _ => None,
-                                };
-                            }
-                        }
+                        if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
+                            cur_fmt.font = match font_name.as_str() {
+                                "Ubuntu" => Some(FontChoice::Ubuntu), "Roboto" => Some(FontChoice::Roboto),
+                                "Google Sans" => Some(FontChoice::GoogleSans), "Open Sans" => Some(FontChoice::OpenSans),
+                                _ => None,
+                            };
+                        } }
                     }
                     _ => {}
                 }
             }
             Event::Empty(ref e) => {
                 match e.local_name().as_ref() {
+                    b"rect" if in_pict => {
+                        if get_attr(e, b"hr").as_deref() == Some("t") { has_hborder = true; }
+                    }
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
                     b"bottom" | b"top" => { if in_pbdr && in_ppr { has_hborder = true; } }
-                    b"numId" => { if in_numpr { pending_num_id = get_attr(e, b"val").and_then(|v| v.parse().ok()); } }
+                    b"numId" => {
+                        if in_numpr {
+                            let nid = get_attr(e, b"val").and_then(|v| v.parse().ok());
+                            pending_num_id = nid;
+                            cur_para_numid = nid;
+                        }
+                    }
                     b"tab" => { if in_run { cur_run_text.push('\t'); } }
                     b"br" => { if in_run { cur_run_text.push('\n'); } }
                     b"b" => { if in_rpr { cur_fmt.bold = true; } }
@@ -853,65 +855,53 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
                     b"strike" => { if in_rpr { cur_fmt.strike = true; } }
                     b"vertAlign" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val") {
-                                if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
-                                else if v.eq_ignore_ascii_case("superscript") { cur_fmt.sup = true; cur_fmt.sub = false; }
-                            }
-                        }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val") {
+                            if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
+                            else if v.eq_ignore_ascii_case("superscript") { cur_fmt.sup = true; cur_fmt.sub = false; }
+                        } }
                     }
                     b"position" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse::<i32>().ok()) {
-                                if v < 0 { cur_fmt.sub = true; cur_fmt.sup = false; }
-                                else if v > 0 { cur_fmt.sup = true; cur_fmt.sub = false; }
-                            }
-                        }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse::<i32>().ok()) {
+                            if v < 0 { cur_fmt.sub = true; cur_fmt.sup = false; }
+                            else if v > 0 { cur_fmt.sup = true; cur_fmt.sub = false; }
+                        } }
                     }
                     b"sz" => { if in_rpr { if let Some(v) = get_attr(e, b"val").and_then(|v| v.parse().ok()) { cur_fmt.size_hp = Some(v); } } }
                     b"color" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"val") {
-                                if v != "auto" && v != "000000" && v.len() == 6 {
-                                    if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); }
-                                }
+                        if in_rpr { if let Some(v) = get_attr(e, b"val") {
+                            if v != "auto" && v != "000000" && v.len() == 6 {
+                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.color = Some([r,g,b]); }
                             }
-                        }
+                        } }
                     }
                     b"highlight" => {
-                        if in_rpr {
-                            if let Some(val) = get_attr(e, b"val") {
-                                let rgb = match val.as_str() {
-                                    "yellow" => Some([255, 235, 59]), "green" => Some([167, 243, 208]), "cyan" => Some([125, 211, 252]),
-                                    "magenta" => Some([196, 181, 253]), "blue" => Some([147, 197, 253]), "red" => Some([255, 171, 145]),
-                                    "darkBlue" => Some([59, 130, 246]), "darkCyan" => Some([20, 184, 166]), "darkGreen" => Some([22, 163, 74]),
-                                    "darkMagenta" => Some([168, 85, 247]), "darkRed" => Some([220, 38, 38]), "darkYellow" => Some([234, 179, 8]),
-                                    "darkGray" => Some([102, 102, 102]), "lightGray" => Some([204, 204, 204]), "black" => Some([0, 0, 0]),
-                                    _ => None,
-                                };
-                                if rgb.is_some() { cur_fmt.highlight = rgb; }
-                            }
-                        }
+                        if in_rpr { if let Some(val) = get_attr(e, b"val") {
+                            let rgb = match val.as_str() {
+                                "yellow" => Some([255, 235, 59]), "green" => Some([167, 243, 208]), "cyan" => Some([125, 211, 252]),
+                                "magenta" => Some([196, 181, 253]), "blue" => Some([147, 197, 253]), "red" => Some([255, 171, 145]),
+                                "darkBlue" => Some([59, 130, 246]), "darkCyan" => Some([20, 184, 166]), "darkGreen" => Some([22, 163, 74]),
+                                "darkMagenta" => Some([168, 85, 247]), "darkRed" => Some([220, 38, 38]), "darkYellow" => Some([234, 179, 8]),
+                                "darkGray" => Some([102, 102, 102]), "lightGray" => Some([204, 204, 204]), "black" => Some([0, 0, 0]),
+                                _ => None,
+                            };
+                            if rgb.is_some() { cur_fmt.highlight = rgb; }
+                        } }
                     }
                     b"shd" => {
-                        if in_rpr {
-                            if let Some(v) = get_attr(e, b"fill") {
-                                if v != "auto" && v.len() == 6 {
-                                    if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
-                                }
+                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
+                            if v != "auto" && v.len() == 6 {
+                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
                             }
-                        }
+                        } }
                     }
                     b"rFonts" => {
-                        if in_rpr {
-                            if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
-                                cur_fmt.font = match font_name.as_str() {
-                                    "Ubuntu" => Some(FontChoice::Ubuntu), "Roboto" => Some(FontChoice::Roboto),
-                                    "Google Sans" => Some(FontChoice::GoogleSans), "Open Sans" => Some(FontChoice::OpenSans),
-                                    _ => None,
-                                };
-                            }
-                        }
+                        if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
+                            cur_fmt.font = match font_name.as_str() {
+                                "Ubuntu" => Some(FontChoice::Ubuntu), "Roboto" => Some(FontChoice::Roboto),
+                                "Google Sans" => Some(FontChoice::GoogleSans), "Open Sans" => Some(FontChoice::OpenSans),
+                                _ => None,
+                            };
+                        } }
                     }
                     b"pgSz" => { if let Some(v) = get_attr(e, b"w") { layout.width = v.parse::<f32>().unwrap_or(12240.0)/20.0; } if let Some(v) = get_attr(e, b"h") { layout.height = v.parse::<f32>().unwrap_or(15840.0)/20.0; } }
                     b"pgMar" => { if let Some(v) = get_attr(e, b"top") { layout.margin_top = v.parse::<f32>().unwrap_or(1440.0)/20.0; } if let Some(v) = get_attr(e, b"bottom") { layout.margin_bot = v.parse::<f32>().unwrap_or(1440.0)/20.0; } if let Some(v) = get_attr(e, b"left") { layout.margin_left = v.parse::<f32>().unwrap_or(1800.0)/20.0; } if let Some(v) = get_attr(e, b"right") { layout.margin_right = v.parse::<f32>().unwrap_or(1800.0)/20.0; } }
@@ -920,11 +910,13 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
             }
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
+                    b"pict" => in_pict = false,
                     b"tbl" => {
                         in_tbl = false; in_tc = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
                         p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
                         paras.push(p);
+                        para_numids.push(None);
                     }
                     b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
                     b"tc" if in_tbl => {
@@ -934,7 +926,28 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         cur_tbl_row.push(TableCell { text, spans });
                         in_tc = false;
                     }
-                    b"p" => if !in_tbl { if let Some(mut p) = cur_para.take() { if has_hborder && p.text.trim().is_empty() { p.style = ParaStyle::HRule; } paras.push(p); } has_hborder = false; }
+                    b"p" => {
+                        if !in_tbl {
+                            if let Some(mut p) = cur_para.take() {
+                                if has_hborder {
+                                    if p.text.trim().is_empty() {
+                                        p.style = ParaStyle::HRule;
+                                        paras.push(p);
+                                        para_numids.push(None);
+                                    } else {
+                                        paras.push(p);
+                                        para_numids.push(cur_para_numid);
+                                        paras.push(DocParagraph::with_style(ParaStyle::HRule));
+                                        para_numids.push(None);
+                                    }
+                                } else {
+                                    paras.push(p);
+                                    para_numids.push(cur_para_numid);
+                                }
+                            }
+                            has_hborder = false;
+                        }
+                    }
                     b"pPr" => {
                         in_ppr = false;
                         if let (Some(nid), Some(ref mut p)) = (pending_num_id.take(), cur_para.as_mut()) {
@@ -970,6 +983,34 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
             _ => {}
         }
     }
+
+    {
+        let mut numid_groups: std::collections::HashMap<u32, Vec<usize>> = Default::default();
+        for (i, (&nid_opt, p)) in para_numids.iter().zip(paras.iter()).enumerate() {
+            if let Some(nid) = nid_opt {
+                if p.style == ParaStyle::ListBullet {
+                    numid_groups.entry(nid).or_default().push(i);
+                }
+            }
+        }
+        for indices in numid_groups.values() {
+            let any_strike = indices.iter().any(|&i| {
+                paras[i].spans.iter().any(|s| s.len > 0)
+                    && paras[i].spans.iter().filter(|s| s.len > 0).all(|s| s.fmt.strike)
+            });
+            if any_strike {
+                for &i in indices {
+                    let all_strike = paras[i].spans.iter().filter(|s| s.len > 0).all(|s| s.fmt.strike);
+                    paras[i].style = ParaStyle::ListCheck;
+                    paras[i].checked = all_strike;
+                    if all_strike {
+                        for s in &mut paras[i].spans { s.fmt.strike = false; }
+                    }
+                }
+            }
+        }
+    }
+
     if paras.is_empty() { paras.push(DocParagraph::new()); }
     convert_leading_tabs_to_indent(&mut paras);
     Ok((paras, layout))

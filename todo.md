@@ -60,10 +60,10 @@
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
-- [ ] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
+- [ ] Tabbing isn't always the same size
 - [ ] External loading
-  - [ ] Doesn't load horizontal lines properly (.docx and .odt)
-  - [ ] Doesn't load checklists properly (.docx and .odt)
+  - [ ] Doesn't load horizontal lines properly (.odt)
+  - [ ] Doesn't load checklists properly (.odt)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)

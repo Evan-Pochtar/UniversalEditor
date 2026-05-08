@@ -305,3 +305,6 @@
 - **DOCUMENT EDITOR**: More buttons now properly change the cursor when hovering
 - **DOCUMENT EDITOR**: Cells in the table functionality now properly resize depending on cell text
 - **DOCUMENT EDITOR**: Can now use the up/down arrows to navigate through/past tables
+- **DOCUMENT EDITOR**: Now loads horizontal lines properly from docx files
+- **DOCUMENT EDITOR**: Now loads checklists properly from docx files
+- **DOCUMENT EDITOR**: Now properly reflects cursor position after clicking tab to indent

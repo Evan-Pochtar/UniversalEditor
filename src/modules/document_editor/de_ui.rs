@@ -958,7 +958,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
                                     let te = egui::TextEdit::multiline(&mut ed.cell_edit_buf).id(cell_id)
                                         .desired_width(cw_cell - 8.0)
-                                        .min_size(egui::vec2(cw_cell - 8.0, rh - 4.0)) // <-- Forces TextEdit to fill the cell area
+                                        .min_size(egui::vec2(cw_cell - 8.0, rh - 4.0))
                                         .desired_rows(1).frame(false)
                                         .font(egui::FontId::new(bs * 0.9, font.egui_family(ri == 0, false))).show(&mut child);
                                     if te.response.changed() {
@@ -1399,7 +1399,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         let before = ed.paras[i].indent_left;
                         ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).clamp(0.0, max_indent);
                         changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
-                    } else if caret_at_start {
+                    } else if caret_at_start && !ed.paras[i].text.is_empty() {
                         if shift_tab {
                             if ed.paras[i].indent_first > 0.0 {
                                 let before = ed.paras[i].indent_first;

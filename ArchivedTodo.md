@@ -168,6 +168,9 @@
 - [x] Sometimes page breaks cut a paragraph in the middle of a word
 - [x] When clicking to edit a tables cell, the box that shows up is dependant on the zoom of the page
 - [x] Cannot navigate up or down past/through tables
+- [x] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
+- [x] Doesn't load horizontal lines properly (.docx)
+- [x] Doesn't load checklists properly (.docx)
 
 ### Other Bugs
 
