@@ -44,6 +44,9 @@ impl JsonEditor {
 
                     if toolbar_action_btn(ui, "New", theme).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.show_new_confirm = true; }
                     ui.separator();
+                    if toolbar_action_btn(ui,egui::RichText::new(if self.show_search { "Close Search" } else { "Open Search" }).size(12.0),theme,).on_hover_text("Toggle find bar (Ctrl+F)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        self.show_search = !self.show_search;
+                    }
                 });
 
                 ui.label(egui::RichText::new("Sort:").size(12.0).color(c_muted(dark)));
@@ -52,7 +55,13 @@ impl JsonEditor {
                         .selected_text(egui::RichText::new(sort_label(self.sort_mode)).size(12.0))
                         .width(120.0)
                         .show_ui(ui, |ui| {
-                            for m in [SortMode::None, SortMode::KeyAsc, SortMode::KeyDesc, SortMode::ValueAsc, SortMode::ValueDesc] {
+                            for m in [
+                                SortMode::None,
+                                SortMode::KeyAsc, SortMode::KeyDesc,
+                                SortMode::ValueAsc, SortMode::ValueDesc,
+                                SortMode::NumericAsc, SortMode::NumericDesc,
+                                SortMode::TypeGroup,
+                            ] {
                                 if ui.selectable_value(&mut self.sort_mode, m, sort_label(m)).changed() { self.invalidate_flat(); }
                             }
                         });
@@ -226,71 +235,72 @@ impl JsonEditor {
             }
 
             // Searchbar UI
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Search:").size(12.0).color(c_muted(dark)));
-                let prev_query = self.search_query.clone();
-                let resp = ui.add(egui::TextEdit::singleline(&mut self.search_query)
-                    .desired_width(220.0)
-                    .min_size(egui::vec2(0.0, 24.0))
-                    .hint_text("Type to search..."),
-                );
-                if resp.changed() || self.search_query != prev_query {
-                    self.search_stale = true;
-                    self.search_cursor = 0;
-                    self.run_search();
-                }
-                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    self.search_next();
-                }
-
-                ui.vertical(|ui: &mut egui::Ui| {
-                    egui::ComboBox::from_id_salt("je_search_target")
-                        .selected_text(egui::RichText::new(search_target_label(self.search_target)).size(12.0))
-                        .width(70.0)
-                        .show_ui(ui, |ui| {
-                            for t in [SearchTarget::Both, SearchTarget::Keys, SearchTarget::Values] {
-                                if ui.selectable_value(&mut self.search_target, t, search_target_label(t)).changed() {
-                                    self.search_stale = true;
-                                    self.run_search();
-                                }
-                            }
-                        });
-                });
-
-                let has = !self.search_results.is_empty() || (!self.search_only_expanded && !self.search_all_paths.is_empty());
-                if ghost_btn_small(ui, "Prev", dark, has).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.search_prev(); }
-                if ghost_btn_small(ui, "Next", dark, has).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.search_next(); }
-
-                if !self.search_query.is_empty() {
-                    let count = self.search_result_count();
-                    let cur = if count > 0 { self.search_cursor + 1 } else { 0 };
-                    ui.label(egui::RichText::new(format!("{}/{}", cur, count))
-                        .size(12.0)
-                        .color(if count == 0 { c_error(dark) } else { c_muted(dark) }));
-                }
-
-                if matches!(self.view_mode, JsonViewMode::Tree) {
-                    let prev = self.search_only_expanded;
-                    ui.add(egui::Checkbox::new(&mut self.search_only_expanded,
-                        egui::RichText::new("Search Only Expanded Nodes").size(11.0).color(c_muted(dark))));
-                    if self.search_only_expanded != prev {
+            if self.show_search {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Search:").size(12.0).color(c_muted(dark)));
+                    let prev_query = self.search_query.clone();
+                    let resp = ui.add(egui::TextEdit::singleline(&mut self.search_query)
+                        .desired_width(220.0)
+                        .min_size(egui::vec2(0.0, 24.0))
+                        .hint_text("Type to search..."),
+                    );
+                    if resp.changed() || self.search_query != prev_query {
                         self.search_stale = true;
                         self.search_cursor = 0;
                         self.run_search();
                     }
-                }
-
-                if !self.search_query.is_empty() {
-                    if compact_button(ui, "Clear", dark).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        self.search_query.clear();
-                        self.search_results.clear();
-                        self.search_all_paths.clear();
-                        self.search_stale = false;
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        self.search_next();
                     }
-                }
-            });
-            ui.separator();
 
+                    ui.vertical(|ui: &mut egui::Ui| {
+                        egui::ComboBox::from_id_salt("je_search_target")
+                            .selected_text(egui::RichText::new(search_target_label(self.search_target)).size(12.0))
+                            .width(70.0)
+                            .show_ui(ui, |ui| {
+                                for t in [SearchTarget::Both, SearchTarget::Keys, SearchTarget::Values] {
+                                    if ui.selectable_value(&mut self.search_target, t, search_target_label(t)).changed() {
+                                        self.search_stale = true;
+                                        self.run_search();
+                                    }
+                                }
+                            });
+                    });
+
+                    let has = !self.search_results.is_empty() || (!self.search_only_expanded && !self.search_all_paths.is_empty());
+                    if ghost_btn_small(ui, "Prev", dark, has).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.search_prev(); }
+                    if ghost_btn_small(ui, "Next", dark, has).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.search_next(); }
+
+                    if !self.search_query.is_empty() {
+                        let count = self.search_result_count();
+                        let cur = if count > 0 { self.search_cursor + 1 } else { 0 };
+                        ui.label(egui::RichText::new(format!("{}/{}", cur, count))
+                            .size(12.0)
+                            .color(if count == 0 { c_error(dark) } else { c_muted(dark) }));
+                    }
+
+                    if matches!(self.view_mode, JsonViewMode::Tree) {
+                        let prev = self.search_only_expanded;
+                        ui.add(egui::Checkbox::new(&mut self.search_only_expanded,
+                            egui::RichText::new("Search Only Expanded Nodes").size(11.0).color(c_muted(dark))));
+                        if self.search_only_expanded != prev {
+                            self.search_stale = true;
+                            self.search_cursor = 0;
+                            self.run_search();
+                        }
+                    }
+
+                    if !self.search_query.is_empty() {
+                        if compact_button(ui, "Clear", dark).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            self.search_query.clear();
+                            self.search_results.clear();
+                            self.search_all_paths.clear();
+                            self.search_stale = false;
+                        }
+                    }
+                });
+                ui.separator();
+            }
             match self.view_mode {
                 JsonViewMode::Tree => self.render_table_view(ui, dark),
                 JsonViewMode::Text => self.render_text_view(ui, ctx, dark),
@@ -309,6 +319,7 @@ impl JsonEditor {
         ctx.input_mut(|i| {
             if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S)) { do_save = true; }
             if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::S)) { do_save_as = true; }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::F) { self.show_search = !self.show_search; }
             if !in_text {
                 if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) { self.undo(); }
                 if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y)) { self.redo(); }

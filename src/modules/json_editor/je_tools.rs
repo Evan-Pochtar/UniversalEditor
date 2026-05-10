@@ -55,7 +55,7 @@ pub struct FlatNode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SortMode { None, KeyAsc, KeyDesc, ValueAsc, ValueDesc, }
+pub enum SortMode { None, KeyAsc, KeyDesc, ValueAsc, ValueDesc, NumericAsc, NumericDesc, TypeGroup }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SearchTarget { Keys, Values, Both, }
@@ -118,6 +118,24 @@ pub fn build_flat(root: &Value, scope: &[String], expanded: &HashSet<String>, so
     out
 }
 
+fn numeric_sort_key(v: &Value) -> f64 {
+    match v {
+        Value::Number(n) => n.as_f64().unwrap_or(f64::MAX),
+        _ => f64::MAX,
+    }
+}
+
+fn type_rank(v: &Value) -> u8 {
+    match v {
+        Value::Null => 0,
+        Value::Bool(_) => 1,
+        Value::Number(_) => 2,
+        Value::String(_) => 3,
+        Value::Array(_) => 4,
+        Value::Object(_) => 5,
+    }
+}
+
 fn sort_entries_obj(entries: &mut Vec<(&String, &Value)>, mode: SortMode) {
     match mode {
         SortMode::None => {}
@@ -125,6 +143,15 @@ fn sort_entries_obj(entries: &mut Vec<(&String, &Value)>, mode: SortMode) {
         SortMode::KeyDesc => entries.sort_by(|a, b| b.0.cmp(a.0)),
         SortMode::ValueAsc => entries.sort_by(|a, b| value_sort_key(a.1).cmp(&value_sort_key(b.1))),
         SortMode::ValueDesc => entries.sort_by(|a, b| value_sort_key(b.1).cmp(&value_sort_key(a.1))),
+        SortMode::NumericAsc => entries.sort_by(|a, b| {
+            numeric_sort_key(a.1).partial_cmp(&numeric_sort_key(b.1)).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        SortMode::NumericDesc => entries.sort_by(|a, b| {
+            numeric_sort_key(b.1).partial_cmp(&numeric_sort_key(a.1)).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        SortMode::TypeGroup => entries.sort_by(|a, b| {
+            type_rank(a.1).cmp(&type_rank(b.1)).then_with(|| a.0.cmp(b.0))
+        }),
     }
 }
 
@@ -397,11 +424,14 @@ pub fn collapse_recursive(path: &[String], expanded: &mut HashSet<String>) {
 
 pub fn sort_label(m: SortMode) -> &'static str {
     match m {
-        SortMode::None => "None",
-        SortMode::KeyAsc => "Key A-Z",
-        SortMode::KeyDesc => "Key Z-A",
-        SortMode::ValueAsc => "Value A-Z",
-        SortMode::ValueDesc => "Value Z-A",
+        SortMode::None => "Original",
+        SortMode::KeyAsc => "Key A->Z",
+        SortMode::KeyDesc => "Key Z->A",
+        SortMode::ValueAsc => "Value A->Z",
+        SortMode::ValueDesc => "Value Z->A",
+        SortMode::NumericAsc => "Numeric Asc.",
+        SortMode::NumericDesc => "Numeric Desc.",
+        SortMode::TypeGroup => "By Type",
     }
 }
 

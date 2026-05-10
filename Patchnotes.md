@@ -264,3 +264,47 @@
 - **DOCUMENT EDITOR**: Now loads bullet points properly for both docx and odt files
 - **DOCUMENT EDITOR**: Tabbing at the start of a paragraph no longer indents the whole paragraph, only the first line
 - **DOCUMENT EDITOR**: Multi-line Highlighting and in line highlighting are now the same
+
+## V0.0.9
+
+#### Features
+
+- **JSON EDITOR**: Search is now opened with top toolbar or ctrl+f, no longer open by default
+- **JSON EDITOR**: Added further sorting methods
+- **DOCUMENT EDITOR**: Font now works per character not for the whole document at once
+- **DOCUMENT EDITOR**: Added the ability to create links
+- **DOCUMENT EDITOR**: Added the ability to highlight text
+- **DOCUMENT EDITOR**: Added the ability to create checklists
+- **DOCUMENT EDITOR**: Undo stack improved to undo changes a little better while typing
+- **DOCUMENT EDITOR**: Headers now change font size and styling rather than hard coded size increases
+- **DOCUMENT EDITOR**: Added increase/decrease paragraph indent buttons (will be moved to top toolbar in the future)
+- **DOCUMENT EDITOR**: Shift tab now works to remove tab indents/paragraph indents
+- **DOCUMENT EDITOR**: Toolbar cleaned up, moved options to the top menu bar
+- **DOCUMENT EDITOR**: Measurements added to page sizes in the page settings modal
+- **DOCUMENT EDITOR**: Removed space after for regular text to condense text and prevent gaps between paragraphs
+- **DOCUMENT EDITOR**: Added the ability to create, load, and export tables
+- **DOCUMENT EDITOR**: Table columns can now be resized to whatever size needed
+- **GENERAL**: Slightly improving light mode coloring/contrast
+
+#### Debugging
+
+- **DOCUMENT EDITOR**: Up and down arrows now properly navigate through pages
+- **DOCUMENT EDITOR**: Highlights now load from both .odt and .docx files
+- **DOCUMENT EDITOR**: Font's now transfer from exported docx files
+- **DOCUMENT EDITOR**: Links now properly load from both .odt and .docx files
+- **DOCUMENT EDITOR**: Subscript no longer loads as superscript
+- **DOCUMENT EDITOR**: Fixed issues relating to placing tab indents and loading tab indents
+- **DOCUMENT EDITOR**: Headers, Titles, Subtitles, etc. now export correctly
+- **DOCUMENT EDITOR**: Tab indents and paragraph indents now the same size
+- **DOCUMENT EDITOR**: Undoing tabs no longer moves the cursor one space too far
+- **DOCUMENT EDITOR**: Multi-line highlights now properly align with letters regardless of font size
+- **DOCUMENT EDITOR**: Cursor now properly follows text after a page break
+- **DOCUMENT EDITOR**: Paragraphs now no longer disconnect after a page break
+- **DOCUMENT EDITOR**: Page breaks no longer occur in the middle of a word
+- **DOCUMENT EDITOR**: Clicking the first three rows of the table no longer jumps the cursor back to the line before it
+- **DOCUMENT EDITOR**: More buttons now properly change the cursor when hovering
+- **DOCUMENT EDITOR**: Cells in the table functionality now properly resize depending on cell text
+- **DOCUMENT EDITOR**: Can now use the up/down arrows to navigate through/past tables
+- **DOCUMENT EDITOR**: Now loads horizontal lines properly from docx files
+- **DOCUMENT EDITOR**: Now loads checklists properly from docx files
+- **DOCUMENT EDITOR**: Now properly reflects cursor position after clicking tab to indent

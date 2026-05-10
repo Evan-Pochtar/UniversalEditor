@@ -43,7 +43,6 @@
 
 - [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Undoing all changes does not remove "modified" file information status
-- [ ] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
 
 ### Image Editor Bugs
 
@@ -57,17 +56,22 @@
 
 ### Document Editor Bugs
 
-- [ ] Doesn't load horizontal lines properly
-- [ ] Highlighting
-  - [ ] Cannot highlight and scroll at the same time
-  - [ ] Highlighting seems to not align perfectly with letters, especially with large font sizes
-- [ ] Page Break
-  - [ ] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
-  - [ ] Sometimes page breaks cut a paragraph in the middle of a word
-- [ ] Tab/Indent
-  - [ ] Undoing a tab/indent moves cursor one character too far
-  - [ ] Cannot tab/indent with multi-line highlights
-  - [ ] Cannot tab/indent multiple lines at once, removes the lines instead
+- [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
+- [ ] Cannot highlight and scroll at the same time
+- [ ] Deleting newlines sometimes causes a "jitter" and text flashing
+- [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
+- [ ] Tabbing isn't always the same size
+- [ ] External loading
+  - [ ] Doesn't load horizontal lines properly (.odt)
+  - [ ] Doesn't load checklists properly (.odt)
+  - [ ] Superscript and subscript dont load (.odt)
+  - [ ] Double indents sometimes disappear on load (.odt)
+  - [ ] Empty spaces (newlines) are deleted on load (.odt)
+- [ ] Exporting
+  - [ ] Fonts do not export correctly
+  - [ ] Highlights do not export correctly
+  - [ ] Links do not export correctly
+  - [ ] Lists do not export correctly
 
 ### Other Bugs
 
@@ -103,9 +107,7 @@
 
 ### Json Editor
 
-- [ ] Make the sorting make a little more sense
 - [ ] Add key popup needs a little more information
-- [ ] Search should only show up when clicking ctrl+f
 - [ ] Make navigation bigger and more noticeable
 - [ ] Add true "Table" view, should look like an excel table for example
 - [ ] Center Buttons in Popup Modals (E.g New file, Add key)
@@ -117,18 +119,19 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Increase indent and decrease indent buttons
-- [ ] Different font's per line/text instead of changing the whole file to one font
-- [ ] Checklists
-- [ ] Tables
+- [ ] Export
+  - [ ] PDF
+  - [ ] MD
+  - [ ] rtf
+  - [ ] epub
+  - [ ] html
 - [ ] Images
-- [ ] Links
-- [ ] Highlighting
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Header and footers
-- [ ] Clean up toolbar
-- [ ] Shift tab should remove indent
+- [ ] Improve look of find/replace panel
+- [ ] Further Table options (border color, border thickness, fill color)
+- [ ] Custom page sizes
 
 ### CONVERTERS
 

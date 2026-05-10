@@ -13,7 +13,7 @@ pub struct DocumentEditor {
     pub(super) paras: Vec<DocParagraph>,
     pub(super) layout: PageLayout,
     pub(super) base_font: FontChoice,
-    pub(super) base_size: f32,
+    pub(super) base_size: u32,
     pub(super) cur_fmt: SpanFmt,
     pub(super) focused_para: usize,
     pub(super) last_selection: Option<(usize, usize, usize)>,
@@ -38,8 +38,13 @@ pub struct DocumentEditor {
     pub(super) heights_dirty: bool,
     pub(super) preset_idx: usize,
     pub(super) line_spacing_input: f32,
+    pub(super) link_input: String,
     pub(super) doc_sel: Option<[DocPos; 2]>,
-    pub(super) page_settings_draft: Option<(PageLayout, usize, f32)>,
+    pub(super) page_settings_draft: Option<(PageLayout, usize, u32)>,
+    pub(super) last_edit_action: u8,
+    pub(super) table_picker_hover: (usize, usize),
+    pub(super) active_table: Option<(usize, usize, usize)>,
+    pub(super) cell_edit_buf: String,
 }
 
 impl DocumentEditor {
@@ -63,7 +68,7 @@ impl DocumentEditor {
         let n = paras.len();
         Self {
             file_path: path, dirty: false, paras, layout,
-            base_font: FontChoice::Ubuntu, base_size: 12.0, cur_fmt: SpanFmt::default(),
+            base_font: FontChoice::Ubuntu, base_size: 11, cur_fmt: SpanFmt::default(),
             focused_para: 0, last_selection: None, pending_focus: None,
             show_outline: false, show_stats: false, show_page_settings: false,
             find_text: String::new(), replace_text: String::new(), show_find: false,
@@ -73,8 +78,9 @@ impl DocumentEditor {
             para_texts: vec![String::new(); n],
             para_ids: (0..n).map(|i| egui::Id::new(("de_para", i as u64))).collect(),
             para_heights: vec![0.0; n], heights_dirty: true,
-            preset_idx: 0, line_spacing_input: 1.15,
-            doc_sel: None, page_settings_draft: None,
+            preset_idx: 0, line_spacing_input: 1.15, link_input: String::new(),
+            doc_sel: None, page_settings_draft: None, last_edit_action: 0,
+            table_picker_hover: (0, 0), active_table: None, cell_edit_buf: String::new(),
         }
     }
 
@@ -94,6 +100,7 @@ impl DocumentEditor {
         self.redo_stack.clear();
         self.undo_stack.push_back(self.paras.clone());
         if self.undo_stack.len() > 50 { self.undo_stack.pop_front(); }
+        self.last_edit_action = 0;
     }
 
     pub(super) fn undo(&mut self) {
@@ -119,6 +126,18 @@ impl DocumentEditor {
 
     pub(super) fn has_cross_sel(&self) -> bool {
         self.doc_sel.map(|[a, b]| a.para != b.para).unwrap_or(false)
+    }
+
+    fn set_single_para_fmt<F: Fn(&mut SpanFmt)>(&mut self, op: F) -> bool {
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                apply_fmt_range(&mut self.paras[pi], s, e, op);
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true; return true;
+            }
+        }
+        false
     }
 
     pub(super) fn collect_sel_text(&self, from: DocPos, to: DocPos) -> String {
@@ -196,19 +215,19 @@ impl DocumentEditor {
         self.scroll_to_para = Some(self.find_results[self.find_cursor].0);
     }
 
-    pub(super) fn sel_font_size_pt(&self) -> f32 {
+    pub(super) fn sel_font_size_pt(&self) -> u32 {
         if let Some((pi, s, e)) = self.last_selection {
             if pi < self.paras.len() {
                 let byte = if s == e { s } else { s };
-                if let Some(hp) = para_fmt_at(&self.paras[pi], byte).size_hp { return hp as f32 / 2.0; }
+                if let Some(hp) = para_fmt_at(&self.paras[pi], byte).size_hp { return (hp as f32 / 2.0).round() as u32; }
             }
         }
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| hp as f32 / 2.0).unwrap_or(self.base_size)
+        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| (hp as f32 / 2.0).round() as u32).unwrap_or_else(|| self.paras[pi].style.default_font_size_pt(self.base_size))
     }
 
-    pub(super) fn apply_fmt_size(&mut self, pt: f32) {
-        let hp = (pt * 2.0).round() as u32;
+    pub(super) fn apply_fmt_size(&mut self, pt: u32) {
+        let hp = pt.saturating_mul(2);
         if let Some((pi, s, e)) = self.last_selection {
             if s != e && pi < self.paras.len() {
                 self.push_undo();
@@ -355,37 +374,135 @@ impl DocumentEditor {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.underline); } }
         self.cur_fmt.underline
     }
-    pub(super) fn fmt_state_strike(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.strike); } }
-        self.cur_fmt.strike
-    }
-    pub(super) fn fmt_state_sup(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.sup); } }
-        self.cur_fmt.sup
-    }
-    pub(super) fn fmt_state_sub(&self) -> bool {
-        if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.sub); } }
-        self.cur_fmt.sub
-    }
 
+    pub(super) fn apply_fmt_font(&mut self, font: Option<FontChoice>) {
+        if self.set_single_para_fmt(|f| f.font = font) { return; }
+        self.cur_fmt.font = font;
+    }
     pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                apply_fmt_range(&mut self.paras[pi], s, e, |f| f.color = color);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
+        if self.set_single_para_fmt(|f| f.color = color) { return; }
         self.cur_fmt.color = color;
     }
 
+    pub(super) fn apply_fmt_highlight(&mut self, color: Option<[u8; 3]>) {
+        if self.set_single_para_fmt(|f| f.highlight = color) { return; }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        self.push_undo();
+        let len = self.paras[pi].text.len();
+        if len > 0 {
+            apply_fmt_range(&mut self.paras[pi], 0, len, |f| f.highlight = color);
+            self.para_texts[pi] = self.paras[pi].text.clone();
+            self.dirty = true; self.heights_dirty = true;
+        } else {
+            self.cur_fmt.highlight = color;
+        }
+    }
+
+    pub(super) fn apply_fmt_link(&mut self, link: Option<String>) {
+        if self.set_single_para_fmt(|f| f.link = link.clone()) { return; }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        self.push_undo();
+        let len = self.paras[pi].text.len();
+        if len > 0 {
+            let link_clone = link.clone();
+            apply_fmt_range(&mut self.paras[pi], 0, len, move |f| f.link = link_clone.clone());
+            self.para_texts[pi] = self.paras[pi].text.clone();
+            self.dirty = true; self.heights_dirty = true;
+        } else {
+            self.cur_fmt.link = link;
+        }
+    }
+
+    pub(super) fn adjust_indent_selection(&mut self, delta: f32) {
+        self.push_undo();
+        let max_indent = (self.layout.content_width() - 36.0).max(0.0);
+        let mut changed = false;
+        let target_paras = if let Some((from, to)) = self.norm_sel() { from.para..=to.para } else { self.focused_para..=self.focused_para };
+        for pi in target_paras {
+            let before = self.paras[pi].indent_left;
+            self.paras[pi].indent_left = (self.paras[pi].indent_left + delta).clamp(0.0, max_indent);
+            changed |= (self.paras[pi].indent_left - before).abs() > f32::EPSILON;
+        }
+        if changed {
+            self.dirty = true;
+            self.heights_dirty = true;
+        } else {
+            self.undo_stack.pop_back();
+        }
+    }
+
+    pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
+        self.push_undo();
+        let make_cell = || TableCell { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }] };
+        let mut p = DocParagraph::with_style(ParaStyle::Table);
+        p.table = Some(Box::new(TableData {
+            rows: (0..rows).map(|_| (0..cols).map(|_| make_cell()).collect()).collect(),
+            col_widths: Vec::new(),
+        }));
+        let idx = (self.focused_para + 1).min(self.paras.len());
+        self.paras.insert(idx, p);
+        self.focused_para = idx;
+        self.sync_texts();
+        self.dirty = true;
+        self.heights_dirty = true;
+    }
+
+    pub(super) fn insert_horizontal_rule_after_focus(&mut self) {
+        self.push_undo();
+        let idx = self.focused_para;
+        self.paras.insert(idx + 1, DocParagraph::with_style(ParaStyle::HRule));
+        if idx + 2 >= self.paras.len() { self.paras.push(DocParagraph::new()); }
+        self.focused_para = idx + 2;
+        self.pending_focus = Some(self.focused_para);
+        self.sync_texts();
+        self.dirty = true;
+    }
+
+    pub(super) fn commit_active_table_cell(&mut self) -> bool {
+        let (pi, row, col) = match self.active_table.take() {
+            Some(pos) => pos,
+            None => return false,
+        };
+        if pi >= self.paras.len() { return false; }
+        self.push_undo();
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            if let Some(r) = tbl.rows.get_mut(row) {
+                if let Some(c) = r.get_mut(col) {
+                    let text = self.cell_edit_buf.clone();
+                    c.text = text.clone();
+                    c.spans = if text.is_empty() {
+                        vec![DocSpan { len: 0, fmt: SpanFmt::default() }]
+                    } else {
+                        vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }]
+                    };
+                    self.dirty = true;
+                    self.heights_dirty = true;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn save_impl(&mut self, path: PathBuf) -> Result<(), String> {
+        let _ = self.commit_active_table_cell();
+        let mut save_paras = self.paras.clone();
+        let mut j = 0;
+        while j < save_paras.len() {
+            if save_paras[j].is_split && j > 0 {
+                let orig_space_after = save_paras[j].space_after;
+                merge_paragraphs(&mut save_paras, j - 1);
+                save_paras[j - 1].space_after = orig_space_after;
+                save_paras[j - 1].is_split = false;
+            } else {
+                j += 1;
+            }
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         match ext.as_str() {
-            "docx" | "doc" => save_docx(&path, &self.paras, &self.layout)?,
-            "odt" => save_odt(&path, &self.paras, &self.layout)?,
-            _ => { let t: String = self.paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
+            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout)?,
+            "odt" => save_odt(&path, &save_paras, &self.layout)?,
+            _ => { let t: String = save_paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
         }
         self.file_path = Some(path); self.dirty = false; Ok(())
     }
@@ -425,6 +542,21 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Zoom Out".into(), shortcut: Some("Ctrl+-".into()), enabled: true }, MenuAction::Custom("ZoomOut".into())),
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
             ],
+            insert_items: vec![
+                (MenuItem { label: "Bullet List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertBulletList".into())),
+                (MenuItem { label: "Numbered List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertNumberedList".into())),
+                (MenuItem { label: "Checklist".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertChecklist".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Horizontal Line".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertHorizontalRule".into())),
+            ],
+            format_items: vec![
+                (MenuItem { label: "Strikethrough".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleStrike".into())),
+                (MenuItem { label: "Superscript".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleSuperscript".into())),
+                (MenuItem { label: "Subscript".into(), shortcut: None, enabled: true }, MenuAction::Custom("ToggleSubscript".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
+                (MenuItem { label: "Increase Indent".into(), shortcut: None, enabled: true }, MenuAction::Custom("IncreaseIndent".into())),
+                (MenuItem { label: "Decrease Indent".into(), shortcut: None, enabled: true }, MenuAction::Custom("DecreaseIndent".into())),
+            ],
             image_items: vec![], filter_items: vec![], layer_items: vec![],
         }
     }
@@ -437,9 +569,18 @@ impl EditorModule for DocumentEditor {
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
                 "ToggleOutline" => { self.show_outline = !self.show_outline; true }
-                "ZoomIn" => { self.zoom = (self.zoom + 0.1).min(3.0); true }
-                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); true }
+                "ZoomIn"  => { self.zoom = (self.zoom + 0.1).min(3.0); self.heights_dirty = true; true }
+                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); self.heights_dirty = true; true }
                 "ZoomReset" => { self.auto_zoom_done = false; true }
+                "InsertBulletList" => { self.apply_style_toggle(ParaStyle::ListBullet); true }
+                "InsertNumberedList" => { self.apply_style_toggle(ParaStyle::ListOrdered); true }
+                "InsertChecklist" => { self.apply_style_toggle(ParaStyle::ListCheck); true }
+                "InsertHorizontalRule" => { self.insert_horizontal_rule_after_focus(); true }
+                "ToggleStrike" => { self.apply_fmt_toggle_strike(); true }
+                "ToggleSuperscript" => { self.apply_fmt_toggle_sup(); true }
+                "ToggleSubscript" => { self.apply_fmt_toggle_sub(); true }
+                "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
+                "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
                 _ => false,
             },
             _ => false,

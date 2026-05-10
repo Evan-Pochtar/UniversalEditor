@@ -1742,7 +1742,7 @@ impl ImageEditor {
         let (bg, border, text_col, label_col) = if matches!(theme, ThemeMode::Dark) {
             (ColorPalette::ZINC_900, ColorPalette::BLUE_600, ColorPalette::ZINC_100, ColorPalette::ZINC_400)
         } else {
-            (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_600)
+            (ColorPalette::GRAY_50, ColorPalette::BLUE_600, ColorPalette::GRAY_900, ColorPalette::ZINC_700)
         };
         let accent: egui::Color32 = ColorPalette::BLUE_500;
         let screen_h = ctx.content_rect().height();
@@ -1774,7 +1774,7 @@ impl ImageEditor {
                         let section_label = |ui: &mut egui::Ui, label: &str| {
                             ui.add_space(4.0);
                             egui::Frame::new()
-                                .fill(if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 })
+                                .fill(if matches!(theme, ThemeMode::Dark) { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_300 })
                                 .inner_margin(egui::Margin { left: pad as i8, right: pad as i8, top: 4, bottom: 4 })
                                 .show(ui, |ui: &mut egui::Ui| {
                                     ui.label(egui::RichText::new(label).size(10.0).color(label_col).strong());
@@ -2266,11 +2266,11 @@ impl ImageEditor {
     pub(super) fn render_layers_panel(&mut self, ui: &mut egui::Ui, theme: ThemeMode) {
         let is_dark = matches!(theme, ThemeMode::Dark);
         let bg_deep = if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::from_rgb(245, 245, 248) };
-        let bg_row = if is_dark { egui::Color32::from_rgb(38, 38, 44) } else { egui::Color32::from_rgb(252, 252, 255) };
+        let bg_row = if is_dark { egui::Color32::from_rgb(38, 38, 44) } else { egui::Color32::from_rgb(240, 241, 246) };
         let bg_active = if is_dark { egui::Color32::from_rgb(45, 75, 120) } else { egui::Color32::from_rgb(210, 228, 255) };
         let border = if is_dark { egui::Color32::from_rgb(55, 55, 65) } else { egui::Color32::from_rgb(210, 210, 220) };
         let text_prim = if is_dark { egui::Color32::from_rgb(220, 220, 228) } else { egui::Color32::from_rgb(30, 30, 40) };
-        let text_mute = if is_dark { egui::Color32::from_rgb(130, 130, 150) } else { egui::Color32::from_rgb(140, 140, 160) };
+        let text_mute = if is_dark { egui::Color32::from_rgb(130, 130, 150) } else { egui::Color32::from_rgb(85, 85, 105) };
         let accent = ColorPalette::BLUE_500;
         let danger = egui::Color32::from_rgb(200, 60, 60);
 
@@ -2321,7 +2321,7 @@ impl ImageEditor {
                         let sep_color = if is_dark {
                             egui::Color32::from_rgb(80, 80, 100)
                         } else {
-                            egui::Color32::from_rgb(180, 180, 200)
+                            egui::Color32::from_rgb(130, 130, 155)
                         };
                         let (sep_rect, _) = ui.allocate_exact_size(
                             egui::vec2(ui.available_width(), 1.0),
@@ -2387,7 +2387,7 @@ impl ImageEditor {
                                     }
                                 } else {
                                     let name_color = if is_active {
-                                        egui::Color32::WHITE
+                                        if is_dark { egui::Color32::WHITE } else { egui::Color32::from_rgb(10, 30, 70) }
                                     } else if is_background {
                                         text_mute
                                     } else {
@@ -2809,7 +2809,7 @@ fn gradient_slider_ui(ui: &mut egui::Ui, value: &mut f32, min: f32, max: f32, le
 
             let label_y: f32 = track_rect.bottom() + 2.0;
             let label_font: egui::FontId = egui::FontId::proportional(9.5);
-            let label_col_dim: egui::Color32 = egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200);
+            let label_col_dim = if ui.visuals().dark_mode { egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200) } else { egui::Color32::from_rgba_unmultiplied(70, 70, 90, 240) };
             painter.text(egui::pos2(track_rect.left(), label_y), egui::Align2::LEFT_TOP, left_label, label_font.clone(), label_col_dim);
             painter.text(egui::pos2(track_rect.right(), label_y), egui::Align2::RIGHT_TOP, right_label, label_font, label_col_dim);
 

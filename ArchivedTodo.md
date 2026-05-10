@@ -55,6 +55,7 @@
 - [x] When using headers, cursor gets disconnected from the actual position
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 - [x] Changing fonts sometimes causes code blocks to desync
+- [x] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
 
 ### Image Editor Bugs
 
@@ -152,6 +153,24 @@
 - [x] Tab/indent currently indents the whole paragraph, not just the first line
 - [x] Tabbing in the middle of a paragraph indents instead of adding empty space
 - [x] Multiline-highlight is not the same color, and the text is not the same color, compared to regular text highlighting
+- [x] Fonts do not load properly if they are the same ones as used in the external doc (.docx)
+- [x] Links show up as links, but do not actually link to the site (.docx and .odt)
+- [x] Highlights don't load from external docs (.docx and .odt)
+- [x] Cannot tab/indent with multi-line highlights
+- [x] Subscript loading as superscript (.docx)
+- [x] Single indents sometimes disappear on load (.docx)
+- [x] Cannot tab/indent multiple lines at once, removes the lines instead
+- [x] Headers/Titles do not export correctly
+- [x] Undoing a tab/indent moves cursor one character too far
+- [x] Paragraph indent and tab indent aren't the same size
+- [x] Highlighting seems to not align perfectly with letters, especially with large font sizes
+- [x] Changing font size, font type, or page margins causes paragraphs to disconnect sometimes
+- [x] Sometimes page breaks cut a paragraph in the middle of a word
+- [x] When clicking to edit a tables cell, the box that shows up is dependant on the zoom of the page
+- [x] Cannot navigate up or down past/through tables
+- [x] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
+- [x] Doesn't load horizontal lines properly (.docx)
+- [x] Doesn't load checklists properly (.docx)
 
 ### Other Bugs
 
@@ -261,6 +280,8 @@
 - [x] Create JSON styling file, move out of ui file
 - [x] Add line numbers to text view
 - [x] Change cursor when hovering over buttons/navigation
+- [x] Search should only show up when clicking ctrl+f
+- [x] Make the sorting make a little more sense
 
 ### Document Editor
 
@@ -271,6 +292,16 @@
 - [x] Add .odt file compatibility
 - [x] Add to the about modal
 - [x] Up and down arrow keys to navigate lines
+- [x] Links
+- [x] Highlighting
+- [x] Different font's per line/text instead of changing the whole file to one font
+- [x] Checklists
+- [x] Headers should change font size
+- [x] Increase indent and decrease indent buttons
+- [x] Shift tab should remove indent
+- [x] Clean up toolbar
+- [x] Add measurements to page sizes in the page settings panel
+- [x] Tables
 
 ### CONVERTER: Img 2 Img
 

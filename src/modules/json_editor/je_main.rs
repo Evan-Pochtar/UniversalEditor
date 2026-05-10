@@ -33,6 +33,7 @@ pub struct JsonEditor {
     pub(super) expanded: HashSet<String>,
 
     pub(super) sort_mode: SortMode,
+    pub(super) show_search: bool,
     pub(super) search_query: String,
     pub(super) search_target: SearchTarget,
     pub(super) search_results: Vec<usize>,
@@ -106,6 +107,7 @@ impl JsonEditor {
             flat,
             flat_stale: false,
             expanded,
+            show_search: false,
             sort_mode: SortMode::None,
             search_query: String::new(),
             search_target: SearchTarget::Both,
@@ -479,10 +481,13 @@ impl EditorModule for JsonEditor {
                     enabled: self.can_redo(),
                 }, MenuAction::Redo),
             ],
-            view_items: Vec::new(),
-            image_items: Vec::new(),
-            filter_items: Vec::new(),
-            layer_items: Vec::new(),
+            view_items: vec![
+                (MenuItem {
+                    label: if self.show_search { "Hide Search".into() } else { "Show Search (Ctrl+F)".into() },
+                    shortcut: Some("Ctrl+F".into()),
+                    enabled: true,
+                }, MenuAction::Custom("ToggleSearch".into())),
+            ], image_items: Vec::new(), filter_items: Vec::new(), layer_items: Vec::new(), insert_items: Vec::new(), format_items: Vec::new()
         }
     }
 
@@ -490,6 +495,7 @@ impl EditorModule for JsonEditor {
         match action {
             MenuAction::Undo => { self.undo(); true }
             MenuAction::Redo => { self.redo(); true }
+            MenuAction::Custom(ref v) if v == "ToggleSearch" => { self.show_search = !self.show_search; true }
             _ => false,
         }
     }
