@@ -500,7 +500,7 @@ impl DocumentEditor {
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         match ext.as_str() {
-            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout)?,
+            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout, self.base_font, self.base_size)?,
             "odt" => save_odt(&path, &save_paras, &self.layout)?,
             _ => { let t: String = save_paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
         }

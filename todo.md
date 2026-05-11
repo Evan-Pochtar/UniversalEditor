@@ -60,17 +60,13 @@
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
+- [ ] Checklists do not export correctly
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
-- [ ] Exporting
-  - [ ] Fonts do not export correctly
-  - [ ] Highlights do not export correctly
-  - [ ] Links do not export correctly
-  - [ ] Lists do not export correctly
 
 ### Other Bugs
 

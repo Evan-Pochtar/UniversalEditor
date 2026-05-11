@@ -2,6 +2,10 @@ use eframe::egui;
 use std::{io::{Read, Write}, path::PathBuf};
 use crate::style::ColorPalette;
 
+const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
+const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontChoice { #[default] Ubuntu, Roboto, GoogleSans, OpenSans }
 impl FontChoice {
@@ -458,10 +462,6 @@ pub fn char_count(paras: &[DocParagraph]) -> usize {
     }).sum()
 }
 
-const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#;
-const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
-const WORD_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
-
 fn style_size_hp(style: ParaStyle) -> Option<u32> {
     match style {
         ParaStyle::Title => Some(52),
@@ -513,6 +513,52 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
     out
 }
 
+fn build_word_rels(hyperlinks: &[(String, String)]) -> String {
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>");
+    for (id, url) in hyperlinks {
+        out.push_str(&format!("<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", id, xml_esc(url)));
+    }
+    out.push_str("</Relationships>");
+    out
+}
+
+fn build_numbering_xml() -> String {
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>", "\u{2022}")
+}
+
+fn run_rpr(span: &DocSpan, base_font: FontChoice) -> String {
+    let fname = match span.fmt.font.unwrap_or(base_font) {
+        FontChoice::Ubuntu => "Ubuntu", FontChoice::Roboto => "Roboto",
+        FontChoice::GoogleSans => "Google Sans", FontChoice::OpenSans => "Open Sans",
+    };
+    let mut r = format!("<w:rPr><w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\" w:cs=\"{}\"/>", fname, fname, fname);
+    if let Some(sz) = span.fmt.size_hp { r.push_str(&format!("<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>", sz, sz)); }
+    if span.fmt.bold { r.push_str("<w:b/>"); }
+    if span.fmt.italic { r.push_str("<w:i/>"); }
+    if span.fmt.underline || span.fmt.link.is_some() { r.push_str("<w:u w:val=\"single\"/>"); }
+    if span.fmt.strike { r.push_str("<w:strike/>"); }
+    if span.fmt.sub { r.push_str("<w:vertAlign w:val=\"subscript\"/>"); }
+    if span.fmt.sup { r.push_str("<w:vertAlign w:val=\"superscript\"/>"); }
+    if let Some(c) = span.fmt.color { r.push_str(&format!("<w:color w:val=\"{:02X}{:02X}{:02X}\"/>", c[0], c[1], c[2])); }
+    else if span.fmt.link.is_some() { r.push_str("<w:color w:val=\"1155CC\"/>"); }
+    if let Some(h) = span.fmt.highlight { r.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{:02X}{:02X}{:02X}\" w:color=\"auto\"/>", h[0], h[1], h[2])); }
+    r.push_str("</w:rPr>");
+    r
+}
+
+fn write_run(out: &mut String, txt: &str, rpr: &str) {
+    out.push_str("<w:r>");
+    out.push_str(rpr);
+    for (i, part) in txt.split('\t').enumerate() {
+        if i > 0 { out.push_str("<w:tab/>"); }
+        if !part.is_empty() {
+            let sp = if part.starts_with(' ') || part.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
+            out.push_str(&format!("<w:t{}>{}</w:t>", sp, xml_esc(part)));
+        }
+    }
+    out.push_str("</w:r>\n");
+}
+
 fn build_docx_styles_xml() -> String {
     let mut out = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
     out.push_str(r#"<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults>"#);
@@ -525,22 +571,20 @@ fn build_docx_styles_xml() -> String {
 }
 
 fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
-fn build_table_xml(tbl: &TableData) -> String {
+fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
-    let cw = 5000 / ncols;
+    let col_tw = content_w_twips / ncols as u32;
     let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"4\" w:color=\"auto\"/>", s);
-    let mut out = format!(
-        "<w:tbl><w:tblPr><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
-        b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV")
-    );
-    for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", cw * 120)); }
+    let mut out = format!("<w:tbl><w:tblPr><w:tblW w:w=\"{}\" w:type=\"dxa\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
+        content_w_twips, b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV"));
+    for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", col_tw)); }
     out.push_str("</w:tblGrid>");
     for row in &tbl.rows {
         out.push_str("<w:tr>");
         for cell in row {
             out.push_str(&format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"pct\"/></w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
-                cw, xml_esc(&cell.text)
+                "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
+                col_tw, xml_esc(&cell.text)
             ));
         }
         out.push_str("</w:tr>");
@@ -549,11 +593,13 @@ fn build_table_xml(tbl: &TableData) -> String {
     out
 }
 
-fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
-    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:body>\n");
+fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: FontChoice) -> (String, Vec<String>) {
+    let content_w_twips = ((layout.width - layout.margin_left - layout.margin_right) * 20.0).round() as u32;
+    let mut hyperlinks: Vec<String> = Vec::new();
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n<w:body>\n");
     for para in paras {
         if para.style == ParaStyle::Table {
-            if let Some(ref t) = para.table { out.push_str(&build_table_xml(t)); }
+            if let Some(ref t) = para.table { out.push_str(&build_table_xml(t, content_w_twips)); }
             continue;
         }
         if para.style == ParaStyle::HRule {
@@ -565,70 +611,75 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
         if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>\n", para.align.docx_val())); }
         out.push_str(&format!("<w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"auto\"/>\n",
             (para.space_before * 20.0) as u32, (para.space_after * 20.0) as u32, (para.line_height * 240.0) as u32));
-        if para.indent_left != 0.0 || para.indent_first != 0.0 {
-            out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32));
+        match para.style {
+            ParaStyle::ListBullet => {
+                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
+                out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>\n");
+            }
+            ParaStyle::ListOrdered => {
+                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
+                out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr>\n");
+            }
+            ParaStyle::ListCheck => {
+                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
+            }
+            _ if para.indent_left != 0.0 || para.indent_first != 0.0 => {
+                out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32));
+            }
+            _ => {}
         }
         out.push_str("</w:pPr>\n");
         if para.style == ParaStyle::ListCheck {
-            out.push_str(&format!("<w:r><w:t xml:space=\"preserve\">{}</w:t></w:r>\n", if para.checked { "☑ " } else { "☐ " }));
+            let fname = match base_font { FontChoice::Roboto => "Roboto", FontChoice::GoogleSans => "Google Sans", FontChoice::OpenSans => "Open Sans", _ => "Ubuntu" };
+            out.push_str(&format!("<w:r><w:rPr><w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/></w:rPr><w:t xml:space=\"preserve\">{} </w:t></w:r>\n",
+                fname, fname, if para.checked { "\u{2611}" } else { "\u{2610}" }));
         }
         let mut pos = 0;
         for span in &para.spans {
             if span.len == 0 { pos += span.len; continue; }
             if pos >= para.text.len() { break; }
-            let end = (pos + span.len).min(para.text.len()); let txt = &para.text[pos..end]; pos = end;
-            if txt.is_empty() { continue; }
-            out.push_str("<w:r>\n");
-            let hf = span.fmt.bold||span.fmt.italic||span.fmt.underline||span.fmt.strike||span.fmt.sub||span.fmt.sup||span.fmt.size_hp.is_some()||span.fmt.color.is_some()||span.fmt.highlight.is_some();
-            if hf {
-                out.push_str("<w:rPr>\n");
-                if span.fmt.bold { out.push_str("<w:b/>\n"); }
-                if span.fmt.italic { out.push_str("<w:i/>\n"); }
-                if span.fmt.underline { out.push_str("<w:u w:val=\"single\"/>\n"); }
-                if span.fmt.strike { out.push_str("<w:strike/>\n"); }
-                if span.fmt.sub { out.push_str("<w:vertAlign w:val=\"subscript\"/>\n"); }
-                if span.fmt.sup { out.push_str("<w:vertAlign w:val=\"superscript\"/>\n"); }
-                if let Some(sz) = span.fmt.size_hp { out.push_str(&format!("<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>\n", sz, sz)); }
-                if let Some(c) = span.fmt.color { out.push_str(&format!("<w:color w:val=\"{:02X}{:02X}{:02X}\"/>\n", c[0], c[1], c[2])); }
-                out.push_str("</w:rPr>\n");
+            let end = (pos + span.len).min(para.text.len());
+            let seg = &para.text[pos..end];
+            pos = end;
+            if seg.is_empty() { continue; }
+            let rpr = run_rpr(span, base_font);
+            if let Some(ref url) = span.fmt.link {
+                let idx = hyperlinks.iter().position(|u| u == url).unwrap_or_else(|| { hyperlinks.push(url.clone()); hyperlinks.len() - 1 });
+                out.push_str(&format!("<w:hyperlink r:id=\"rId{}\">", idx + 3));
+                write_run(&mut out, seg, &rpr);
+                out.push_str("</w:hyperlink>\n");
+            } else {
+                write_run(&mut out, seg, &rpr);
             }
-            let parts: Vec<&str> = txt.split('\t').collect();
-            for (i, part) in parts.iter().enumerate() {
-                if !part.is_empty() {
-                    let ps = if part.starts_with(' ') || part.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
-                    out.push_str(&format!("<w:t{}>{}</w:t>\n", ps, xml_esc(part)));
-                }
-                if i < parts.len() - 1 {
-                    out.push_str("<w:tab/>\n");
-                }
-            }
-            out.push_str("</w:r>\n");
         }
         out.push_str("</w:p>\n");
     }
     let (w, h, mt, mb, ml, mr) = ((layout.width*20.0) as u32, (layout.height*20.0) as u32, (layout.margin_top*20.0) as u32, (layout.margin_bot*20.0) as u32, (layout.margin_left*20.0) as u32, (layout.margin_right*20.0) as u32);
     out.push_str(&format!("<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\"/></w:sectPr>\n</w:body>\n</w:document>", w, h, mt, mr, mb, ml));
-    out
+    (out, hyperlinks)
 }
 
-pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) -> Result<(), String> {
+pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout, base_font: FontChoice, _base_size: u32) -> Result<(), String> {
+    let (doc, hyperlinks) = build_document_xml(paras, layout, base_font);
+    let hl_pairs: Vec<(String, String)> = hyperlinks.iter().enumerate().map(|(i, url)| (format!("rId{}", i + 3), url.clone())).collect();
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default();
-    for (name, data) in [
-        ("[Content_Types].xml", CONTENT_TYPES.as_bytes()),
-        ("_rels/.rels", ROOT_RELS.as_bytes()),
-        ("word/_rels/document.xml.rels", WORD_RELS.as_bytes()),
-    ] {
+    for (name, data) in [("[Content_Types].xml", CONTENT_TYPES.as_bytes()), ("_rels/.rels", ROOT_RELS.as_bytes())] {
         zip.start_file(name, opts).map_err(|e| e.to_string())?;
         zip.write_all(data).map_err(|e| e.to_string())?;
     }
-    let doc = build_document_xml(paras, layout);
+    let rels = build_word_rels(&hl_pairs);
+    zip.start_file("word/_rels/document.xml.rels", opts).map_err(|e| e.to_string())?;
+    zip.write_all(rels.as_bytes()).map_err(|e| e.to_string())?;
     zip.start_file("word/document.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(doc.as_bytes()).map_err(|e| e.to_string())?;
     let styles = build_docx_styles_xml();
     zip.start_file("word/styles.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(styles.as_bytes()).map_err(|e| e.to_string())?;
+    let numbering = build_numbering_xml();
+    zip.start_file("word/numbering.xml", opts).map_err(|e| e.to_string())?;
+    zip.write_all(numbering.as_bytes()).map_err(|e| e.to_string())?;
     zip.finish().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1027,7 +1078,6 @@ pub fn load_txt_as_doc(path: &PathBuf) -> Result<Vec<DocParagraph>, String> {
     Ok(paras)
 }
 
-const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
 #[derive(Clone, Default)]
 struct OdtStyle { bold:bool, italic:bool, underline:bool, strike:bool, size_hp:Option<u32>, color:Option<[u8;3]>, highlight:Option<[u8;3]>, align:Align, h_border:bool, parent:String }
 

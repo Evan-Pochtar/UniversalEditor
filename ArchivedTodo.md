@@ -172,6 +172,14 @@
 - [x] Doesn't load horizontal lines properly (.docx)
 - [x] Doesn't load checklists properly (.docx)
 - [x] Tabbing isn't always the same size
+- [x] Fonts do not export correctly
+- [x] Font sizes export 1 lower than they are supposed to
+- [x] Highlights do not export correctly
+- [x] Links do not export correctly
+- [x] Bulleted and numbered lists do not export correctly
+- [x] Links do not export correctly
+- [x] Headers, title, subtitle, etc doesn't export correctly.
+- [x] Tables do not export correctly.
 
 ### Other Bugs
 
