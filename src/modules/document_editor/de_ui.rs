@@ -1187,7 +1187,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     let len = ed.para_texts[i].chars().count();
                     cr.primary.index == len && cr.secondary.index == len
                 }).unwrap_or(false);
-                let should_handle_bksp = at_start && (ed.paras[i].indent_first > 0.0 || ed.paras[i].indent_left > 0.0 || i > 0);
+                let should_handle_bksp = at_start && (ed.paras[i].indent_first > 0.0 || ed.paras[i].indent_left > 0.0 || ed.paras[i].style != ParaStyle::Normal || i > 0);
                 if should_handle_bksp && ctx.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
                     if ed.paras[i].indent_first > 0.0 {
                         ed.push_undo();
@@ -1197,6 +1197,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     } else if ed.paras[i].indent_left > 0.0 {
                         ed.push_undo();
                         ed.paras[i].indent_left = (ed.paras[i].indent_left - 36.0).max(0.0);
+                        ed.dirty = true;
+                        ed.heights_dirty = true;
+                    } else if ed.paras[i].style != ParaStyle::Normal {
+                        ed.push_undo();
+                        ed.paras[i].style = ParaStyle::Normal;
                         ed.dirty = true;
                         ed.heights_dirty = true;
                     } else if i > 0 {
@@ -1389,10 +1394,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     let state = egui::TextEdit::load_state(ctx, id);
                     let cr = state.as_ref().and_then(|s| s.cursor.char_range());
                     let has_selection = cr.map(|cr| cr.primary.index != cr.secondary.index).unwrap_or(false);
-                    let caret_index = cr.map(|cr| cr.primary.index.min(cr.secondary.index)).unwrap_or(0);
                     let caret_at_start = cr.map(|cr| cr.primary.index == 0 && cr.secondary.index == 0).unwrap_or(false);
-                    let caret_byte = char_to_byte(&ed.para_texts[i], caret_index);
-                    let mut changed = false;
+                    let changed: bool;
                     ed.push_undo();
 
                     if has_selection {
@@ -1415,32 +1418,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             ed.paras[i].indent_first = (ed.paras[i].indent_first + delta).clamp(0.0, max_indent);
                             changed = (ed.paras[i].indent_first - before).abs() > f32::EPSILON;
                         }
-                    } else if shift_tab {
-                        if caret_byte > 0 && ed.paras[i].text.as_bytes().get(caret_byte - 1) == Some(&b'\t') {
-                            let mut new_text = ed.paras[i].text.clone();
-                            new_text.remove(caret_byte - 1);
-                            let fmt = para_fmt_at(&ed.paras[i], caret_byte.saturating_sub(1));
-                            rebuild_spans(&mut ed.paras[i], new_text, &fmt);
-                            ed.para_texts[i] = ed.paras[i].text.clone();
-                            if let Some(mut st) = state {
-                                let cc = egui::text::CCursor::new(caret_index.saturating_sub(1));
-                                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
-                                egui::TextEdit::store_state(ctx, id, st);
-                            }
-                            changed = true;
-                        }
                     } else {
-                        let mut new_text = ed.paras[i].text.clone();
-                        new_text.insert(caret_byte, '\t');
-                        let fmt = para_fmt_at(&ed.paras[i], caret_byte);
-                        rebuild_spans(&mut ed.paras[i], new_text, &fmt);
-                        ed.para_texts[i] = ed.paras[i].text.clone();
-                        if let Some(mut st) = state {
-                            let cc = egui::text::CCursor::new(caret_index + 1);
-                            st.cursor.set_char_range(Some(egui::text::CCursorRange::one(cc)));
-                            egui::TextEdit::store_state(ctx, id, st);
-                        }
-                        changed = true;
+                        let before = ed.paras[i].indent_left;
+                        ed.paras[i].indent_left = (ed.paras[i].indent_left + delta).clamp(0.0, max_indent);
+                        changed = (ed.paras[i].indent_left - before).abs() > f32::EPSILON;
                     }
 
                     if !changed {

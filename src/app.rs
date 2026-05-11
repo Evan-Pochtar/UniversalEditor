@@ -308,7 +308,6 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::OpenFile(path)); self.show_unsaved_dialog = true;
         } else {
-            self.save_image_cache_if_needed();
             self.recent_files.add_file(path.clone()); self.active_module = Some(self.module_from_path(path));
         }
     }
@@ -325,7 +324,6 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::SwitchModule(module)); self.show_unsaved_dialog = true;
         } else {
-            self.save_image_cache_if_needed();
             self.active_module = Some(module);
         }
     }
@@ -334,28 +332,18 @@ impl UniversalEditor {
         if self.has_unsaved_changes() {
             self.pending_action = Some(PendingAction::GoHome); self.show_unsaved_dialog = true;
         } else {
-            self.save_image_cache_if_needed();
             self.active_module = None;
         }
     }
 
     fn execute_pending_action(&mut self) {
         if let Some(action) = self.pending_action.take() {
-            self.save_image_cache_if_needed();
             match action {
                 PendingAction::OpenFile(path) => { self.recent_files.add_file(path.clone()); self.active_module = Some(self.module_from_path(path)); }
                 PendingAction::NewFile => { let mut e = TextEditor::new_empty(); self.apply_default_font(&mut e); self.active_module = Some(Box::new(e)); }
                 PendingAction::SwitchModule(module) => { self.active_module = Some(module); }
                 PendingAction::GoHome => { self.active_module = None; }
                 PendingAction::Exit => {}
-            }
-        }
-    }
-
-    fn save_image_cache_if_needed(&self) {
-        if let Some(m) = &self.active_module {
-            if let Some(e) = m.as_any().downcast_ref::<ImageEditor>() {
-                if e.file_path.is_some() && e.layers.len() > 1 { let _ = ie_cache::save_cache(e); }
             }
         }
     }
@@ -1170,7 +1158,6 @@ impl eframe::App for UniversalEditor {
         if let Some(path) = self.open_cache_path.take() {
             self.show_settings = false;
             self.cache_entries = None;
-            self.save_image_cache_if_needed();
             self.active_module = Some(Box::new(JsonEditor::load(path)));
         }
 

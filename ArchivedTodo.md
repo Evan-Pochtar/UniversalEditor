@@ -171,6 +171,7 @@
 - [x] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
 - [x] Doesn't load horizontal lines properly (.docx)
 - [x] Doesn't load checklists properly (.docx)
+- [x] Tabbing isn't always the same size
 
 ### Other Bugs
 

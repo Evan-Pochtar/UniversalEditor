@@ -308,3 +308,13 @@
 - **DOCUMENT EDITOR**: Now loads horizontal lines properly from docx files
 - **DOCUMENT EDITOR**: Now loads checklists properly from docx files
 - **DOCUMENT EDITOR**: Now properly reflects cursor position after clicking tab to indent
+
+## V0.1.0
+
+#### Features
+
+#### Debugging
+
+- **IMAGE EDITOR**: No longer saves image edit data in cache when not actually saved
+- **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentances and paragraphs
+- **DOCUMENT EDITOR**: Now removes list elements when backspacing twice without going to the line above it

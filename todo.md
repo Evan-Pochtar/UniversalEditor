@@ -60,7 +60,6 @@
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
-- [ ] Tabbing isn't always the same size
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -119,6 +118,7 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
+- [ ] Be able to see saved/unsaved
 - [ ] Export
   - [ ] PDF
   - [ ] MD
