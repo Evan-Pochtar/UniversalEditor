@@ -40,7 +40,7 @@ pub struct DocumentEditor {
     pub(super) line_spacing_input: f32,
     pub(super) link_input: String,
     pub(super) doc_sel: Option<[DocPos; 2]>,
-    pub(super) page_settings_draft: Option<(PageLayout, usize, u32)>,
+    pub(super) page_settings_draft: Option<(PageLayout, usize, u32, String, String, String)>,
     pub(super) last_edit_action: u8,
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
@@ -65,7 +65,7 @@ impl DocumentEditor {
     }
 
     fn make(paras: Vec<DocParagraph>, path: Option<PathBuf>, layout: PageLayout) -> Self {
-        let n = paras.len();
+        let n = paras.len(); let preset_idx = layout.preset_idx();
         Self {
             file_path: path, dirty: false, paras, layout,
             base_font: FontChoice::Ubuntu, base_size: 11, cur_fmt: SpanFmt::default(),
@@ -78,7 +78,7 @@ impl DocumentEditor {
             para_texts: vec![String::new(); n],
             para_ids: (0..n).map(|i| egui::Id::new(("de_para", i as u64))).collect(),
             para_heights: vec![0.0; n], heights_dirty: true,
-            preset_idx: 0, line_spacing_input: 1.15, link_input: String::new(),
+            preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
             table_picker_hover: (0, 0), active_table: None, cell_edit_buf: String::new(),
         }

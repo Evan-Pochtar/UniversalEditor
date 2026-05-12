@@ -313,9 +313,12 @@
 
 #### Features
 
+- **DOCUMENT EDITOR**: Added ability to create custom page sizes
+
 #### Debugging
 
 - **IMAGE EDITOR**: No longer saves image edit data in cache when not actually saved
 - **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentances and paragraphs
 - **DOCUMENT EDITOR**: Now removes list elements when backspacing twice without going to the line above it
 - **DOCUMENT EDITOR**: Bulleted lists, numbered lists, headers, titles, fonts, font sizes, highlights, links, and tables all now export correctly to docx
+- **DOCUMENT EDITOR**: Checklists now export correctly to docx

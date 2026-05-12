@@ -144,12 +144,10 @@ impl Default for PageLayout {
 }
 impl PageLayout {
     pub const PTS_PER_INCH: f32 = 72.0;
+    pub const CUSTOM: usize = 9;
     pub fn content_width(&self) -> f32 { self.width - self.margin_left - self.margin_right }
     pub fn content_height(&self) -> f32 { self.height - self.margin_top - self.margin_bot }
-    fn inch(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Self {
-        let p = Self::PTS_PER_INCH;
-        Self { width: w * p, height: h * p, margin_top: mt * p, margin_bot: mb * p, margin_left: ml * p, margin_right: mr * p }
-    }
+    fn inch(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Self { let p = Self::PTS_PER_INCH; Self { width: w * p, height: h * p, margin_top: mt * p, margin_bot: mb * p, margin_left: ml * p, margin_right: mr * p } }
     pub fn letter() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.0, 1.0) }
     pub fn letter_word() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.25, 1.25) }
     pub fn a4() -> Self { Self::inch(8.2677, 11.6929, 1.0, 1.0, 1.0, 1.0) }
@@ -159,32 +157,19 @@ impl PageLayout {
     pub fn executive() -> Self { Self::inch(7.25, 10.5, 1.0, 1.0, 1.0, 1.0) }
     pub fn tabloid() -> Self { Self::inch(11.0, 17.0, 1.0, 1.0, 1.0, 1.0) }
     pub fn b5() -> Self { Self::inch(6.9291, 9.8425, 1.0, 1.0, 1.0, 1.0) }
-    pub fn presets() -> &'static [(&'static str, &'static str)] {
-        &[
-            ("Letter", "8.5 x 11 in  — Google Docs default"),
-            ("Letter (Word)", "8.5 x 11 in  — Word default (1.25\" sides)"),
-            ("A4", "210 x 297 mm  — International standard"),
-            ("Legal", "8.5 x 14 in  — US legal"),
-            ("A3", "297 x 420 mm"),
-            ("A5", "148 x 210 mm"),
-            ("Executive", "7.25 x 10.5 in"),
-            ("Tabloid", "11 x 17 in"),
-            ("B5", "176 x 250 mm"),
-        ]
+    pub fn presets() -> &'static [(&'static str, &'static str)] { &[("Letter", "8.5 x 11 in  — Google Docs default"), ("Letter (Word)", "8.5 x 11 in  — Word default (1.25\" sides)"), ("A4", "210 x 297 mm  — International standard"), ("Legal", "8.5 x 14 in  — US legal"), ("A3", "297 x 420 mm"), ("A5", "148 x 210 mm"), ("Executive", "7.25 x 10.5 in"), ("Tabloid", "11 x 17 in"), ("B5", "176 x 250 mm"), ("Custom", "Enter your own page size")] }
+    pub fn from_preset(i: usize) -> Self { match i { 0 => Self::letter(), 1 => Self::letter_word(), 2 => Self::a4(), 3 => Self::legal(), 4 => Self::a3(), 5 => Self::a5(), 6 => Self::executive(), 7 => Self::tabloid(), 8 => Self::b5(), _ => Self::default() } }
+    pub fn custom_in(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Result<Self, &'static str> {
+        if [w, h, mt, mb, ml, mr].iter().any(|v| !v.is_finite()) { return Err("Values must be numbers."); }
+        if w <= 0.0 || h <= 0.0 { return Err("Page size must be greater than zero."); }
+        if w > 200.0 || h > 200.0 { return Err("Page size is too large."); }
+        if [mt, mb, ml, mr].iter().any(|v| *v < 0.0) { return Err("Margins cannot be negative."); }
+        if ml + mr >= w || mt + mb >= h { return Err("Margins must fit inside the page."); }
+        Ok(Self::inch(w, h, mt, mb, ml, mr))
     }
-    pub fn from_preset(i: usize) -> Self {
-        match i {
-            0 => Self::letter(),
-            1 => Self::letter_word(),
-            2 => Self::a4(),
-            3 => Self::legal(),
-            4 => Self::a3(),
-            5 => Self::a5(),
-            6 => Self::executive(),
-            7 => Self::tabloid(),
-            8 => Self::b5(),
-            _ => Self::letter(),
-        }
+    pub fn preset_idx(&self) -> usize {
+        let p = Self::PTS_PER_INCH; let e = |a: f32, b: f32| (a - b).abs() < 0.05;
+        [(8.5, 11.0, 1.0, 1.0, 1.0, 1.0), (8.5, 11.0, 1.0, 1.0, 1.25, 1.25), (8.2677, 11.6929, 1.0, 1.0, 1.0, 1.0), (8.5, 14.0, 1.0, 1.0, 1.0, 1.0), (11.6929, 16.5354, 1.0, 1.0, 1.0, 1.0), (5.8268, 8.2677, 1.0, 1.0, 1.0, 1.0), (7.25, 10.5, 1.0, 1.0, 1.0, 1.0), (11.0, 17.0, 1.0, 1.0, 1.0, 1.0), (6.9291, 9.8425, 1.0, 1.0, 1.0, 1.0)].iter().position(|&(w, h, mt, mb, ml, mr)| e(self.width / p, w) && e(self.height / p, h) && e(self.margin_top / p, mt) && e(self.margin_bot / p, mb) && e(self.margin_left / p, ml) && e(self.margin_right / p, mr)).unwrap_or(Self::CUSTOM)
     }
 }
 
@@ -523,7 +508,8 @@ fn build_word_rels(hyperlinks: &[(String, String)]) -> String {
 }
 
 fn build_numbering_xml() -> String {
-    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num></w:numbering>", "\u{2022}")
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"2\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"3\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num><w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num><w:num w:numId=\"4\"><w:abstractNumId w:val=\"3\"/></w:num></w:numbering>",
+        "\u{2022}", "\u{F0A8}", "\u{F0FE}")
 }
 
 fn run_rpr(span: &DocSpan, base_font: FontChoice) -> String {
@@ -621,7 +607,8 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
                 out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr>\n");
             }
             ParaStyle::ListCheck => {
-                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
+                let num_id = if para.checked { 4u32 } else { 3u32 };
+                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"{}\"/></w:numPr>\n", 720u32.max((para.indent_left * 20.0) as u32), num_id));
             }
             _ if para.indent_left != 0.0 || para.indent_first != 0.0 => {
                 out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32));
@@ -629,11 +616,6 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
             _ => {}
         }
         out.push_str("</w:pPr>\n");
-        if para.style == ParaStyle::ListCheck {
-            let fname = match base_font { FontChoice::Roboto => "Roboto", FontChoice::GoogleSans => "Google Sans", FontChoice::OpenSans => "Open Sans", _ => "Ubuntu" };
-            out.push_str(&format!("<w:r><w:rPr><w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/></w:rPr><w:t xml:space=\"preserve\">{} </w:t></w:r>\n",
-                fname, fname, if para.checked { "\u{2611}" } else { "\u{2610}" }));
-        }
         let mut pos = 0;
         for span in &para.spans {
             if span.len == 0 { pos += span.len; continue; }

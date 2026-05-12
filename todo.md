@@ -60,7 +60,7 @@
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
-- [ ] Checklists do not export correctly
+- [ ] ODT Exporting has many major flaws
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -127,7 +127,7 @@
 - [ ] Header and footers
 - [ ] Improve look of find/replace panel
 - [ ] Further Table options (border color, border thickness, fill color)
-- [ ] Custom page sizes
+- [ ] Hovering table cells/checkbox should change cursor to show that it is clickable
 
 ### CONVERTERS
 

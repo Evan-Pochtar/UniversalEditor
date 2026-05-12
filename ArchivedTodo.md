@@ -180,6 +180,7 @@
 - [x] Links do not export correctly
 - [x] Headers, title, subtitle, etc doesn't export correctly.
 - [x] Tables do not export correctly.
+- [x] Checklists do not export correctly
 
 ### Other Bugs
 
@@ -311,6 +312,7 @@
 - [x] Clean up toolbar
 - [x] Add measurements to page sizes in the page settings panel
 - [x] Tables
+- [x] Custom page sizes
 
 ### CONVERTER: Img 2 Img
 
