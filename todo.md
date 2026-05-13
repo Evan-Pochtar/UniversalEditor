@@ -61,6 +61,7 @@
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] ODT Exporting has many major flaws
+- [ ] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

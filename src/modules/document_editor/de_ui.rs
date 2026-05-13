@@ -185,13 +185,13 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
 
 fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
     if ed.has_cross_sel() {
+        let para_has_focus = ctx.memory(|m| ed.para_ids.iter().any(|&id| m.has_focus(id)));
         let del = ctx.input_mut(|i| {
-            let d = i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::Delete);
+            let d = para_has_focus && (i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::Delete));
             if d { i.events.retain(|e| !matches!(e, egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } | egui::Event::Key { key: egui::Key::Delete, pressed: true, .. })); }
             d
         });
         if del { ed.delete_sel(); return; }
-
         let (do_copy, do_cut) = ctx.input_mut(|i| {
             let c = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
             let x = i.events.iter().any(|e| matches!(e, egui::Event::Cut));
@@ -202,9 +202,10 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
             if let Some((from, to)) = ed.norm_sel() { ctx.copy_text(ed.collect_sel_text(from, to)); }
             if do_cut { ed.delete_sel(); return; }
         }
-
-        let has_text = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_))));
-        if has_text { ed.delete_sel(); }
+        if para_has_focus {
+            let has_text = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_))));
+            if has_text { ed.delete_sel(); }
+        }
     }
 
     ctx.input_mut(|i| {
@@ -275,10 +276,8 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
 
                     ui.label(egui::RichText::new("Font Size:").size(11.0).color(lc));
                     let mut sel_sz = ed.sel_font_size_pt();
-                    if ui.add(egui::DragValue::new(&mut sel_sz).range(4..=288).speed(1).suffix("pt")).changed() {
-                        ed.apply_fmt_size(sel_sz);
-                    }
-
+                    let fs_resp = ui.add(egui::DragValue::new(&mut sel_sz).range(4..=288).speed(0.5).suffix("pt"));
+                    if fs_resp.changed() { ed.apply_fmt_size(sel_sz); }
                     ui.separator();
                     if fmt_btn(ui, egui::RichText::new("B").strong().size(13.0), ed.fmt_state_bold(), theme, "Bold (Ctrl+B)") { ed.apply_fmt_toggle_bold(); }
                     if fmt_btn(ui, egui::RichText::new("I").italics().size(13.0), ed.fmt_state_italic(), theme, "Italic (Ctrl+I)") { ed.apply_fmt_toggle_italic(); }
@@ -382,9 +381,10 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
                     }
                     ui.separator();
                     ui.label(egui::RichText::new("LH:").size(11.0).color(lc));
-                    if ui.add(egui::DragValue::new(&mut ed.line_spacing_input).range(0.8..=4.0).speed(0.05).fixed_decimals(2)).changed() {
-                        ed.paras[ed.focused_para].line_height = ed.line_spacing_input; ed.dirty = true; ed.heights_dirty = true;
-                    }
+                    let lh_resp = ui.add(egui::DragValue::new(&mut ed.line_spacing_input).range(0.8..=4.0).speed(0.05).fixed_decimals(2));
+                    if lh_resp.changed() { ed.apply_fmt_line_height(ed.line_spacing_input); }
+                    ed.toolbar_has_focus = fs_resp.has_focus() || lh_resp.has_focus();
+                    if ed.toolbar_has_focus { ui.ctx().input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(_)))); }
                     ui.separator();
                     ui.horizontal(|ui| {
                         if act_btn(ui, "-", theme, "Zoom out (Ctrl+-)") { ed.zoom = (ed.zoom - 0.1).max(0.3); }
@@ -395,7 +395,6 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
             });
         });
 }
-
 
 fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
     let tc = if is_dark { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_800 };
@@ -753,6 +752,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let find_hl: Option<(usize, usize, usize)> = if ed.find_cursor < ed.find_results.len() { Some(ed.find_results[ed.find_cursor]) } else { None };
     let cur_fmt = ed.cur_fmt.clone();
 
+    let canvas_top = ui.available_rect_before_wrap().min.y;
     let mut scroll_area = egui::ScrollArea::vertical().id_salt("de_canvas_scroll").auto_shrink([false, false]);
     if let Some(off) = scroll_target_y { scroll_area = scroll_area.vertical_scroll_offset(off.max(0.0)); }
     let mut table_cell_change: Option<(usize, usize, usize, String)> = None;
@@ -782,8 +782,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         }
 
         for i in 0..n {
-            let pg = pl.para_page[i];
-            let pt = pl.page_tops[pg];
+            let pg = pl.para_page[i]; let pt = pl.page_tops[pg];
             let pm = egui::pos2(outer.min.x + page_x, outer.min.y + pt);
             let para = &ed.paras[i];
             let indent = para.indent_left * ed.zoom;
@@ -796,15 +795,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let scroll_local_top = pt + content_y;
             let near_view = !(scroll_local_top + total_h < vp.min.y - page_h * 0.5 || scroll_local_top > vp.max.y + page_h * 0.5);
 
-            let (edit_x, edit_w) = if matches!(para.align, Align::Left) {
-                (pm.x + ml + indent, wrap_w)
-            } else {
-                (pm.x + ml, cw)
-            };
-            let edit_rect = egui::Rect::from_min_size(
-                egui::pos2(edit_x, text_y),
-                egui::vec2(edit_w, text_h.max(bs * 1.2)),
-            );
+            let (edit_x, edit_w) = if matches!(para.align, Align::Left) { (pm.x + ml + indent, wrap_w) } else { (pm.x + ml, cw) };
+            let edit_rect = egui::Rect::from_min_size(egui::pos2(edit_x, text_y), egui::vec2(edit_w, text_h.max(bs * 1.2)));
             let checkbox_rect = if para.style == ParaStyle::ListCheck {
                 Some(egui::Rect::from_center_size(
                     egui::pos2(edit_x - 6.0 * ed.zoom, text_y + text_h / 3.0),
@@ -812,97 +804,97 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 ))
             } else { None };
 
-           if let Some(pp) = ptr {
-            if let Some(cb) = checkbox_rect {
-                if btn_pressed && cb.expand(4.0).contains(pp) {
-                    ed.push_undo();
-                    ed.paras[i].checked = !ed.paras[i].checked;
-                    ed.sync_texts();
-                    ed.dirty = true;
-                    continue;
+            if let Some(pp) = ptr.filter(|p| p.y >= canvas_top) {
+                if let Some(cb) = checkbox_rect {
+                    if btn_pressed && cb.expand(4.0).contains(pp) {
+                        ed.push_undo();
+                        ed.paras[i].checked = !ed.paras[i].checked;
+                        ed.sync_texts();
+                        ed.dirty = true;
+                        continue;
+                    }
                 }
-            }
 
-            if edit_rect.contains(pp) {
-                if para.style == ParaStyle::Table {
-                    if btn_pressed {
-                        if let Some(ref tbl) = ed.paras[i].table {
-                            let col_ws = table_col_widths(tbl, cw);
-                            let mut ry = text_y + 6.0 * ed.zoom;
-                            'tbl_click: for (ri, row) in tbl.rows.iter().enumerate() {
-                                let rh = table_row_h(row, &col_ws, font, ed.base_size, ed.zoom, ctx,
-                                    match ed.active_table {
-                                        Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
-                                        _ => None,
-                                    },
-                                    ri == 0
-                                );
-                                if pp.y >= ry && pp.y < ry + rh {
-                                    let mut cx_acc = pm.x + ml;
-                                    let cc = col_ws.iter().enumerate().find_map(|(ci, &w)| {
-                                        if pp.x < cx_acc + w { Some(ci) } else { cx_acc += w; None }
-                                    }).unwrap_or(col_ws.len().saturating_sub(1)).min(row.len().saturating_sub(1));
-                                    if let Some((old_i, old_r, old_c)) = ed.active_table {
-                                        table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone()));
+                if edit_rect.contains(pp) {
+                    if para.style == ParaStyle::Table {
+                        if btn_pressed {
+                            if let Some(ref tbl) = ed.paras[i].table {
+                                let col_ws = table_col_widths(tbl, cw);
+                                let mut ry = text_y + 6.0 * ed.zoom;
+                                'tbl_click: for (ri, row) in tbl.rows.iter().enumerate() {
+                                    let rh = table_row_h(row, &col_ws, font, ed.base_size, ed.zoom, ctx,
+                                        match ed.active_table {
+                                            Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
+                                            _ => None,
+                                        },
+                                        ri == 0
+                                    );
+                                    if pp.y >= ry && pp.y < ry + rh {
+                                        let mut cx_acc = pm.x + ml;
+                                        let cc = col_ws.iter().enumerate().find_map(|(ci, &w)| {
+                                            if pp.x < cx_acc + w { Some(ci) } else { cx_acc += w; None }
+                                        }).unwrap_or(col_ws.len().saturating_sub(1)).min(row.len().saturating_sub(1));
+                                        if let Some((old_i, old_r, old_c)) = ed.active_table {
+                                            table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone()));
+                                        }
+                                        ed.active_table = Some((i, ri, cc));
+                                        ed.focused_para = i;
+                                        ed.pending_focus = None;
+                                        ed.cell_edit_buf = row.get(cc).map(|c| c.text.clone()).unwrap_or_default();
+                                        let cell_id = ui.id().with(("table_cell", i, ri, cc));
+                                        ctx.memory_mut(|m| m.request_focus(cell_id));
+                                        break 'tbl_click;
                                     }
-                                    ed.active_table = Some((i, ri, cc));
-                                    ed.focused_para = i;
-                                    ed.pending_focus = None;
-                                    ed.cell_edit_buf = row.get(cc).map(|c| c.text.clone()).unwrap_or_default();
-                                    let cell_id = ui.id().with(("table_cell", i, ri, cc));
-                                    ctx.memory_mut(|m| m.request_focus(cell_id));
-                                    break 'tbl_click;
+                                    ry += rh;
                                 }
-                                ry += rh;
                             }
                         }
-                    }
-                } else {
-                    let job = build_layout_job(&ed.paras[i].spans, &ed.paras[i].text, &ed.paras[i], font, ed.base_size, wrap_w, is_dark, ed.zoom);
-                    let galley = ctx.fonts_mut(|f| f.layout_job(job));
-                    let rel = pp - egui::pos2(edit_x, text_y);
-                    let cursor = galley.cursor_from_pos(rel);
-                    let byte = char_to_byte(&ed.paras[i].text, cursor.index);
-                    if btn_pressed && ctrl {
-                        if let Some(url) = link_at_byte(&ed.paras[i], byte) {
-                            let final_url: String = if url.starts_with("http://") || url.starts_with("https://") { url.to_string() } else { format!("https://{}", url) };
-                            ctx.open_url(egui::OpenUrl::new_tab(&final_url));
-                        } else {
+                    } else {
+                        let job = build_layout_job(&ed.paras[i].spans, &ed.paras[i].text, &ed.paras[i], font, ed.base_size, wrap_w, is_dark, ed.zoom);
+                        let galley = ctx.fonts_mut(|f| f.layout_job(job));
+                        let rel = pp - egui::pos2(edit_x, text_y);
+                        let cursor = galley.cursor_from_pos(rel);
+                        let byte = char_to_byte(&ed.paras[i].text, cursor.index);
+                        if btn_pressed && ctrl {
+                            if let Some(url) = link_at_byte(&ed.paras[i], byte) {
+                                let final_url: String = if url.starts_with("http://") || url.starts_with("https://") { url.to_string() } else { format!("https://{}", url) };
+                                ctx.open_url(egui::OpenUrl::new_tab(&final_url));
+                            } else {
+                                let pos = DocPos { para: i, byte };
+                                ed.doc_sel = if shift {
+                                    ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos]))
+                                } else {
+                                    Some([pos, pos])
+                                };
+                            }
+                        } else if btn_pressed {
+                            if let Some((pi, ri, ci)) = ed.active_table.take() {
+                                table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
+                            }
                             let pos = DocPos { para: i, byte };
                             ed.doc_sel = if shift {
                                 ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos]))
                             } else {
                                 Some([pos, pos])
                             };
-                        }
-                    } else if btn_pressed {
-                        if let Some((pi, ri, ci)) = ed.active_table.take() {
-                            table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
-                        }
-                        let pos = DocPos { para: i, byte };
-                        ed.doc_sel = if shift {
-                            ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos]))
-                        } else {
-                            Some([pos, pos])
-                        };
-                    } else if btn_down {
-                        if ed.doc_sel.is_none() {
-                            if let Some((pi, sb, _)) = ed.last_selection {
-                                let anchor = DocPos { para: pi, byte: sb };
-                                let pos = DocPos { para: i, byte };
-                                if anchor.para != i || anchor.byte != byte {
-                                    ed.doc_sel = Some([anchor, pos]);
+                        } else if btn_down {
+                            if ed.doc_sel.is_none() {
+                                if let Some((pi, sb, _)) = ed.last_selection {
+                                    let anchor = DocPos { para: pi, byte: sb };
+                                    let pos = DocPos { para: i, byte };
+                                    if anchor.para != i || anchor.byte != byte {
+                                        ed.doc_sel = Some([anchor, pos]);
+                                    }
                                 }
-                            }
-                        } else if let Some(ref mut sel) = ed.doc_sel {
-                            if sel[0].para != i || (sel[0].para == i && sel[0].byte != byte) {
-                                sel[1] = DocPos { para: i, byte };
+                            } else if let Some(ref mut sel) = ed.doc_sel {
+                                if sel[0].para != i || (sel[0].para == i && sel[0].byte != byte) {
+                                    sel[1] = DocPos { para: i, byte };
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
             if near_view {
                 if para.style == ParaStyle::HRule {
@@ -1327,7 +1319,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
                 }
             }
-            if ed.pending_focus == Some(i) && ed.active_table.is_none() { ctx.memory_mut(|m| m.request_focus(id)); }
+            if ed.pending_focus == Some(i) && ed.active_table.is_none() && !ed.toolbar_has_focus { ctx.memory_mut(|m| m.request_focus(id)); }
             let tab_keys = if i == focused {
                 ctx.input_mut(|inp| {
                     let shift_tab = inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab);
@@ -1467,7 +1459,6 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); }
     if let Some(sel) = new_selection { ed.last_selection = Some(sel); }
-
     if let Some((pi, row, col, text)) = table_cell_change {
         if pi < ed.paras.len() {
             ed.push_undo();

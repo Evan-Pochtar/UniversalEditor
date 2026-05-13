@@ -318,7 +318,9 @@
 #### Debugging
 
 - **IMAGE EDITOR**: No longer saves image edit data in cache when not actually saved
-- **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentances and paragraphs
+- **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentences and paragraphs
 - **DOCUMENT EDITOR**: Now removes list elements when backspacing twice without going to the line above it
 - **DOCUMENT EDITOR**: Bulleted lists, numbered lists, headers, titles, fonts, font sizes, highlights, links, and tables all now export correctly to docx
 - **DOCUMENT EDITOR**: Checklists now export correctly to docx
+- **DOCUMENT EDITOR**: Font size and line height now properly apply to all lines highlighted rather than just where the cursor is
+- **DOCUMENT EDITOR**: Font size and line height inputs now take priority focus over the document

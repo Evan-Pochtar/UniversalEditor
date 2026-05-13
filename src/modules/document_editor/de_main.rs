@@ -45,6 +45,7 @@ pub struct DocumentEditor {
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
     pub(super) cell_edit_buf: String,
+    pub(super) toolbar_has_focus: bool,
 }
 
 impl DocumentEditor {
@@ -81,6 +82,7 @@ impl DocumentEditor {
             preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
             table_picker_hover: (0, 0), active_table: None, cell_edit_buf: String::new(),
+            toolbar_has_focus: false,
         }
     }
 
@@ -228,12 +230,32 @@ impl DocumentEditor {
 
     pub(super) fn apply_fmt_size(&mut self, pt: u32) {
         let hp = pt.saturating_mul(2);
+        if let Some((from, to)) = self.norm_sel() {
+            if from.para != to.para || from.byte != to.byte {
+                self.push_undo();
+                for pi in from.para..=to.para {
+                    if pi >= self.paras.len() { break; }
+                    let start = if pi == from.para { from.byte } else { 0 };
+                    let end = if pi == to.para { to.byte } else { self.paras[pi].text.len() };
+                    if start < end {
+                        apply_fmt_range(&mut self.paras[pi], start, end, |f| f.size_hp = Some(hp));
+                        self.para_texts[pi] = self.paras[pi].text.clone();
+                    }
+                }
+                self.dirty = true;
+                self.heights_dirty = true;
+                return;
+            }
+        }
         if let Some((pi, s, e)) = self.last_selection {
             if s != e && pi < self.paras.len() {
                 self.push_undo();
                 apply_fmt_range(&mut self.paras[pi], s, e, |f| f.size_hp = Some(hp));
                 self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
+                self.dirty = true;
+                self.heights_dirty = true;
+                self.cur_fmt.size_hp = Some(hp);
+                return;
             }
         }
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
@@ -244,7 +266,41 @@ impl DocumentEditor {
             self.para_texts[pi] = self.paras[pi].text.clone();
         }
         self.cur_fmt.size_hp = Some(hp);
-        self.dirty = true; self.heights_dirty = true;
+        self.dirty = true;
+        self.heights_dirty = true;
+    }
+
+    pub(super) fn apply_fmt_line_height(&mut self, lh: f32) {
+        let lh = lh.clamp(0.8, 4.0);
+        let mut changed = false;
+        if let Some((from, to)) = self.norm_sel() {
+            if from.para != to.para {
+                self.push_undo();
+                for pi in from.para..=to.para {
+                    if pi >= self.paras.len() { break; }
+                    if (self.paras[pi].line_height - lh).abs() > 0.01 {
+                        self.paras[pi].line_height = lh;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    self.dirty = true;
+                    self.heights_dirty = true;
+                    self.line_spacing_input = lh;
+                } else {
+                    self.undo_stack.pop_back();
+                }
+                return;
+            }
+        }
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if (self.paras[pi].line_height - lh).abs() > 0.01 {
+            self.push_undo();
+            self.paras[pi].line_height = lh;
+            self.dirty = true;
+            self.heights_dirty = true;
+            self.line_spacing_input = lh;
+        }
     }
 
     pub(super) fn replace_current(&mut self) {

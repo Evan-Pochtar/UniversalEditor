@@ -177,95 +177,122 @@ pub fn highlight_color32(rgb: [u8; 3]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], (0.40 * 255.0_f32).round() as u8)
 }
 
+fn ensure_non_empty_spans(spans: &mut Vec<DocSpan>) { if spans.is_empty() { spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }}
+fn append_span(spans: &mut Vec<DocSpan>, span: DocSpan) {
+    if span.len == 0 { return; }
+    if let Some(last) = spans.last_mut() {
+        if last.fmt == span.fmt { last.len += span.len; return; }
+    }
+    spans.push(span);
+}
+
+fn table_text_count<F>(table: &TableData, count: F) -> usize where F: Fn(&str) -> usize + Copy, {
+    table.rows.iter().flat_map(|row| row.iter()).map(|cell| count(&cell.text)).sum()
+}
+
 pub fn ensure_boundary(para: &mut DocParagraph, byte: usize) {
     if byte == 0 || byte >= para.text.len() { return; }
-    let mut pos = 0;
-    for i in 0..para.spans.len() {
-        pos += para.spans[i].len;
-        if pos == byte { return; }
-        if pos > byte {
-            let over = pos - byte; para.spans[i].len -= over;
-            let rhs = DocSpan { len: over, fmt: para.spans[i].fmt.clone() };
-            para.spans.insert(i + 1, rhs); return;
+    let mut consumed = 0usize;
+    for index in 0..para.spans.len() {
+        let span_len = para.spans[index].len;
+        let next = consumed + span_len;
+        if next == byte { return; }
+        if next > byte {
+            let right_len = next - byte;
+            para.spans[index].len -= right_len;
+            let right = DocSpan { len: right_len, fmt: para.spans[index].fmt.clone() };
+            para.spans.insert(index + 1, right);
+            return;
         }
+        consumed = next;
     }
 }
 
 pub fn merge_adjacent(para: &mut DocParagraph) {
-    let mut i = 0;
-    while i + 1 < para.spans.len() {
-        if para.spans[i].fmt == para.spans[i+1].fmt { para.spans[i].len += para.spans[i+1].len; para.spans.remove(i+1); }
-        else { i += 1; }
+    let mut merged: Vec<DocSpan> = Vec::with_capacity(para.spans.len());
+    for span in para.spans.drain(..) {
+        append_span(&mut merged, span);
     }
-    if para.spans.is_empty() { para.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+    ensure_non_empty_spans(&mut merged);
+    para.spans = merged;
 }
 
 pub fn apply_fmt_range(para: &mut DocParagraph, start: usize, end: usize, op: impl Fn(&mut SpanFmt)) {
     if start >= end { return; }
     ensure_boundary(para, start); ensure_boundary(para, end);
-    let mut p = 0;
+    let mut pos = 0usize;
     for span in &mut para.spans {
-        let e = p + span.len;
-        if p >= end { break; }
-        if e > start && p >= start { op(&mut span.fmt); }
-        p = e;
+        let span_end = pos + span.len;
+        if pos >= end { break; }
+        if span_end > start && pos < end { op(&mut span.fmt); }
+        pos = span_end;
     }
     merge_adjacent(para);
 }
 
 pub fn all_set_range(para: &DocParagraph, start: usize, end: usize, get: impl Fn(&SpanFmt) -> bool) -> bool {
-    let mut p = 0; let mut any = false; let mut all = true;
-    for s in &para.spans {
-        let e = p + s.len;
-        if p < end && e > start { any = true; if !get(&s.fmt) { all = false; break; } }
-        p = e;
+    let mut pos = 0usize; let mut any = false;
+    for span in &para.spans {
+        let span_end = pos + span.len;
+        let overlaps = pos < end && span_end > start;
+        if overlaps {
+            any = true;
+            if !get(&span.fmt) { return false; }
+        }
+        pos = span_end;
     }
-    any && all
+    any
 }
 
 pub fn toggle_fmt(para: &mut DocParagraph, start: usize, end: usize, get: impl Fn(&SpanFmt) -> bool, set: impl Fn(&mut SpanFmt, bool)) {
-    let v = !all_set_range(para, start, end, &get);
-    apply_fmt_range(para, start, end, |fmt| set(fmt, v));
+    let enabled = !all_set_range(para, start, end, &get);
+    apply_fmt_range(para, start, end, |fmt| set(fmt, enabled));
 }
 
 pub fn char_to_byte(text: &str, ci: usize) -> usize { text.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(text.len()) }
-
 pub fn merge_paragraphs(paras: &mut Vec<DocParagraph>, idx: usize) {
     if idx + 1 >= paras.len() { return; }
     let next = paras.remove(idx + 1);
-    if paras[idx].spans.last().map(|s| s.len == 0).unwrap_or(false) { paras[idx].spans.pop(); }
+    if paras[idx].spans.last().map(|span| span.len == 0).unwrap_or(false) {  paras[idx].spans.pop(); }
     paras[idx].text.push_str(&next.text);
-    for s in next.spans {
-        if s.len == 0 { continue; }
-        if paras[idx].spans.last().map(|l| l.fmt == s.fmt).unwrap_or(false) { paras[idx].spans.last_mut().unwrap().len += s.len; }
-        else { paras[idx].spans.push(s); }
-    }
-    if paras[idx].spans.is_empty() { paras[idx].spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+    for span in next.spans { append_span(&mut paras[idx].spans, span); }
+    ensure_non_empty_spans(&mut paras[idx].spans);
 }
 
 fn is_checkbox_marker(text: &str) -> Option<bool> {
-    let mut decoded = String::from(text);
+    const UNCHECKED_MARKERS: &[char] = &['☐', '□', '\u{F0A8}', '\u{E000}', '\u{F0B1}'];
+    const CHECKED_MARKERS: &[char] = &['☑', '☒', '\u{F0FE}', '✓', '✔', '\u{E001}'];
+    let mut decoded = text.to_owned();
     if text.len() == 4 {
-        if let Ok(c) = u32::from_str_radix(text, 16) {
-            if let Some(ch) = std::char::from_u32(c) {
+        if let Ok(code_point) = u32::from_str_radix(text, 16) {
+            if let Some(ch) = std::char::from_u32(code_point) {
                 decoded.push(ch);
             }
         }
     }
-    if decoded.contains('☐') || decoded.contains('□') || decoded.contains('\u{F0A8}') || decoded.contains('\u{E000}') || decoded.contains('\u{F0B1}') { Some(false) }
-    else if decoded.contains('☑') || decoded.contains('☒') || decoded.contains('\u{F0FE}') || decoded.contains('✓') || decoded.contains('✔') || decoded.contains('\u{E001}') { Some(true) }
-    else { None }
+    if decoded.chars().any(|ch| UNCHECKED_MARKERS.contains(&ch)) {
+        Some(false)
+    } else if decoded.chars().any(|ch| CHECKED_MARKERS.contains(&ch)) {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 pub fn para_fmt_at(para: &DocParagraph, byte: usize) -> SpanFmt {
-    let mut p = 0;
-    for s in &para.spans {
-        let e = p + s.len;
-        if byte >= p && byte < e { return s.fmt.clone(); }
-        if byte == 0 && e == 0 { return s.fmt.clone(); }
-        p = e;
+    let mut pos = 0usize;
+    for span in &para.spans {
+        let span_end = pos + span.len;
+        if byte >= pos && byte < span_end {
+            return span.fmt.clone();
+        }
+        if byte == 0 && span_end == 0 {
+            return span.fmt.clone();
+        }
+        pos = span_end;
     }
-    let mut fmt = para.spans.last().map(|s| s.fmt.clone()).unwrap_or_default();
+
+    let mut fmt = para.spans.last().map(|span| span.fmt.clone()).unwrap_or_default();
     fmt.link = None;
     fmt
 }
@@ -318,79 +345,52 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
     job.halign = egui::Align::LEFT;
     job.justify = false;
 
-    let ss = para.style.default_font_size_pt(base_size) as f32 * zoom;
-    let (sb, si) = (para.style.is_bold(), para.style.is_italic());
-    let code_bg = if is_dark {
-        egui::Color32::from_rgb(28, 28, 34)
-    } else {
-        egui::Color32::from_rgb(244, 244, 248)
+    let default_size = para.style.default_font_size_pt(base_size) as f32 * zoom;
+    let (style_bold, style_italic) = (para.style.is_bold(), para.style.is_italic());
+    let code_background = if is_dark { egui::Color32::from_rgb(28, 28, 34) } else { egui::Color32::from_rgb(244, 244, 248) };
+    let base_color = match para.style {
+        ParaStyle::H1 | ParaStyle::H2 => if is_dark { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 },
+        ParaStyle::H3 | ParaStyle::H4 => if is_dark { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 },
+        ParaStyle::Subtitle | ParaStyle::BlockQuote => if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 },
+        _ => if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22, 22, 22) },
     };
 
-    let base_col = match para.style {
-        ParaStyle::H1 | ParaStyle::H2 => {
-            if is_dark { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 }
-        }
-        ParaStyle::H3 | ParaStyle::H4 => {
-            if is_dark { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 }
-        }
-        ParaStyle::Subtitle | ParaStyle::BlockQuote => {
-            if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 }
-        }
-        _ => {
-            if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22, 22, 22) }
-        }
-    };
-
-    let mut pos = 0;
+    let mut pos = 0usize;
     for span in spans {
-        if pos >= text.len() {
-            break;
-        }
-        if span.len == 0 {
-            continue;
-        }
+        if span.len == 0 || pos >= text.len() { continue; }
         let end = (pos + span.len).min(text.len());
-        let seg = &text[pos..end];
-        let is_first = pos == 0;
+        let segment = &text[pos..end];
+        let first_segment = pos == 0;
         pos = end;
-        if seg.is_empty() {
-            continue;
-        }
-            let eff = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(ss);
-        let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
-        let fc = span.fmt.font.unwrap_or(base_font);
-        let mut col = span.fmt.color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(base_col);
+        if segment.is_empty() { continue; }
+
+        let effective_size = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(default_size);
+        let font_size = if span.fmt.sub || span.fmt.sup { effective_size * 0.68 } else { effective_size };
+        let font_choice = span.fmt.font.unwrap_or(base_font);
+        let mut color = span.fmt.color.map(|rgb| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])).unwrap_or(base_color);
         if span.fmt.link.is_some() && span.fmt.color.is_none() {
-            col = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
+            color = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
         }
-        let bg = span.fmt.highlight.map(highlight_color32)
-            .unwrap_or_else(|| if para.style == ParaStyle::Code { code_bg } else { egui::Color32::TRANSPARENT });
+        let background = span.fmt.highlight.map(highlight_color32).unwrap_or_else(|| {
+            if para.style == ParaStyle::Code { code_background } else { egui::Color32::TRANSPARENT }
+        });
+        let stroke_width = (effective_size * 0.07).max(1.0);
 
         job.append(
-            seg,
-            if is_first { para.indent_first * zoom } else { 0.0 },
+            segment,
+            if first_segment { para.indent_first * zoom } else { 0.0 },
             egui::TextFormat {
-                font_id: egui::FontId::new(sz, fc.egui_family(sb || span.fmt.bold, si || span.fmt.italic)),
-                color: col,
-                background: bg,
+                font_id: egui::FontId::new(font_size, font_choice.egui_family(style_bold || span.fmt.bold, style_italic || span.fmt.italic)),
+                color,
+                background,
                 underline: if span.fmt.underline || span.fmt.link.is_some() {
-                    egui::Stroke::new((eff * 0.07).max(1.0), col)
+                    egui::Stroke::new(stroke_width, color)
                 } else {
                     egui::Stroke::NONE
                 },
-                strikethrough: if span.fmt.strike {
-                    egui::Stroke::new((eff * 0.07).max(1.0), col)
-                } else {
-                    egui::Stroke::NONE
-                },
-                valign: if span.fmt.sup {
-                    egui::Align::TOP
-                } else if span.fmt.sub {
-                    egui::Align::BOTTOM
-                } else {
-                    egui::Align::Center
-                },
-                line_height: if span.fmt.sup || span.fmt.sub { None } else { Some(eff * para.line_height) },
+                strikethrough: if span.fmt.strike { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                valign: if span.fmt.sup { egui::Align::TOP } else if span.fmt.sub { egui::Align::BOTTOM } else { egui::Align::Center },
+                line_height: if span.fmt.sup || span.fmt.sub { None } else { Some(effective_size * para.line_height) },
                 ..Default::default()
             },
         );
@@ -401,9 +401,9 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
             "",
             para.indent_first * zoom,
             egui::TextFormat {
-                font_id: egui::FontId::new(ss, base_font.egui_family(sb, si)),
-                color: base_col,
-                line_height: Some(ss * para.line_height),
+                font_id: egui::FontId::new(default_size, base_font.egui_family(style_bold, style_italic)),
+                color: base_color,
+                line_height: Some(default_size * para.line_height),
                 ..Default::default()
             },
         );
@@ -413,38 +413,33 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
 }
 
 pub fn convert_leading_tabs_to_indent(paras: &mut Vec<DocParagraph>) {
-    for p in paras {
-        let mut tabs_to_remove = 0;
-        for ch in p.text.chars() {
-            if ch == '\t' { tabs_to_remove += 1; } else { break; }
+    for para in paras {
+        let tab_count = para.text.bytes().take_while(|byte| *byte == b'\t').count();
+        if tab_count == 0 { continue; }
+        para.indent_first += 36.0 * tab_count as f32;
+        para.text = para.text[tab_count..].to_string();
+        let mut remaining = tab_count;
+        for span in &mut para.spans {
+            if remaining == 0 { break; }
+            let trimmed = span.len.min(remaining);
+            span.len -= trimmed;
+            remaining -= trimmed;
         }
-        if tabs_to_remove > 0 {
-            p.indent_first += 36.0 * (tabs_to_remove as f32);
-            p.text = p.text[tabs_to_remove..].to_string();
-            let mut remaining = tabs_to_remove;
-            for s in &mut p.spans {
-                if remaining == 0 { break; }
-                let take = s.len.min(remaining);
-                s.len -= take;
-                remaining -= take;
-            }
-            p.spans.retain(|s| s.len > 0);
-            if p.spans.is_empty() { p.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
-        }
+        para.spans.retain(|span| span.len > 0);
+        ensure_non_empty_spans(&mut para.spans);
     }
 }
 
 pub fn word_count(paras: &[DocParagraph]) -> usize {
-    paras.iter().map(|p| {
-        p.text.split_whitespace().count()
-            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.split_whitespace().count()).sum::<usize>()).unwrap_or(0)
-    }).sum()
+    paras.iter().map(|para| {
+            para.text.split_whitespace().count()
+                + para.table.as_ref().map_or(0, |table| table_text_count(table, |text| text.split_whitespace().count()))
+        }).sum()
 }
 pub fn char_count(paras: &[DocParagraph]) -> usize {
-    paras.iter().map(|p| {
-        p.text.chars().count()
-            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.chars().count()).sum::<usize>()).unwrap_or(0)
-    }).sum()
+    paras.iter().map(|para| {
+            para.text.chars().count() + para.table.as_ref().map_or(0, |table| table_text_count(table, |text| text.chars().count()))
+        }).sum()
 }
 
 fn style_size_hp(style: ParaStyle) -> Option<u32> {

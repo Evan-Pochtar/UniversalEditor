@@ -181,6 +181,7 @@
 - [x] Headers, title, subtitle, etc doesn't export correctly.
 - [x] Tables do not export correctly.
 - [x] Checklists do not export correctly
+- [x] Mass changing font size only changes font size of normal text, not empty spaces or headers
 
 ### Other Bugs
 
