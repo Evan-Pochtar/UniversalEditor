@@ -12,8 +12,6 @@ pub struct DocumentEditor {
     pub(super) dirty: bool,
     pub(super) paras: Vec<DocParagraph>,
     pub(super) layout: PageLayout,
-    pub(super) base_font: FontChoice,
-    pub(super) base_size: u32,
     pub(super) cur_fmt: SpanFmt,
     pub(super) focused_para: usize,
     pub(super) last_selection: Option<(usize, usize, usize)>,
@@ -40,7 +38,7 @@ pub struct DocumentEditor {
     pub(super) line_spacing_input: f32,
     pub(super) link_input: String,
     pub(super) doc_sel: Option<[DocPos; 2]>,
-    pub(super) page_settings_draft: Option<(PageLayout, usize, u32, String, String, String)>,
+    pub(super) page_settings_draft: Option<(PageLayout, usize, String, String, String)>,
     pub(super) last_edit_action: u8,
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
@@ -68,8 +66,7 @@ impl DocumentEditor {
     fn make(paras: Vec<DocParagraph>, path: Option<PathBuf>, layout: PageLayout) -> Self {
         let n = paras.len(); let preset_idx = layout.preset_idx();
         Self {
-            file_path: path, dirty: false, paras, layout,
-            base_font: FontChoice::Ubuntu, base_size: 11, cur_fmt: SpanFmt::default(),
+            file_path: path, dirty: false, paras, layout, cur_fmt: SpanFmt::default(),
             focused_para: 0, last_selection: None, pending_focus: None,
             show_outline: false, show_stats: false, show_page_settings: false,
             find_text: String::new(), replace_text: String::new(), show_find: false,
@@ -128,18 +125,6 @@ impl DocumentEditor {
 
     pub(super) fn has_cross_sel(&self) -> bool {
         self.doc_sel.map(|[a, b]| a.para != b.para).unwrap_or(false)
-    }
-
-    fn set_single_para_fmt<F: Fn(&mut SpanFmt)>(&mut self, op: F) -> bool {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                apply_fmt_range(&mut self.paras[pi], s, e, op);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return true;
-            }
-        }
-        false
     }
 
     pub(super) fn collect_sel_text(&self, from: DocPos, to: DocPos) -> String {
@@ -225,49 +210,148 @@ impl DocumentEditor {
             }
         }
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| (hp as f32 / 2.0).round() as u32).unwrap_or_else(|| self.paras[pi].style.default_font_size_pt(self.base_size))
+        para_fmt_at(&self.paras[pi], 0).size_hp.map(|hp| (hp as f32 / 2.0).round() as u32).unwrap_or_else(|| self.paras[pi].style.default_font_size_pt())
+    }
+
+    pub(super) fn apply_fmt_property<F: Fn(&mut SpanFmt)>(&mut self, op: F) -> bool {
+        if self.has_cross_sel() {
+            if let Some((from, to)) = self.norm_sel() {
+                if from.para != to.para || from.byte != to.byte {
+                    self.push_undo();
+                    for pi in from.para..=to.para {
+                        if pi >= self.paras.len() { break; }
+                        let start = if pi == from.para { from.byte } else { 0 };
+                        let end = if pi == to.para { to.byte } else { self.paras[pi].text.len() };
+                        if start < end {
+                            apply_fmt_range(&mut self.paras[pi], start, end, &op);
+                            self.para_texts[pi] = self.paras[pi].text.clone();
+                        } else if self.paras[pi].text.is_empty() {
+                            if let Some(span) = self.paras[pi].spans.first_mut() { op(&mut span.fmt); }
+                        }
+                    }
+                    self.dirty = true; self.heights_dirty = true; return true;
+                }
+            }
+        }
+        
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                apply_fmt_range(&mut self.paras[pi], s, e, &op);
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true; return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn apply_fmt_toggle<Get, Set>(&mut self, get: Get, set: Set) where Get: Fn(&SpanFmt) -> bool, Set: Fn(&mut SpanFmt, bool) {
+        if self.has_cross_sel() {
+            if let Some((from, to)) = self.norm_sel() {
+                if from.para != to.para || from.byte != to.byte {
+                    self.push_undo();
+                    let mut enabled = false;
+                    for pi in from.para..=to.para {
+                        if pi >= self.paras.len() { break; }
+                        let start = if pi == from.para { from.byte } else { 0 };
+                        let end = if pi == to.para { to.byte } else { self.paras[pi].text.len() };
+                        if start < end {
+                            if !all_set_range(&self.paras[pi], start, end, &get) { enabled = true; break; }
+                        } else if self.paras[pi].text.is_empty() {
+                            if let Some(span) = self.paras[pi].spans.first() { if !get(&span.fmt) { enabled = true; break; } }
+                        }
+                    }
+                    
+                    for pi in from.para..=to.para {
+                        if pi >= self.paras.len() { break; }
+                        let start = if pi == from.para { from.byte } else { 0 };
+                        let end = if pi == to.para { to.byte } else { self.paras[pi].text.len() };
+                        if start < end {
+                            apply_fmt_range(&mut self.paras[pi], start, end, |f| set(f, enabled));
+                            self.para_texts[pi] = self.paras[pi].text.clone();
+                        } else if self.paras[pi].text.is_empty() {
+                            if let Some(span) = self.paras[pi].spans.first_mut() { set(&mut span.fmt, enabled); }
+                        }
+                    }
+                    self.dirty = true; self.heights_dirty = true;
+                    set(&mut self.cur_fmt, enabled);
+                    return;
+                }
+            }
+        }
+        
+        if let Some((pi, s, e)) = self.last_selection {
+            if s != e && pi < self.paras.len() {
+                self.push_undo();
+                let enabled = !all_set_range(&self.paras[pi], s, e, &get);
+                apply_fmt_range(&mut self.paras[pi], s, e, |f| set(f, enabled));
+                self.para_texts[pi] = self.paras[pi].text.clone();
+                self.dirty = true; self.heights_dirty = true;
+                set(&mut self.cur_fmt, enabled);
+                return;
+            }
+        }
+        
+        let current = get(&self.cur_fmt);
+        set(&mut self.cur_fmt, !current);
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { set(&mut span.fmt, !current); self.heights_dirty = true; }
+        }
     }
 
     pub(super) fn apply_fmt_size(&mut self, pt: u32) {
         let hp = pt.saturating_mul(2);
-        if let Some((from, to)) = self.norm_sel() {
-            if from.para != to.para || from.byte != to.byte {
-                self.push_undo();
-                for pi in from.para..=to.para {
-                    if pi >= self.paras.len() { break; }
-                    let start = if pi == from.para { from.byte } else { 0 };
-                    let end = if pi == to.para { to.byte } else { self.paras[pi].text.len() };
-                    if start < end {
-                        apply_fmt_range(&mut self.paras[pi], start, end, |f| f.size_hp = Some(hp));
-                        self.para_texts[pi] = self.paras[pi].text.clone();
-                    }
-                }
-                self.dirty = true;
-                self.heights_dirty = true;
-                return;
-            }
-        }
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                apply_fmt_range(&mut self.paras[pi], s, e, |f| f.size_hp = Some(hp));
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true;
-                self.heights_dirty = true;
-                self.cur_fmt.size_hp = Some(hp);
-                return;
-            }
-        }
-        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        self.push_undo();
-        let len = self.paras[pi].text.len();
-        if len > 0 {
-            apply_fmt_range(&mut self.paras[pi], 0, len, |f| f.size_hp = Some(hp));
-            self.para_texts[pi] = self.paras[pi].text.clone();
-        }
+        if self.apply_fmt_property(|f| f.size_hp = Some(hp)) { self.cur_fmt.size_hp = Some(hp); return; }
         self.cur_fmt.size_hp = Some(hp);
-        self.dirty = true;
-        self.heights_dirty = true;
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.size_hp = Some(hp); self.heights_dirty = true; }
+        }
+    }
+
+    pub(super) fn apply_fmt_toggle_bold(&mut self) { self.apply_fmt_toggle(|f| f.bold, |f, v| f.bold = v); }
+    pub(super) fn apply_fmt_toggle_italic(&mut self) { self.apply_fmt_toggle(|f| f.italic, |f, v| f.italic = v); }
+    pub(super) fn apply_fmt_toggle_underline(&mut self) { self.apply_fmt_toggle(|f| f.underline, |f, v| f.underline = v); }
+    pub(super) fn apply_fmt_toggle_strike(&mut self) { self.apply_fmt_toggle(|f| f.strike, |f, v| f.strike = v); }
+    pub(super) fn apply_fmt_toggle_sup(&mut self) { self.apply_fmt_toggle(|f| f.sup, |f, v| { f.sup = v; if v { f.sub = false; } }); }
+    pub(super) fn apply_fmt_toggle_sub(&mut self) { self.apply_fmt_toggle(|f| f.sub, |f, v| { f.sub = v; if v { f.sup = false; } }); }
+
+    pub(super) fn apply_fmt_font(&mut self, font: Option<FontChoice>) {
+        if self.apply_fmt_property(|f| f.font = font) { self.cur_fmt.font = font; return; }
+        self.cur_fmt.font = font;
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.font = font; self.heights_dirty = true; }
+        }
+    }
+    
+    pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
+        if self.apply_fmt_property(|f| f.color = color) { self.cur_fmt.color = color; return; }
+        self.cur_fmt.color = color;
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.color = color; self.heights_dirty = true; }
+        }
+    }
+
+    pub(super) fn apply_fmt_highlight(&mut self, highlight: Option<[u8; 3]>) {
+        if self.apply_fmt_property(|f| f.highlight = highlight) { self.cur_fmt.highlight = highlight; return; }
+        self.cur_fmt.highlight = highlight;
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.highlight = highlight; self.heights_dirty = true; }
+        }
+    }
+
+    pub(super) fn apply_fmt_link(&mut self, link: Option<String>) {
+        let lnk = link.clone();
+        if self.apply_fmt_property(|f| f.link = lnk.clone()) { self.cur_fmt.link = link; return; }
+        self.cur_fmt.link = link.clone();
+        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
+        if self.paras[pi].text.is_empty() {
+            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.link = link; self.heights_dirty = true; }
+        }
     }
 
     pub(super) fn apply_fmt_line_height(&mut self, lh: f32) {
@@ -344,80 +428,6 @@ impl DocumentEditor {
         self.paras[self.focused_para].align = align; self.dirty = true;
     }
 
-    pub(super) fn apply_fmt_toggle_bold(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                toggle_fmt(&mut self.paras[pi], s, e, |f| f.bold, |f, v| f.bold = v);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        self.cur_fmt.bold = !self.cur_fmt.bold;
-    }
-
-    pub(super) fn apply_fmt_toggle_italic(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                toggle_fmt(&mut self.paras[pi], s, e, |f| f.italic, |f, v| f.italic = v);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        self.cur_fmt.italic = !self.cur_fmt.italic;
-    }
-
-    pub(super) fn apply_fmt_toggle_underline(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                toggle_fmt(&mut self.paras[pi], s, e, |f| f.underline, |f, v| f.underline = v);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        self.cur_fmt.underline = !self.cur_fmt.underline;
-    }
-
-    pub(super) fn apply_fmt_toggle_strike(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                toggle_fmt(&mut self.paras[pi], s, e, |f| f.strike, |f, v| f.strike = v);
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        self.cur_fmt.strike = !self.cur_fmt.strike;
-    }
-
-    pub(super) fn apply_fmt_toggle_sup(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                let v = !all_set_range(&self.paras[pi], s, e, |f| f.sup);
-                apply_fmt_range(&mut self.paras[pi], s, e, |f| { f.sup = v; if v { f.sub = false; } });
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        if self.cur_fmt.sup { self.cur_fmt.sup = false; } else { self.cur_fmt.sup = true; self.cur_fmt.sub = false; }
-    }
-
-    pub(super) fn apply_fmt_toggle_sub(&mut self) {
-        if let Some((pi, s, e)) = self.last_selection {
-            if s != e && pi < self.paras.len() {
-                self.push_undo();
-                let v = !all_set_range(&self.paras[pi], s, e, |f| f.sub);
-                apply_fmt_range(&mut self.paras[pi], s, e, |f| { f.sub = v; if v { f.sup = false; } });
-                self.para_texts[pi] = self.paras[pi].text.clone();
-                self.dirty = true; self.heights_dirty = true; return;
-            }
-        }
-        if self.cur_fmt.sub { self.cur_fmt.sub = false; } else { self.cur_fmt.sub = true; self.cur_fmt.sup = false; }
-    }
-
     pub(super) fn fmt_state_bold(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.bold); } }
         self.cur_fmt.bold
@@ -429,44 +439,6 @@ impl DocumentEditor {
     pub(super) fn fmt_state_underline(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.underline); } }
         self.cur_fmt.underline
-    }
-
-    pub(super) fn apply_fmt_font(&mut self, font: Option<FontChoice>) {
-        if self.set_single_para_fmt(|f| f.font = font) { return; }
-        self.cur_fmt.font = font;
-    }
-    pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
-        if self.set_single_para_fmt(|f| f.color = color) { return; }
-        self.cur_fmt.color = color;
-    }
-
-    pub(super) fn apply_fmt_highlight(&mut self, color: Option<[u8; 3]>) {
-        if self.set_single_para_fmt(|f| f.highlight = color) { return; }
-        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        self.push_undo();
-        let len = self.paras[pi].text.len();
-        if len > 0 {
-            apply_fmt_range(&mut self.paras[pi], 0, len, |f| f.highlight = color);
-            self.para_texts[pi] = self.paras[pi].text.clone();
-            self.dirty = true; self.heights_dirty = true;
-        } else {
-            self.cur_fmt.highlight = color;
-        }
-    }
-
-    pub(super) fn apply_fmt_link(&mut self, link: Option<String>) {
-        if self.set_single_para_fmt(|f| f.link = link.clone()) { return; }
-        let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        self.push_undo();
-        let len = self.paras[pi].text.len();
-        if len > 0 {
-            let link_clone = link.clone();
-            apply_fmt_range(&mut self.paras[pi], 0, len, move |f| f.link = link_clone.clone());
-            self.para_texts[pi] = self.paras[pi].text.clone();
-            self.dirty = true; self.heights_dirty = true;
-        } else {
-            self.cur_fmt.link = link;
-        }
     }
 
     pub(super) fn adjust_indent_selection(&mut self, delta: f32) {
@@ -556,7 +528,7 @@ impl DocumentEditor {
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         match ext.as_str() {
-            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout, self.base_font, self.base_size)?,
+            "docx" | "doc" => save_docx(&path, &save_paras, &self.layout)?,
             "odt" => save_odt(&path, &save_paras, &self.layout)?,
             _ => { let t: String = save_paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
         }

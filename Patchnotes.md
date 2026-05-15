@@ -314,6 +314,8 @@
 #### Features
 
 - **DOCUMENT EDITOR**: Added ability to create custom page sizes
+- **DOCUMENT EDITOR**: Added unsaved/saved indicator on the right of the toolbar
+- **DOCUMENT EDITOR**: Removed the "default font" and "default font size" fields, will later be moved to app settings on the main menu
 
 #### Debugging
 
@@ -324,3 +326,5 @@
 - **DOCUMENT EDITOR**: Checklists now export correctly to docx
 - **DOCUMENT EDITOR**: Font size and line height now properly apply to all lines highlighted rather than just where the cursor is
 - **DOCUMENT EDITOR**: Font size and line height inputs now take priority focus over the document
+- **DOCUMENT EDITOR**: Multi-line highlights now properly disappear when clicking checkbox's or table cells
+- **DOCUMENT EDITOR**: Fixed not being able to change/save the font size/font type on empty spaces

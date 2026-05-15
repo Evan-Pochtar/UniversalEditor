@@ -5,6 +5,8 @@ use crate::style::ColorPalette;
 const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
 const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
 const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
+pub const DEFAULT_BASE_SIZE: u32 = 11;
+pub const DEFAULT_BASE_FONT: FontChoice = FontChoice::Ubuntu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontChoice { #[default] Ubuntu, Roboto, GoogleSans, OpenSans }
@@ -46,26 +48,17 @@ impl ParaStyle {
           Self::Title, Self::Subtitle, Self::BlockQuote, Self::Code, Self::ListBullet, Self::ListOrdered, Self::ListCheck]
     }
     pub fn is_heading(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title|Self::Subtitle) }
-    pub fn size_scale(self) -> f32 {
-        match self {
-            Self::Title => 26.0 / 11.0,
-            Self::H1 => 20.0 / 11.0,
-            Self::H2 => 16.0 / 11.0,
-            Self::H3 => 14.0 / 11.0,
-            Self::H4 => 13.0 / 11.0,
-            Self::H5 => 12.0 / 11.0,
-            Self::H6 => 1.0,
-            Self::Subtitle => 15.0 / 11.0,
-            Self::Code => 1.0,
-            _ => 1.0,
-        }
-    }
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
-    pub fn default_font_size_pt(self, base_size: u32) -> u32 { (base_size as f32 * self.size_scale()).round() as u32 }
     pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
     pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 | Self::HRule => 8.0, Self::Normal | Self::Table => 0.0, _ => 6.0, } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
+    pub fn default_font_size_pt(self) -> u32 {
+        match self {
+            Self::Title => 26, Self::H1 => 20, Self::H2 => 16, Self::H3 => 14,
+            Self::H4 => 13, Self::H5 => 12, Self::Subtitle => 15, _ => DEFAULT_BASE_SIZE,
+        }
+    }
     pub fn outline_depth(self) -> Option<u8> {
         match self { Self::Title|Self::Subtitle => Some(0), Self::H1 => Some(1), Self::H2 => Some(2), Self::H3 => Some(3), Self::H4 => Some(4), Self::H5 => Some(5), Self::H6 => Some(6), _ => None }
     }
@@ -186,10 +179,6 @@ fn append_span(spans: &mut Vec<DocSpan>, span: DocSpan) {
     spans.push(span);
 }
 
-fn table_text_count<F>(table: &TableData, count: F) -> usize where F: Fn(&str) -> usize + Copy, {
-    table.rows.iter().flat_map(|row| row.iter()).map(|cell| count(&cell.text)).sum()
-}
-
 pub fn ensure_boundary(para: &mut DocParagraph, byte: usize) {
     if byte == 0 || byte >= para.text.len() { return; }
     let mut consumed = 0usize;
@@ -244,16 +233,16 @@ pub fn all_set_range(para: &DocParagraph, start: usize, end: usize, get: impl Fn
     any
 }
 
-pub fn toggle_fmt(para: &mut DocParagraph, start: usize, end: usize, get: impl Fn(&SpanFmt) -> bool, set: impl Fn(&mut SpanFmt, bool)) {
-    let enabled = !all_set_range(para, start, end, &get);
-    apply_fmt_range(para, start, end, |fmt| set(fmt, enabled));
-}
-
 pub fn char_to_byte(text: &str, ci: usize) -> usize { text.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(text.len()) }
 pub fn merge_paragraphs(paras: &mut Vec<DocParagraph>, idx: usize) {
     if idx + 1 >= paras.len() { return; }
     let next = paras.remove(idx + 1);
-    if paras[idx].spans.last().map(|span| span.len == 0).unwrap_or(false) {  paras[idx].spans.pop(); }
+    let next_has_text = next.spans.iter().any(|s| s.len > 0);
+    if next_has_text {
+        if paras[idx].spans.last().map(|span| span.len == 0).unwrap_or(false) {  
+            paras[idx].spans.pop(); 
+        }
+    }
     paras[idx].text.push_str(&next.text);
     for span in next.spans { append_span(&mut paras[idx].spans, span); }
     ensure_non_empty_spans(&mut paras[idx].spans);
@@ -339,13 +328,13 @@ pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFm
     merge_adjacent(para);
 }
 
-pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: u32, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
+pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_w;
     job.halign = egui::Align::LEFT;
     job.justify = false;
 
-    let default_size = para.style.default_font_size_pt(base_size) as f32 * zoom;
+    let default_size = para.style.default_font_size_pt() as f32 * zoom;
     let (style_bold, style_italic) = (para.style.is_bold(), para.style.is_italic());
     let code_background = if is_dark { egui::Color32::from_rgb(28, 28, 34) } else { egui::Color32::from_rgb(244, 244, 248) };
     let base_color = match para.style {
@@ -366,7 +355,7 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
 
         let effective_size = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(default_size);
         let font_size = if span.fmt.sub || span.fmt.sup { effective_size * 0.68 } else { effective_size };
-        let font_choice = span.fmt.font.unwrap_or(base_font);
+        let font_choice = span.fmt.font.unwrap_or(DEFAULT_BASE_FONT);
         let mut color = span.fmt.color.map(|rgb| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])).unwrap_or(base_color);
         if span.fmt.link.is_some() && span.fmt.color.is_none() {
             color = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
@@ -381,13 +370,8 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
             if first_segment { para.indent_first * zoom } else { 0.0 },
             egui::TextFormat {
                 font_id: egui::FontId::new(font_size, font_choice.egui_family(style_bold || span.fmt.bold, style_italic || span.fmt.italic)),
-                color,
-                background,
-                underline: if span.fmt.underline || span.fmt.link.is_some() {
-                    egui::Stroke::new(stroke_width, color)
-                } else {
-                    egui::Stroke::NONE
-                },
+                color, background,
+                underline: if span.fmt.underline || span.fmt.link.is_some() { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
                 strikethrough: if span.fmt.strike { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
                 valign: if span.fmt.sup { egui::Align::TOP } else if span.fmt.sub { egui::Align::BOTTOM } else { egui::Align::Center },
                 line_height: if span.fmt.sup || span.fmt.sub { None } else { Some(effective_size * para.line_height) },
@@ -397,18 +381,33 @@ pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base
     }
 
     if job.sections.is_empty() {
+        let first_fmt = para.spans.first().map(|s| &s.fmt).cloned().unwrap_or_default();
+        let effective_size = first_fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(default_size);
+        let font_size = if first_fmt.sub || first_fmt.sup { effective_size * 0.68 } else { effective_size };
+        let font_choice = first_fmt.font.unwrap_or(DEFAULT_BASE_FONT);
+        let mut color = first_fmt.color.map(|rgb| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])).unwrap_or(base_color);
+        if first_fmt.link.is_some() && first_fmt.color.is_none() {
+            color = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
+        }
+        let background = first_fmt.highlight.map(highlight_color32).unwrap_or_else(|| {
+            if para.style == ParaStyle::Code { code_background } else { egui::Color32::TRANSPARENT }
+        });
+        let stroke_width = (effective_size * 0.07).max(1.0);
         job.append(
             "",
             para.indent_first * zoom,
             egui::TextFormat {
-                font_id: egui::FontId::new(default_size, base_font.egui_family(style_bold, style_italic)),
-                color: base_color,
-                line_height: Some(default_size * para.line_height),
+                font_id: egui::FontId::new(font_size, font_choice.egui_family(style_bold || first_fmt.bold, style_italic || first_fmt.italic)),
+                color,
+                background,
+                underline: if first_fmt.underline || first_fmt.link.is_some() { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                strikethrough: if first_fmt.strike { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                valign: if first_fmt.sup { egui::Align::TOP } else if first_fmt.sub { egui::Align::BOTTOM } else { egui::Align::Center },
+                line_height: if first_fmt.sup || first_fmt.sub { None } else { Some(effective_size * para.line_height) },
                 ..Default::default()
             },
         );
     }
-
     job
 }
 
@@ -430,6 +429,9 @@ pub fn convert_leading_tabs_to_indent(paras: &mut Vec<DocParagraph>) {
     }
 }
 
+fn table_text_count<F>(table: &TableData, count: F) -> usize where F: Fn(&str) -> usize + Copy, {
+    table.rows.iter().flat_map(|row| row.iter()).map(|cell| count(&cell.text)).sum()
+}
 pub fn word_count(paras: &[DocParagraph]) -> usize {
     paras.iter().map(|para| {
             para.text.split_whitespace().count()
@@ -445,12 +447,8 @@ pub fn char_count(paras: &[DocParagraph]) -> usize {
 fn style_size_hp(style: ParaStyle) -> Option<u32> {
     match style {
         ParaStyle::Title => Some(52),
-        ParaStyle::H1 => Some(40),
-        ParaStyle::H2 => Some(32),
-        ParaStyle::H3 => Some(28),
-        ParaStyle::H4 => Some(26),
-        ParaStyle::H5 => Some(24),
-        ParaStyle::H6 => Some(22),
+        ParaStyle::H1 => Some(40), ParaStyle::H2 => Some(32), ParaStyle::H3 => Some(28),
+        ParaStyle::H4 => Some(26), ParaStyle::H5 => Some(24), ParaStyle::H6 => Some(22),
         ParaStyle::Subtitle => Some(30),
         ParaStyle::Code => Some(22),
         _ => None,
@@ -503,8 +501,7 @@ fn build_word_rels(hyperlinks: &[(String, String)]) -> String {
 }
 
 fn build_numbering_xml() -> String {
-    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"2\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"3\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num><w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num><w:num w:numId=\"4\"><w:abstractNumId w:val=\"3\"/></w:num></w:numbering>",
-        "\u{2022}", "\u{F0A8}", "\u{F0FE}")
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"2\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"3\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num><w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num><w:num w:numId=\"4\"><w:abstractNumId w:val=\"3\"/></w:num></w:numbering>", "\u{2022}", "\u{F0A8}", "\u{F0FE}")
 }
 
 fn run_rpr(span: &DocSpan, base_font: FontChoice) -> String {
@@ -574,7 +571,7 @@ fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     out
 }
 
-fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: FontChoice) -> (String, Vec<String>) {
+fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, Vec<String>) {
     let content_w_twips = ((layout.width - layout.margin_left - layout.margin_right) * 20.0).round() as u32;
     let mut hyperlinks: Vec<String> = Vec::new();
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n<w:body>\n");
@@ -612,6 +609,7 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
         }
         out.push_str("</w:pPr>\n");
         let mut pos = 0;
+        let mut has_run = false;
         for span in &para.spans {
             if span.len == 0 { pos += span.len; continue; }
             if pos >= para.text.len() { break; }
@@ -619,7 +617,7 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
             let seg = &para.text[pos..end];
             pos = end;
             if seg.is_empty() { continue; }
-            let rpr = run_rpr(span, base_font);
+            let rpr = run_rpr(span, DEFAULT_BASE_FONT);
             if let Some(ref url) = span.fmt.link {
                 let idx = hyperlinks.iter().position(|u| u == url).unwrap_or_else(|| { hyperlinks.push(url.clone()); hyperlinks.len() - 1 });
                 out.push_str(&format!("<w:hyperlink r:id=\"rId{}\">", idx + 3));
@@ -627,7 +625,16 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
                 out.push_str("</w:hyperlink>\n");
             } else {
                 write_run(&mut out, seg, &rpr);
+                has_run = true;
             }
+        }
+        if !has_run && para.text.is_empty() && !para.spans.is_empty() {
+            let span = &para.spans[0];
+            let rpr = run_rpr(span, DEFAULT_BASE_FONT);
+            out.push_str("<w:r>");
+            out.push_str(&rpr);
+            out.push_str("<w:t/>");
+            out.push_str("</w:r>\n");
         }
         out.push_str("</w:p>\n");
     }
@@ -636,8 +643,8 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout, base_font: Fo
     (out, hyperlinks)
 }
 
-pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout, base_font: FontChoice, _base_size: u32) -> Result<(), String> {
-    let (doc, hyperlinks) = build_document_xml(paras, layout, base_font);
+pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) -> Result<(), String> {
+    let (doc, hyperlinks) = build_document_xml(paras, layout);
     let hl_pairs: Vec<(String, String)> = hyperlinks.iter().enumerate().map(|(i, url)| (format!("rId{}", i + 3), url.clone())).collect();
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
@@ -1254,15 +1261,24 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
         }
         if para.style == ParaStyle::ListCheck { out.push_str(if para.checked { "☑ " } else { "☐ " }); }
         let mut pos = 0;
-        for span in &para.spans {
-            if span.len == 0 { pos += span.len; continue; }
-            if pos >= para.text.len() { break; }
-            let end = (pos + span.len).min(para.text.len());
-            let txt = &para.text[pos..end]; pos = end;
-            if txt.is_empty() { continue; }
-            let esc = xml_esc(txt);
-            if span.fmt == SpanFmt::default() { out.push_str(&esc); }
-            else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+        if para.text.is_empty() {
+            if let Some(span) = para.spans.first() {
+                if span.fmt != SpanFmt::default() {
+                    let style_id = fmt_to_odt_id(&span.fmt);
+                    out.push_str(&format!("<text:span text:style-name=\"{}\"/>", style_id));
+                }
+            }
+        } else {
+            for span in &para.spans {
+                if span.len == 0 { pos += span.len; continue; }
+                if pos >= para.text.len() { break; }
+                let end = (pos + span.len).min(para.text.len());
+                let txt = &para.text[pos..end]; pos = end;
+                if txt.is_empty() { continue; }
+                let esc = xml_esc(txt);
+                if span.fmt == SpanFmt::default() { out.push_str(&esc); }
+                else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+            }
         }
         if is_h { out.push_str("</text:h>"); } else { out.push_str("</text:p>"); }
     }

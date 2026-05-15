@@ -61,7 +61,7 @@
 - [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] ODT Exporting has many major flaws
-- [ ] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
+- [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -115,7 +115,6 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Be able to see saved/unsaved
 - [ ] Export
   - [ ] PDF
   - [ ] MD

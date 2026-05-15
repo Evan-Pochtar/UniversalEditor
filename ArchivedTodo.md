@@ -182,6 +182,7 @@
 - [x] Tables do not export correctly.
 - [x] Checklists do not export correctly
 - [x] Mass changing font size only changes font size of normal text, not empty spaces or headers
+- [x] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
 
 ### Other Bugs
 
@@ -314,6 +315,7 @@
 - [x] Add measurements to page sizes in the page settings panel
 - [x] Tables
 - [x] Custom page sizes
+- [x] Be able to see saved/unsaved
 
 ### CONVERTER: Img 2 Img
 
