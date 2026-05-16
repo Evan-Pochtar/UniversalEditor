@@ -143,19 +143,25 @@ fn table_col_widths(tbl: &TableData, cw: f32) -> Vec<f32> {
     else { vec![cw / nc as f32; nc] }
 }
 
-fn table_row_h(row: &[TableCell], col_ws: &[f32], zoom: f32, ctx: &egui::Context, live_cell: Option<(usize, &str)>, is_header: bool) -> f32 {
+fn table_row_h(row: &[TableCell], col_ws: &[f32], zoom: f32, ctx: &egui::Context, live_cell: Option<(usize, &str)>) -> f32 {
     let min_h = DEFAULT_BASE_SIZE as f32 * zoom * 1.6;
     row.iter().enumerate().fold(min_h, |acc, (ci, cell)| {
-        let text = if let Some((live_ci, live_text)) = live_cell {
-            if live_ci == ci { live_text } else { cell.text.as_str() }
-        } else { cell.text.as_str() };
+        let text = if let Some((lci, lt)) = live_cell { if lci == ci { lt } else { cell.text.as_str() } } else { cell.text.as_str() };
         if text.is_empty() { return acc; }
         let w = col_ws.get(ci).copied().unwrap_or(min_h) - 16.0 * zoom;
-        let job = egui::text::LayoutJob::simple(text.to_owned(), egui::FontId::new(DEFAULT_BASE_SIZE as f32 * zoom * 0.9, DEFAULT_BASE_FONT.egui_family(is_header, false)), egui::Color32::WHITE, w.max(1.0));
-        let mut galley_h = ctx.fonts_mut(|f| f.layout_job(job)).rect.height();
-        if text.ends_with('\n') { galley_h += DEFAULT_BASE_SIZE as f32 * zoom * 0.9 * 1.2; }
-        acc.max(galley_h + 10.0 * zoom)
+        let job = egui::text::LayoutJob::simple(text.to_owned(), egui::FontId::new(DEFAULT_BASE_SIZE as f32 * zoom * 0.9, DEFAULT_BASE_FONT.egui_family(false, false)), egui::Color32::WHITE, w.max(1.0));
+        let mut gh = ctx.fonts_mut(|f| f.layout_job(job)).rect.height();
+        if text.ends_with('\n') { gh += DEFAULT_BASE_SIZE as f32 * zoom * 0.9 * 1.2; }
+        acc.max(gh + 10.0 * zoom)
     })
+}
+
+fn cell_in_sel(sel: Option<(usize, (usize, usize), (usize, usize))>, pi: usize, ri: usize, ci: usize) -> bool {
+    let Some((sp, (ar, ac), (br, bc))) = sel else { return false };
+    if sp != pi { return false }
+    let (r0, r1) = (ar.min(br), ar.max(br));
+    let (c0, c1) = (ac.min(bc), ac.max(bc));
+    ri >= r0 && ri <= r1 && ci >= c0 && ci <= c1
 }
 
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -220,9 +226,18 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
         }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num0) { ed.auto_zoom_done = false; }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::A) {
-            let last = ed.paras.len().saturating_sub(1);
-            let end = ed.paras.last().map(|p| p.text.len()).unwrap_or(0);
-            ed.doc_sel = Some([DocPos { para: 0, byte: 0 }, DocPos { para: last, byte: end }]);
+            if let Some((pi, _, _)) = ed.active_table {
+                let new_sel = ed.paras.get(pi).and_then(|p| p.table.as_ref()).map(|tbl| {
+                    let lr = tbl.rows.len().saturating_sub(1);
+                    let lc = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).saturating_sub(1);
+                    (pi, (0usize, 0usize), (lr, lc))
+                });
+                if let Some(s) = new_sel { ed.table_sel = Some(s); }
+            } else {
+                let last = ed.paras.len().saturating_sub(1);
+                let end = ed.paras.last().map(|p| p.text.len()).unwrap_or(0);
+                ed.doc_sel = Some([DocPos { para: 0, byte: 0 }, DocPos { para: last, byte: end }]);
+            }
         }
     });
 }
@@ -697,7 +712,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
                             _ => None,
                         };
-                        table_row_h(row, &col_ws, ed.zoom, ctx, live_cell, ri == 0)
+                        table_row_h(row, &col_ws, ed.zoom, ctx, live_cell)
                     }).sum();
                     ed.para_heights[i] = p.space_before * ed.zoom + 6.0 * ed.zoom + rows_h + p.space_after * ed.zoom;
                 } else { ed.para_heights[i] = 0.0; }
@@ -763,6 +778,9 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     if let Some(off) = scroll_target_y { scroll_area = scroll_area.vertical_scroll_offset(off.max(0.0)); }
     let mut table_cell_change: Option<(usize, usize, usize, String)> = None;
     let mut table_col_resize: Option<(usize, usize, f32)> = None;
+    let tbl_struct_op = std::cell::Cell::new(None::<(u8, usize, usize, usize)>);
+    let tbl_cell_bg_op = std::cell::Cell::new(None::<(usize, usize, usize, Option<[u8; 3]>)>);
+    let tbl_border_op = std::cell::Cell::new(None::<(usize, [u8; 3], f32)>);
 
     scroll_area.show_viewport(ui, |ui, vp| {
         let page_x = ((avail_w - page_w) / 2.0).max(16.0);
@@ -836,22 +854,27 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                             Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
                                             _ => None,
                                         },
-                                        ri == 0
                                     );
                                     if pp.y >= ry && pp.y < ry + rh {
                                         let mut cx_acc = pm.x + ml;
                                         let cc = col_ws.iter().enumerate().find_map(|(ci, &w)| {
                                             if pp.x < cx_acc + w { Some(ci) } else { cx_acc += w; None }
                                         }).unwrap_or(col_ws.len().saturating_sub(1)).min(row.len().saturating_sub(1));
-                                        if let Some((old_i, old_r, old_c)) = ed.active_table {
-                                            table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone()));
+                                        if shift {
+                                            let anchor = ed.table_sel.filter(|(sp,_,_)| *sp == i).map(|(_,a,_)| a).unwrap_or((ri, cc));
+                                            ed.table_sel = Some((i, anchor, (ri, cc)));
+                                        } else {
+                                            if let Some((old_i, old_r, old_c)) = ed.active_table {
+                                                table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone()));
+                                            }
+                                            ed.active_table = Some((i, ri, cc));
+                                            ed.table_sel = Some((i, (ri, cc), (ri, cc)));
+                                            ed.focused_para = i;
+                                            ed.pending_focus = None;
+                                            ed.cell_edit_buf = row.get(cc).map(|c| c.text.clone()).unwrap_or_default();
+                                            let cell_id = ui.id().with(("table_cell", i, ri, cc));
+                                            ctx.memory_mut(|m| m.request_focus(cell_id));
                                         }
-                                        ed.active_table = Some((i, ri, cc));
-                                        ed.focused_para = i;
-                                        ed.pending_focus = None;
-                                        ed.cell_edit_buf = row.get(cc).map(|c| c.text.clone()).unwrap_or_default();
-                                        let cell_id = ui.id().with(("table_cell", i, ri, cc));
-                                        ctx.memory_mut(|m| m.request_focus(cell_id));
                                         break 'tbl_click;
                                     }
                                     ry += rh;
@@ -880,6 +903,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             if let Some((pi, ri, ci)) = ed.active_table.take() {
                                 table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
                             }
+                            ed.table_sel = None;
                             let pos = DocPos { para: i, byte };
                             ed.doc_sel = if shift {
                                 ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos]))
@@ -935,25 +959,32 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
                                 _ => None,
                             };
-                            table_row_h(row, &col_ws, ed.zoom, ctx, live_cell, ri == 0)
+                            table_row_h(row, &col_ws, ed.zoom, ctx, live_cell)
                         }).collect();
                         let total_h: f32 = row_hs.iter().sum();
                         let tbl_bg = if is_dark { egui::Color32::from_rgb(28, 28, 36) } else { egui::Color32::WHITE };
-                        let hdr_bg = if is_dark { egui::Color32::from_rgb(30, 42, 72) } else { ColorPalette::BLUE_50 };
                         let alt_bg = if is_dark { egui::Color32::from_rgb(24, 24, 30) } else { ColorPalette::GRAY_50 };
-                        let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_300 };
+                        let bdr = egui::Color32::from_rgb(tbl.border_color[0], tbl.border_color[1], tbl.border_color[2]);
+                        let bdr_stroke = egui::Stroke::new(tbl.border_width, bdr);
                         let tc = if is_dark { ColorPalette::ZINC_200 } else { ColorPalette::GRAY_800 };
-                        let hdr_tc = if is_dark { egui::Color32::WHITE } else { ColorPalette::GRAY_900 };
+                        let border_color_snap = tbl.border_color;
+                        let border_width_snap = tbl.border_width;
                         let mut ry = table_y;
                         for (ri, row) in tbl.rows.iter().enumerate() {
                             let rh = row_hs[ri];
-                            painter.rect_filled(egui::Rect::from_min_size(egui::pos2(pm.x + ml, ry), egui::vec2(cw, rh)), 0.0, if ri == 0 { hdr_bg } else if ri % 2 == 0 { alt_bg } else { tbl_bg });
                             let mut cx = pm.x + ml;
                             for (ci, cell) in row.iter().enumerate() {
                                 let cw_cell = col_ws.get(ci).copied().unwrap_or(cw / nc as f32);
+                                let cell_bg = cell.bg_color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2]))
+                                    .unwrap_or(if ri % 2 == 0 { tbl_bg } else { alt_bg });
+                                let cell_rect = egui::Rect::from_min_size(egui::pos2(cx, ry), egui::vec2(cw_cell, rh));
+                                painter.rect_filled(cell_rect, 0.0, cell_bg);
+                                if cell_in_sel(ed.table_sel, i, ri, ci) {
+                                    painter.rect_filled(cell_rect, 0.0, sel_color);
+                                }
                                 let is_active = ed.active_table == Some((i, ri, ci));
                                 if is_active {
-                                    painter.rect_filled(egui::Rect::from_min_size(egui::pos2(cx, ry), egui::vec2(cw_cell, rh)), 0.0, egui::Color32::from_rgba_unmultiplied(59, 130, 246, 50));
+                                    painter.rect_filled(cell_rect, 0.0, egui::Color32::from_rgba_unmultiplied(59, 130, 246, 50));
                                     let cr = egui::Rect::from_min_size(egui::pos2(cx + 4.0, ry + 2.0), egui::vec2(cw_cell - 8.0, rh - 4.0));
                                     let cell_id = ui.id().with(("table_cell", i, ri, ci));
                                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
@@ -961,7 +992,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                         .desired_width(cw_cell - 8.0)
                                         .min_size(egui::vec2(cw_cell - 8.0, rh - 4.0))
                                         .desired_rows(1).frame(false)
-                                        .font(egui::FontId::new(bs * 0.9, font.egui_family(ri == 0, false))).show(&mut child);
+                                        .font(egui::FontId::new(bs * 0.9, font.egui_family(false, false))).show(&mut child);
                                     if te.response.changed() {
                                         ed.heights_dirty = true;
                                         ed.dirty = true;
@@ -1056,21 +1087,114 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                                 }
                                             }
                                         }
+                                        let (tab_fwd, tab_bwd) = ctx.input_mut(|inp| (
+                                            inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab),
+                                            inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab),
+                                        ));
+                                        if tab_fwd || tab_bwd {
+                                            table_cell_change = Some((i, ri, ci, ed.cell_edit_buf.clone()));
+                                            let nr = tbl.rows.len();
+                                            let nc = tbl.rows.get(ri).map(|r| r.len()).unwrap_or(1);
+                                            let (next_r, next_c) = if tab_fwd {
+                                                if ci + 1 < nc { (ri, ci + 1) } else if ri + 1 < nr { (ri + 1, 0) } else { (0, 0) }
+                                            } else if ci > 0 { (ri, ci - 1) }
+                                            else if ri > 0 { (ri - 1, tbl.rows[ri - 1].len().saturating_sub(1)) }
+                                            else { (nr.saturating_sub(1), tbl.rows.last().map(|r| r.len()).unwrap_or(1).saturating_sub(1)) };
+                                            let new_buf = tbl.rows.get(next_r).and_then(|r| r.get(next_c)).map(|c| c.text.clone()).unwrap_or_default();
+                                            ed.active_table = Some((i, next_r, next_c));
+                                            ed.table_sel = Some((i, (next_r, next_c), (next_r, next_c)));
+                                            ed.cell_edit_buf = new_buf;
+                                            let nid = ui.id().with(("table_cell", i, next_r, next_c));
+                                            ctx.memory_mut(|m| m.request_focus(nid));
+                                            let mut ns = egui::TextEdit::load_state(ctx, nid).unwrap_or_default();
+                                            ns.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0))));
+                                            egui::TextEdit::store_state(ctx, nid, ns);
+                                        }
                                     }
                                 } else {
-                                    let job = egui::text::LayoutJob::simple(cell.text.clone(), egui::FontId::new(bs * 0.9, font.egui_family(ri == 0, false)), if ri == 0 { hdr_tc } else { tc }, (cw_cell - 16.0 * ed.zoom).max(1.0));
+                                    let cell_resp = ui.interact(cell_rect, ui.id().with(("tc_ctx", i, ri, ci)), egui::Sense::click());
+                                    let job = egui::text::LayoutJob::simple(cell.text.clone(), egui::FontId::new(bs * 0.9, font.egui_family(false, false)), tc, (cw_cell - 16.0 * ed.zoom).max(1.0));
                                     let galley = ctx.fonts_mut(|f| f.layout_job(job));
                                     let ty = ry + (rh - galley.rect.height()).max(0.0) / 2.0;
                                     let clip = egui::Rect::from_min_size(egui::pos2(cx + 4.0, ry), egui::vec2(cw_cell - 8.0, rh));
-                                    painter.with_clip_rect(clip).galley(egui::pos2(cx + 8.0 * ed.zoom, ty), galley, if ri == 0 { hdr_tc } else { tc });
+                                    painter.with_clip_rect(clip).galley(egui::pos2(cx + 8.0 * ed.zoom, ty), galley, tc);
+                                    cell_resp.context_menu(|ui| {
+                                        ui.set_min_width(200.0);
+                                        let lc = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
+                                        ui.label(egui::RichText::new("ROW").size(10.0).color(lc));
+                                        ui.horizontal(|ui| {
+                                            if ui.button("+ Above").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((0, i, ri, ci))); ui.close(); }
+                                            if ui.button("+ Below").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((1, i, ri, ci))); ui.close(); }
+                                            if ui.button("Delete").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((4, i, ri, ci))); ui.close(); }
+                                        });
+                                        ui.label(egui::RichText::new("COLUMN").size(10.0).color(lc));
+                                        ui.horizontal(|ui| {
+                                            if ui.button("+ Left").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((2, i, ri, ci))); ui.close(); }
+                                            if ui.button("+ Right").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((3, i, ri, ci))); ui.close(); }
+                                            if ui.button("Delete").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((5, i, ri, ci))); ui.close(); }
+                                        });
+                                        ui.separator();
+                                        ui.label(egui::RichText::new("CELL BACKGROUND").size(10.0).color(lc));
+                                        if ui.button("Clear").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_cell_bg_op.set(Some((i, ri, ci, None))); ui.close(); }
+                                        ui.add_space(2.0);
+                                        const CP: &[([u8; 3], &str)] = &[
+                                            ([255,255,255],"White"),([229,231,235],"Gray"),([239,246,255],"Blue 50"),
+                                            ([219,234,254],"Blue 100"),([240,253,244],"Green 50"),([255,251,235],"Amber 50"),
+                                            ([254,242,242],"Red 50"),([250,245,255],"Purple 50"),([167,243,208],"Mint"),
+                                            ([147,197,253],"Sky"),([253,230,138],"Yellow"),([196,181,253],"Lavender"),
+                                        ];
+                                        for chunk in CP.chunks(6) {
+                                            ui.horizontal(|ui| {
+                                                for &(c, name) in chunk {
+                                                    let bd = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+                                                    if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bd)).min_size(egui::vec2(20.0,20.0)).corner_radius(2.0)).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                                        tbl_cell_bg_op.set(Some((i, ri, ci, Some(c)))); ui.close();
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        ui.separator();
+                                        ui.label(egui::RichText::new("TABLE BORDER COLOR").size(10.0).color(lc));
+                                        const BP: &[([u8; 3], &str)] = &[
+                                            ([0,0,0],"Black"),([55,65,81],"Dark Gray"),([100,100,110],"Gray"),
+                                            ([156,163,175],"Silver"),([209,213,219],"Light Gray"),([255,255,255],"White"),
+                                            ([220,38,38],"Red"),([234,88,12],"Orange"),([22,163,74],"Green"),
+                                            ([20,184,166],"Teal"),([59,130,246],"Blue"),([168,85,247],"Purple"),
+                                        ];
+                                        for chunk in BP.chunks(6) {
+                                            ui.horizontal(|ui| {
+                                                for &(c, name) in chunk {
+                                                    let bd = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+                                                    let active = border_color_snap == c;
+                                                    let stroke = if active { egui::Stroke::new(2.0, ColorPalette::BLUE_400) } else { egui::Stroke::new(1.0, bd) };
+                                                    if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(stroke).min_size(egui::vec2(20.0,20.0)).corner_radius(2.0)).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                                        tbl_border_op.set(Some((i, c, border_width_snap))); ui.close();
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        ui.add_space(2.0);
+                                        ui.label(egui::RichText::new("BORDER WIDTH").size(10.0).color(lc));
+                                        ui.horizontal(|ui| {
+                                            for w in [0.5f32, 1.0, 1.5, 2.0, 3.0] {
+                                                let active = (border_width_snap - w).abs() < 0.1;
+                                                let (fill, fc) = if active { (ColorPalette::BLUE_600, egui::Color32::WHITE) }
+                                                    else if is_dark { (ColorPalette::ZINC_700, ColorPalette::ZINC_300) }
+                                                    else { (ColorPalette::GRAY_200, ColorPalette::GRAY_700) };
+                                                if ui.add(egui::Button::new(egui::RichText::new(format!("{}", w)).size(11.0).color(fc)).fill(fill).stroke(egui::Stroke::NONE).min_size(egui::vec2(32.0, 22.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                                    tbl_border_op.set(Some((i, border_color_snap, w))); ui.close();
+                                                }
+                                            }
+                                        });
+                                    });
                                 }
-                                if ci > 0 { painter.vline(cx, ry..=(ry + rh), egui::Stroke::new(1.0, bdr)); }
+                                if ci > 0 { painter.vline(cx, ry..=(ry + rh), bdr_stroke); }
                                 cx += cw_cell;
                             }
-                            if ri > 0 { painter.hline((pm.x + ml)..=(pm.x + ml + cw), ry, egui::Stroke::new(1.0, bdr)); }
+                            if ri > 0 { painter.hline((pm.x + ml)..=(pm.x + ml + cw), ry, bdr_stroke); }
                             ry += rh;
                         }
-                        painter.rect_stroke(egui::Rect::from_min_size(egui::pos2(pm.x + ml, table_y), egui::vec2(cw, total_h)), 0.0, egui::Stroke::new(1.0, bdr), egui::StrokeKind::Outside);
+                        painter.rect_stroke(egui::Rect::from_min_size(egui::pos2(pm.x + ml, table_y), egui::vec2(cw, total_h)), 0.0, bdr_stroke, egui::StrokeKind::Outside);
                         let mut cx_acc = pm.x + ml;
                         for col in 1..nc {
                             cx_acc += col_ws[col - 1];
@@ -1495,6 +1619,50 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     ed.dirty = true;
                 }
             }
+        }
+    }
+
+    if let Some((op, pi, row, col)) = tbl_struct_op.get() {
+        ed.push_undo();
+        match op {
+            0 => ed.insert_table_row(pi, row, true),
+            1 => ed.insert_table_row(pi, row, false),
+            2 => ed.insert_table_col(pi, col, true),
+            3 => ed.insert_table_col(pi, col, false),
+            4 => ed.delete_table_row(pi, row),
+            5 => ed.delete_table_col(pi, col),
+            _ => {}
+        }
+        ed.sync_texts(); ed.find_stale = true;
+    }
+    if let Some((pi, row, col, color)) = tbl_cell_bg_op.get() {
+        if pi < ed.paras.len() {
+            ed.push_undo();
+            let targets: Vec<(usize, usize)> = match ed.table_sel {
+                Some((sp, (ar, ac), (br, bc))) if sp == pi => {
+                    let (r0, r1) = (ar.min(br), ar.max(br));
+                    let (c0, c1) = (ac.min(bc), ac.max(bc));
+                    (r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))).collect()
+                }
+                _ => vec![(row, col)],
+            };
+            if let Some(ref mut tbl) = ed.paras[pi].table {
+                for (r, c) in targets {
+                    if let Some(rw) = tbl.rows.get_mut(r) {
+                        if let Some(cl) = rw.get_mut(c) { cl.bg_color = color; }
+                    }
+                }
+            }
+            ed.dirty = true; ed.heights_dirty = true;
+        }
+    }
+    if let Some((pi, color, width)) = tbl_border_op.get() {
+        if pi < ed.paras.len() {
+            ed.push_undo();
+            if let Some(ref mut tbl) = ed.paras[pi].table {
+                tbl.border_color = color; tbl.border_width = width;
+            }
+            ed.dirty = true; ed.heights_dirty = true;
         }
     }
 

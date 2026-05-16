@@ -316,6 +316,8 @@
 - **DOCUMENT EDITOR**: Added ability to create custom page sizes
 - **DOCUMENT EDITOR**: Added unsaved/saved indicator on the right of the toolbar
 - **DOCUMENT EDITOR**: Removed the "default font" and "default font size" fields, will later be moved to app settings on the main menu
+- **DOCUMENT EDITOR**: Added right click context menu on tables for cell coloring, border thickness, and border color
+- **DOCUMENT EDITOR**: Added shift + click on table cells to select multiple at once
 
 #### Debugging
 

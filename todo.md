@@ -126,7 +126,6 @@
 - [ ] Printing
 - [ ] Header and footers
 - [ ] Improve look of find/replace panel
-- [ ] Further Table options (border color, border thickness, fill color)
 - [ ] Hovering table cells/checkbox should change cursor to show that it is clickable
 
 ### CONVERTERS

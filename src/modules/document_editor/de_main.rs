@@ -42,6 +42,7 @@ pub struct DocumentEditor {
     pub(super) last_edit_action: u8,
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
+    pub(super) table_sel: Option<(usize, (usize, usize), (usize, usize))>,
     pub(super) cell_edit_buf: String,
     pub(super) toolbar_has_focus: bool,
 }
@@ -78,7 +79,7 @@ impl DocumentEditor {
             para_heights: vec![0.0; n], heights_dirty: true,
             preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
-            table_picker_hover: (0, 0), active_table: None, cell_edit_buf: String::new(),
+            table_picker_hover: (0, 0), active_table: None, table_sel: None, cell_edit_buf: String::new(),
             toolbar_has_focus: false,
         }
     }
@@ -461,12 +462,9 @@ impl DocumentEditor {
 
     pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
         self.push_undo();
-        let make_cell = || TableCell { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }] };
+        let make_cell = || TableCell { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }], bg_color: None };
         let mut p = DocParagraph::with_style(ParaStyle::Table);
-        p.table = Some(Box::new(TableData {
-            rows: (0..rows).map(|_| (0..cols).map(|_| make_cell()).collect()).collect(),
-            col_widths: Vec::new(),
-        }));
+        p.table = Some(Box::new(TableData { rows: (0..rows).map(|_| (0..cols).map(|_| make_cell()).collect()).collect(), col_widths: Vec::new(), border_color: [100, 100, 110], border_width: 1.0 }));
         let idx = (self.focused_para + 1).min(self.paras.len());
         self.paras.insert(idx, p);
         self.focused_para = idx;
@@ -533,6 +531,61 @@ impl DocumentEditor {
             _ => { let t: String = save_paras.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join("\n"); std::fs::write(&path, t).map_err(|e| e.to_string())?; }
         }
         self.file_path = Some(path); self.dirty = false; Ok(())
+    }
+
+    pub(super) fn insert_table_row(&mut self, pi: usize, row: usize, above: bool) {
+        if pi >= self.paras.len() { return; }
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            let ncols = tbl.rows.first().map(|r| r.len()).unwrap_or(0);
+            let new_row: Vec<TableCell> = (0..ncols).map(|_| TableCell::default()).collect();
+            let idx = if above { row } else { (row + 1).min(tbl.rows.len()) };
+            tbl.rows.insert(idx, new_row);
+        }
+        self.dirty = true; self.heights_dirty = true;
+    }
+
+    pub(super) fn insert_table_col(&mut self, pi: usize, col: usize, left: bool) {
+        if pi >= self.paras.len() { return; }
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            let max_cols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(0);
+            let idx = if left { col } else { (col + 1).min(max_cols) };
+            for row in &mut tbl.rows {
+                let at = idx.min(row.len());
+                row.insert(at, TableCell::default());
+            }
+            if !tbl.col_widths.is_empty() {
+                let n = tbl.col_widths.len();
+                let scale = n as f32 / (n + 1) as f32;
+                for w in &mut tbl.col_widths { *w *= scale; }
+                let at = idx.min(tbl.col_widths.len());
+                tbl.col_widths.insert(at, 1.0 / (n + 1) as f32);
+            }
+        }
+        self.dirty = true; self.heights_dirty = true;
+    }
+
+    pub(super) fn delete_table_row(&mut self, pi: usize, row: usize) {
+        if pi >= self.paras.len() { return; }
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            if tbl.rows.len() > 1 && row < tbl.rows.len() { tbl.rows.remove(row); }
+        }
+        self.dirty = true; self.heights_dirty = true;
+    }
+
+    pub(super) fn delete_table_col(&mut self, pi: usize, col: usize) {
+        if pi >= self.paras.len() { return; }
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            let min_cols = tbl.rows.iter().map(|r| r.len()).min().unwrap_or(0);
+            if min_cols > 1 {
+                for row in &mut tbl.rows { if col < row.len() { row.remove(col); } }
+                if !tbl.col_widths.is_empty() && col < tbl.col_widths.len() {
+                    let removed = tbl.col_widths.remove(col);
+                    let n = tbl.col_widths.len();
+                    if n > 0 { for w in &mut tbl.col_widths { *w += removed / n as f32; } }
+                }
+            }
+        }
+        self.dirty = true; self.heights_dirty = true;
     }
 }
 

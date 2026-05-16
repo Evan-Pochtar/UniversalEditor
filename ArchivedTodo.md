@@ -316,6 +316,7 @@
 - [x] Tables
 - [x] Custom page sizes
 - [x] Be able to see saved/unsaved
+- [x] Further Table options (border color, border thickness, fill color)
 
 ### CONVERTER: Img 2 Img
 

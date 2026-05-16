@@ -106,9 +106,9 @@ pub struct SpanFmt {
 pub struct DocSpan { pub len: usize, pub fmt: SpanFmt }
 
 #[derive(Debug, Clone, Default)]
-pub struct TableCell { pub text: String, pub spans: Vec<DocSpan> }
+pub struct TableCell { pub text: String, pub spans: Vec<DocSpan>, pub bg_color: Option<[u8; 3]> }
 #[derive(Debug, Clone)]
-pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32> }
+pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32>, pub border_color: [u8; 3], pub border_width: f32 }
 
 #[derive(Debug, Clone)]
 pub struct DocParagraph {
@@ -552,7 +552,9 @@ fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").rep
 fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
     let col_tw = content_w_twips / ncols as u32;
-    let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"4\" w:color=\"auto\"/>", s);
+    let bc = format!("{:02X}{:02X}{:02X}", tbl.border_color[0], tbl.border_color[1], tbl.border_color[2]);
+    let bsz = ((tbl.border_width * 8.0).round() as u32).max(2);
+    let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"{1}\" w:color=\"{2}\"/>", s, bsz, bc);
     let mut out = format!("<w:tbl><w:tblPr><w:tblW w:w=\"{}\" w:type=\"dxa\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
         content_w_twips, b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV"));
     for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", col_tw)); }
@@ -560,10 +562,9 @@ fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     for row in &tbl.rows {
         out.push_str("<w:tr>");
         for cell in row {
-            out.push_str(&format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
-                col_tw, xml_esc(&cell.text)
-            ));
+            let shd = cell.bg_color.map(|c| format!("<w:shd w:val=\"clear\" w:fill=\"{:02X}{:02X}{:02X}\" w:color=\"auto\"/>", c[0], c[1], c[2])).unwrap_or_default();
+            out.push_str(&format!("<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{}</w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
+                col_tw, shd, xml_esc(&cell.text)));
         }
         out.push_str("</w:tr>");
     }
@@ -783,6 +784,8 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
     let mut cur_para_numid: Option<u32> = None;
     let mut cur_link_url: Option<String> = None;
     let (mut in_tbl, mut in_tc) = (false, false);
+    let (mut in_tbl_pr, mut in_tbl_borders, mut in_tc_pr) = (false, false, false);
+    let (mut cur_tbl_bc, mut cur_tbl_bw, mut cur_tc_bg) = ([100u8, 100, 110], 1.0f32, None::<[u8; 3]>);
     let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
     let mut cur_tbl_row: Vec<TableCell> = Vec::new();
     let mut cur_tc_text = String::new();
@@ -796,7 +799,16 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => if in_ppr { in_pbdr = true; },
                     b"numPr" => if in_ppr { in_numpr = true; },
                     b"pict" => in_pict = true,
-                    b"bottom" | b"top" => if in_pbdr { has_hborder = true; },
+                    b"bottom" | b"top" => {
+                        if in_pbdr { has_hborder = true; }
+                        if in_tbl_borders {
+                            if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
+                                let h = c.trim_start_matches('#');
+                                if h.len() == 6 { if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&h[0..2],16),u8::from_str_radix(&h[2..4],16),u8::from_str_radix(&h[4..6],16)) { cur_tbl_bc = [r,g,bv]; } }
+                            }
+                            if let Some(sz) = get_attr(e, b"sz").and_then(|v| v.parse::<f32>().ok()) { cur_tbl_bw = (sz/8.0).max(0.5); }
+                        }
+                    }
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
@@ -812,6 +824,9 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
                     b"strike" => { if in_rpr { cur_fmt.strike = true; } }
                     b"tbl" => { in_tbl = true; cur_tbl_rows.clear(); }
+                    b"tblPr" if in_tbl => in_tbl_pr = true,
+                    b"tblBorders" if in_tbl_pr => in_tbl_borders = true,
+                    b"tcPr" if in_tbl => { in_tc_pr = true; cur_tc_bg = None; }
                     b"tr" if in_tbl => { cur_tbl_row.clear(); }
                     b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
                     b"vertAlign" => {
@@ -848,11 +863,13 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         } }
                     }
                     b"shd" => {
-                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
-                            if v != "auto" && v.len() == 6 {
-                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
+                        if let Some(v) = get_attr(e, b"fill") {
+                            if in_rpr && v != "auto" && v.len() == 6 {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r,g,bv]); }
+                            } else if in_tc_pr && !in_rpr && v.len() == 6 && v != "auto" {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_tc_bg = Some([r,g,bv]); }
                             }
-                        } }
+                        }
                     }
                     b"rFonts" => {
                         if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
@@ -875,7 +892,16 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
-                    b"bottom" | b"top" => { if in_pbdr && in_ppr { has_hborder = true; } }
+                    b"bottom" | b"top" | b"left" | b"right" | b"insideH" | b"insideV" => {
+                        if in_pbdr && in_ppr { has_hborder = true; }
+                        if in_tbl_borders {
+                            if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
+                                let h = c.trim_start_matches('#');
+                                if h.len() == 6 { if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&h[0..2],16),u8::from_str_radix(&h[2..4],16),u8::from_str_radix(&h[4..6],16)) { cur_tbl_bc = [r,g,bv]; } }
+                            }
+                            if let Some(sz) = get_attr(e, b"sz").and_then(|v| v.parse::<f32>().ok()) { cur_tbl_bw = (sz/8.0).max(0.5); }
+                        }
+                    }
                     b"numId" => {
                         if in_numpr {
                             let nid = get_attr(e, b"val").and_then(|v| v.parse().ok());
@@ -923,11 +949,13 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         } }
                     }
                     b"shd" => {
-                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
-                            if v != "auto" && v.len() == 6 {
-                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
+                        if let Some(v) = get_attr(e, b"fill") {
+                            if in_rpr && v != "auto" && v.len() == 6 {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r,g,bv]); }
+                            } else if in_tc_pr && !in_rpr && v.len() == 6 && v != "auto" {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_tc_bg = Some([r,g,bv]); }
                             }
-                        } }
+                        }
                     }
                     b"rFonts" => {
                         if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
@@ -946,21 +974,25 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
                     b"pict" => in_pict = false,
-                    b"tbl" => {
-                        in_tbl = false; in_tc = false;
+                    b"tbl" if in_tbl => {
+                        in_tbl = false; in_tc = false; in_tbl_pr = false; in_tbl_borders = false; in_tc_pr = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new(), border_color: cur_tbl_bc, border_width: cur_tbl_bw.max(0.5) }));
                         paras.push(p);
                         para_numids.push(None);
-                    }
+                        cur_tbl_bc = [100, 100, 110]; cur_tbl_bw = 1.0;
+                    },
+                    b"tblPr" => in_tbl_pr = false,
+                    b"tblBorders" => in_tbl_borders = false,
+                    b"tcPr" => in_tc_pr = false,
                     b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
                     b"tc" if in_tbl => {
                         let text = std::mem::take(&mut cur_tc_text);
                         let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
                             else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
-                        cur_tbl_row.push(TableCell { text, spans });
-                        in_tc = false;
-                    }
+                        cur_tbl_row.push(TableCell { text, spans, bg_color: cur_tc_bg.take() });
+                        in_tc = false; in_tc_pr = false;
+                    },
                     b"p" => {
                         if !in_tbl {
                             if let Some(mut p) = cur_para.take() {
@@ -1414,7 +1446,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "table" if in_tbl => {
                         in_tbl = false; in_tc_odt = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new(), border_color: [100, 100, 110], border_width: 1.0 }));
                         paras.push(p);
                     }
                     "table-row" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
@@ -1422,7 +1454,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                         let text = std::mem::take(&mut cur_tc_text);
                         let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
                             else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
-                        cur_tbl_row.push(TableCell { text, spans });
+                        cur_tbl_row.push(TableCell { text, spans, bg_color: None });
                         in_tc_odt = false;
                     }
                     "p" | "h" if in_body && !in_tbl => {
