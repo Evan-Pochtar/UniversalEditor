@@ -650,8 +650,8 @@ impl EditorModule for DocumentEditor {
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
                 "ToggleOutline" => { self.show_outline = !self.show_outline; true }
-                "ZoomIn"  => { self.zoom = (self.zoom + 0.1).min(3.0); self.heights_dirty = true; true }
-                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); self.heights_dirty = true; true }
+                "ZoomIn" => { self.zoom = (self.zoom + 0.1).min(3.0); true }
+                "ZoomOut" => { self.zoom = (self.zoom - 0.1).max(0.3); true }
                 "ZoomReset" => { self.auto_zoom_done = false; true }
                 "InsertBulletList" => { self.apply_style_toggle(ParaStyle::ListBullet); true }
                 "InsertNumberedList" => { self.apply_style_toggle(ParaStyle::ListOrdered); true }

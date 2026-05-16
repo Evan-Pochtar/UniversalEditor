@@ -56,12 +56,11 @@
 
 ### Document Editor Bugs
 
-- [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 - [ ] Cannot highlight and scroll at the same time
-- [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
+- [ ] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

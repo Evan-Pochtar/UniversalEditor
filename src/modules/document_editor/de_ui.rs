@@ -218,11 +218,9 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::F) { ed.show_find = !ed.show_find; }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::Plus) || i.consume_key(egui::Modifiers::CTRL, egui::Key::Equals) {
             ed.zoom = (ed.zoom + 0.1).min(3.0);
-            ed.heights_dirty = true;
         }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::Minus) {
             ed.zoom = (ed.zoom - 0.1).max(0.3);
-            ed.heights_dirty = true;
         }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num0) { ed.auto_zoom_done = false; }
         if i.consume_key(egui::Modifiers::CTRL, egui::Key::A) {
@@ -436,39 +434,34 @@ fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
 
 struct ComputedPageLayout {para_page: Vec<usize>, para_content_y: Vec<f32>, page_tops: Vec<f32>}
 fn compute_page_layout(ed: &DocumentEditor) -> ComputedPageLayout {
-    let page_content_h = ed.layout.content_height() * ed.zoom;
-    let page_h = ed.layout.height * ed.zoom;
-    let mt = ed.layout.margin_top * ed.zoom;
+    let page_content_h = ed.layout.content_height();
+    let mt = ed.layout.margin_top;
     let n = ed.paras.len();
     let mut para_page = vec![0usize; n];
     let mut para_content_y = vec![0.0f32; n];
     let mut page_tops = vec![PAGE_PAD];
     let mut cur_y = mt;
     let mut cur_page = 0;
-
     for i in 0..n {
-        let mut h = ed.para_heights.get(i).copied().unwrap_or(DEFAULT_BASE_SIZE as f32 * ed.zoom * 1.8);
-        if h <= 0.0 { h = DEFAULT_BASE_SIZE as f32 * ed.zoom * 1.2; }
-
+        let mut h = ed.para_heights.get(i).copied().unwrap_or(DEFAULT_BASE_SIZE as f32 * 1.8);
+        if h <= 0.0 { h = DEFAULT_BASE_SIZE as f32 * 1.2; }
         if cur_y > mt && cur_y + h > mt + page_content_h {
             cur_page += 1;
-            page_tops.push(*page_tops.last().unwrap() + page_h + PAGE_GAP);
+            page_tops.push(*page_tops.last().unwrap() + ed.layout.height * ed.zoom + PAGE_GAP);
             cur_y = mt;
         }
-
         para_page[i] = cur_page;
         para_content_y[i] = cur_y;
         cur_y += h;
         if h > page_content_h { cur_y = mt + page_content_h; }
     }
-
     ComputedPageLayout { para_page, para_content_y, page_tops }
 }
 
-fn measure_para_total_height(ctx: &egui::Context, para: &DocParagraph, wrap_w: f32, zoom: f32, is_dark: bool) -> f32 {
-    let job = build_layout_job(&para.spans, &para.text, para, wrap_w, is_dark, zoom);
+fn measure_para_total_height(ctx: &egui::Context, para: &DocParagraph, wrap_w: f32, is_dark: bool) -> f32 {
+    let job = build_layout_job(&para.spans, &para.text, para, wrap_w, is_dark, 1.0);
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
-    para.space_before * zoom + galley.rect.height() + para.space_after * zoom
+    para.space_before + galley.rect.height() + para.space_after
 }
 
 fn split_spans_at_byte(spans: &[DocSpan], split_byte: usize) -> (Vec<DocSpan>, Vec<DocSpan>) {
@@ -508,31 +501,24 @@ fn split_para_at_byte(src: &DocParagraph, split_byte: usize) -> (DocParagraph, D
     right.text = src.text[split_byte..].to_string();
     right.spans = if right_spans.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] } else { right_spans };
     right.space_before = 0.0;
-    right.indent_first = right.indent_left;
+    right.indent_first = 0.0;
     right.is_split = true;
     merge_adjacent(&mut right);
     (left, right)
 }
 
-fn find_split_byte_fit(ctx: &egui::Context, para: &DocParagraph, wrap_w: f32, max_total_h: f32, zoom: f32, is_dark: bool) -> usize {
-    let job = build_layout_job(&para.spans, &para.text, para, wrap_w, is_dark, zoom);
+fn find_split_byte_fit(ctx: &egui::Context, para: &DocParagraph, wrap_w: f32, max_total_h: f32, is_dark: bool) -> usize {
+    let job = build_layout_job(&para.spans, &para.text, para, wrap_w, is_dark, 1.0);
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
     let mut split_char = para.text.chars().count();
     let mut char_pos = 0usize;
     for row in &galley.rows {
-        let row_bottom = para.space_before * zoom + row.rect().max.y;
-        if row_bottom > max_total_h {
-            split_char = char_pos;
-            break;
-        }
+        let row_bottom = para.space_before + row.rect().max.y;
+        if row_bottom > max_total_h { split_char = char_pos; break; }
         char_pos += row.glyphs.len();
-        if row.ends_with_newline {
-            char_pos += 1;
-        }
+        if row.ends_with_newline { char_pos += 1; }
     }
-    if split_char == 0 {
-        return 0;
-    }
+    if split_char == 0 { return 0; }
     para.text.char_indices().nth(split_char).map(|(b, _)| b).unwrap_or(para.text.len())
 }
 
@@ -550,39 +536,29 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
             }
         }
     }
-
-    let page_content_h = ed.layout.content_height() * ed.zoom;
-    let cw = ed.layout.content_width() * ed.zoom;
-    let bs = DEFAULT_BASE_SIZE as f32 * ed.zoom;
-    let mt = ed.layout.margin_top * ed.zoom;
+    let page_content_h = ed.layout.content_height();
+    let cw = ed.layout.content_width();
+    let bs = DEFAULT_BASE_SIZE as f32;
+    let mt = ed.layout.margin_top;
     let min_fill = bs * 2.0;
-
     let mut j = 0;
     while j < ed.paras.len() {
         if ed.paras[j].is_split && j > 0 {
             let prev_len = ed.paras[j - 1].text.len();
             let orig_space_after = ed.paras[j].space_after;
-            if focus_p == j {
-                focus_p = j - 1;
-                focus_b += prev_len;
-            } else if focus_p > j {
-                focus_p -= 1;
-            }
+            if focus_p == j { focus_p = j - 1; focus_b += prev_len; } else if focus_p > j { focus_p -= 1; }
             merge_paragraphs(&mut ed.paras, j - 1);
             ed.paras[j - 1].space_after = orig_space_after;
             ed.paras[j - 1].is_split = false;
             structure_changed = true;
-        } else {
-            j += 1;
-        }
+        } else { j += 1; }
     }
-
     let mut cur_y = mt;
     let mut i = 0usize;
     while i < ed.paras.len() {
         let para = ed.paras[i].clone();
         if para.style == ParaStyle::HRule {
-            let h = para.space_before * ed.zoom + 12.0 + para.space_after * ed.zoom;
+            let h = para.space_before + 12.0 + para.space_after;
             cur_y += h;
             if cur_y >= mt + page_content_h { cur_y = mt; }
             i += 1;
@@ -595,62 +571,43 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
             i += 1;
             continue;
         }
-        let wrap_w = (cw - para.indent_left * ed.zoom).max(40.0);
-        let h = measure_para_total_height(ctx, &para, wrap_w, ed.zoom, is_dark);
+        let wrap_w = (cw - para.indent_left).max(40.0);
+        let h = measure_para_total_height(ctx, &para, wrap_w, is_dark);
         let remaining = mt + page_content_h - cur_y;
-
         if h <= remaining + 0.5 {
             cur_y += h;
             if cur_y >= mt + page_content_h { cur_y = mt; }
             i += 1;
             continue;
         }
-        
         if !para.text.is_empty() && cur_y > mt && remaining > min_fill {
-            let split = find_split_byte_fit(ctx, &para, wrap_w, remaining, ed.zoom, is_dark);
+            let split = find_split_byte_fit(ctx, &para, wrap_w, remaining, is_dark);
             if split > 0 && split < para.text.len() {
                 let (left, right) = split_para_at_byte(&para, split);
                 ed.paras[i] = left;
                 ed.paras.insert(i + 1, right);
-                if focus_p == i {
-                    if focus_b >= split {
-                        focus_p = i + 1;
-                        focus_b -= split;
-                    }
-                } else if focus_p > i {
-                    focus_p += 1;
-                }
+                if focus_p == i { if focus_b >= split { focus_p = i + 1; focus_b -= split; } } else if focus_p > i { focus_p += 1; }
                 structure_changed = true;
                 continue;
             }
         }
         cur_y = mt;
-        
         if !para.text.is_empty() && h > page_content_h + 0.5 {
-            let split = find_split_byte_fit(ctx, &para, wrap_w, page_content_h, ed.zoom, is_dark);
+            let split = find_split_byte_fit(ctx, &para, wrap_w, page_content_h, is_dark);
             let split = split.max(para.text.char_indices().nth(1).map(|(b, _)| b).unwrap_or(para.text.len()));
             if split < para.text.len() {
                 let (left, right) = split_para_at_byte(&para, split);
                 ed.paras[i] = left;
                 ed.paras.insert(i + 1, right);
-                if focus_p == i {
-                    if focus_b >= split {
-                        focus_p = i + 1;
-                        focus_b -= split;
-                    }
-                } else if focus_p > i {
-                    focus_p += 1;
-                }
+                if focus_p == i { if focus_b >= split { focus_p = i + 1; focus_b -= split; } } else if focus_p > i { focus_p += 1; }
                 structure_changed = true;
                 continue;
             }
         }
-        
         cur_y = (cur_y + h).min(mt + page_content_h);
         if cur_y >= mt + page_content_h { cur_y = mt; }
         i += 1;
     }
-    
     let n = ed.paras.len();
     ed.para_texts.resize(n, String::new());
     ed.para_ids.resize_with(n, || egui::Id::new(egui::Id::NULL));
@@ -659,7 +616,6 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
         ed.para_texts[k] = ed.paras[k].text.clone();
         ed.para_ids[k] = egui::Id::new(("de_para", k as u64));
     }
-
     if structure_changed {
         ed.doc_sel = None;
         if focus_p < n && ed.paras[focus_p].style != ParaStyle::Table && ed.paras[focus_p].style != ParaStyle::HRule {
@@ -681,11 +637,9 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
 
 fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context, is_dark: bool) {
     let avail_w = ui.available_width();
-
     if !ed.auto_zoom_done && avail_w > 50.0 {
-        ed.zoom = (avail_w * 0.60 / ed.layout.width).clamp(0.3, 2.5);
+        ed.zoom = (avail_w * 0.40 / ed.layout.width).clamp(1.0, 2.5);
         ed.auto_zoom_done = true;
-        ed.heights_dirty = true;
     }
 
     let page_w = ed.layout.width * ed.zoom;
@@ -703,36 +657,37 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         ed.para_heights.resize(n, 0.0);
         for i in 0..n {
             let p = &ed.paras[i];
-            if p.style == ParaStyle::HRule { ed.para_heights[i] = p.space_before * ed.zoom + 12.0 + p.space_after * ed.zoom; continue; }
+            if p.style == ParaStyle::HRule {
+                ed.para_heights[i] = p.space_before + 12.0 + p.space_after;
+                continue;
+            }
             if p.style == ParaStyle::Table {
                 if let Some(tbl) = &p.table {
-                    let col_ws = table_col_widths(tbl, ed.layout.content_width() * ed.zoom);
+                    let col_ws = table_col_widths(tbl, ed.layout.content_width());
                     let rows_h: f32 = tbl.rows.iter().enumerate().map(|(ri, row)| {
                         let live_cell = match ed.active_table {
                             Some((ti, tr, tc)) if ti == i && tr == ri => Some((tc, ed.cell_edit_buf.as_str())),
                             _ => None,
                         };
-                        table_row_h(row, &col_ws, ed.zoom, ctx, live_cell)
+                        table_row_h(row, &col_ws, 1.0, ctx, live_cell)
                     }).sum();
-                    ed.para_heights[i] = p.space_before * ed.zoom + 6.0 * ed.zoom + rows_h + p.space_after * ed.zoom;
+                    ed.para_heights[i] = p.space_before + 6.0 + rows_h + p.space_after;
                 } else { ed.para_heights[i] = 0.0; }
                 continue;
             }
-            let indent = p.indent_left * ed.zoom;
-            let wrap_w = (cw - indent).max(40.0);
-            let job = build_layout_job(&p.spans, &p.text, p, wrap_w, is_dark, ed.zoom);
+            let wrap_w = (ed.layout.content_width() - p.indent_left).max(40.0);
+            let job = build_layout_job(&p.spans, &p.text, p, wrap_w, is_dark, 1.0);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
-            ed.para_heights[i] = p.space_before * ed.zoom + galley.rect.height() + p.space_after * ed.zoom;
+            ed.para_heights[i] = p.space_before + galley.rect.height() + p.space_after;
         }
         ed.heights_dirty = false;
     }
 
     let pl = compute_page_layout(ed);
     let total_scroll_h = pl.page_tops.last().copied().unwrap_or(PAGE_PAD) + page_h + PAGE_PAD;
-
     let scroll_target_y = ed.scroll_to_para.take().and_then(|t| {
         pl.para_page.get(t).and_then(|&pg| pl.page_tops.get(pg)).map(|&pt| {
-            pt + pl.para_content_y[t] - 80.0
+            pt + pl.para_content_y[t] * ed.zoom - 80.0
         })
     });
 
@@ -812,13 +767,12 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let indent = para.indent_left * ed.zoom;
             let wrap_w = (cw - indent).max(40.0);
             let content_y = pl.para_content_y[i];
-            let total_h = ed.para_heights.get(i).copied().unwrap_or(bs * 1.8);
-            let space_b = para.space_before * ed.zoom;
-            let text_y = pm.y + content_y + space_b;
-            let text_h = total_h - space_b - para.space_after * ed.zoom;
-            let scroll_local_top = pt + content_y;
-            let near_view = !(scroll_local_top + total_h < vp.min.y - page_h * 0.5 || scroll_local_top > vp.max.y + page_h * 0.5);
-
+            let total_h = ed.para_heights.get(i).copied().unwrap_or(DEFAULT_BASE_SIZE as f32 * 1.8);
+            let space_b = para.space_before;
+            let text_y = pm.y + content_y * ed.zoom + space_b * ed.zoom;
+            let text_h = (total_h - space_b - para.space_after) * ed.zoom;
+            let scroll_local_top = pt + content_y * ed.zoom;
+            let near_view = !(scroll_local_top + total_h * ed.zoom < vp.min.y - page_h * 0.5 || scroll_local_top > vp.max.y + page_h * 0.5);
             let (edit_x, edit_w) = if matches!(para.align, Align::Left) { (pm.x + ml + indent, wrap_w) } else { (pm.x + ml, cw) };
             let edit_rect = egui::Rect::from_min_size(egui::pos2(edit_x, text_y), egui::vec2(edit_w, text_h));
             let checkbox_rect = if para.style == ParaStyle::ListCheck {
@@ -1463,7 +1417,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let text_ref = &mut ed.para_texts[i];
             let effective_rect = if i + 1 < n && ed.paras[i + 1].style == ParaStyle::Table {
                 let tpg = pl.para_page[i + 1];
-                let table_top = outer.min.y + pl.page_tops[tpg] + pl.para_content_y[i + 1];
+                let table_top = outer.min.y + pl.page_tops[tpg] + pl.para_content_y[i + 1] * ed.zoom;
                 egui::Rect::from_min_max(edit_rect.min, egui::pos2(edit_rect.max.x, table_top.min(edit_rect.max.y)))
             } else { edit_rect };
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(effective_rect));

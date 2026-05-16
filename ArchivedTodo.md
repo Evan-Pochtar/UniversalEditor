@@ -183,6 +183,8 @@
 - [x] Checklists do not export correctly
 - [x] Mass changing font size only changes font size of normal text, not empty spaces or headers
 - [x] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
+- [x] Deleting newlines sometimes causes a "jitter" and text flashing
+- [x] Zooming in and zooming out sometimes causes text to "jitter" or switch position
 
 ### Other Bugs
 

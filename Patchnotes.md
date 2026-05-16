@@ -330,3 +330,5 @@
 - **DOCUMENT EDITOR**: Font size and line height inputs now take priority focus over the document
 - **DOCUMENT EDITOR**: Multi-line highlights now properly disappear when clicking checkbox's or table cells
 - **DOCUMENT EDITOR**: Fixed not being able to change/save the font size/font type on empty spaces
+- **DOCUMENT EDITOR**: Text and formatting no longer "jitters" when removing new lines or changing zoom
+- **DOCUMENT EDITOR**: Zoom no longer changes size of text and formatting on the page
