@@ -44,6 +44,10 @@ pub struct DocumentEditor {
     pub(super) active_table: Option<(usize, usize, usize)>,
     pub(super) table_sel: Option<(usize, (usize, usize), (usize, usize))>,
     pub(super) cell_edit_buf: String,
+    pub(super) image_textures: std::collections::HashMap<u64, egui::TextureId>,
+    pub(super) selected_image_para: Option<usize>,
+    pub(super) image_drag: Option<(usize, u8, egui::Pos2, f32, f32, f32)>,
+    pub(super) next_image_uid: u64,
     pub(super) toolbar_has_focus: bool,
 }
 
@@ -61,6 +65,11 @@ impl DocumentEditor {
             _ => (load_txt_as_doc(&path).unwrap_or_else(|_| vec![DocParagraph::new()]), PageLayout::default()),
         };
         let mut s = Self::make(paras, Some(path), layout);
+        let mut uid = 0u64;
+        for p in &mut s.paras {
+            if let Some(ref mut img) = p.image { img.uid = uid; uid += 1; }
+        }
+        s.next_image_uid = uid;
         s.sync_texts(); s
     }
 
@@ -80,6 +89,7 @@ impl DocumentEditor {
             preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
             table_picker_hover: (0, 0), active_table: None, table_sel: None, cell_edit_buf: String::new(),
+            image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false,
         }
     }
@@ -460,6 +470,20 @@ impl DocumentEditor {
         }
     }
 
+    pub(super) fn insert_image(&mut self, data: Vec<u8>, display_w: f32, display_h: f32, name: String) {
+        self.push_undo();
+        let uid = self.next_image_uid;
+        self.next_image_uid += 1;
+        let mut p = DocParagraph::with_style(ParaStyle::Image);
+        p.image = Some(DocImage { data, display_w, display_h, name, uid });
+        let idx = (self.focused_para + 1).min(self.paras.len());
+        self.paras.insert(idx, p);
+        self.focused_para = idx;
+        self.sync_texts();
+        self.dirty = true;
+        self.heights_dirty = true;
+    }
+
     pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
         self.push_undo();
         let make_cell = || TableCell { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }], bg_color: None };
@@ -624,6 +648,8 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
             ],
             insert_items: vec![
+                (MenuItem { label: "Insert Image...".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertImage".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
                 (MenuItem { label: "Bullet List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertBulletList".into())),
                 (MenuItem { label: "Numbered List".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertNumberedList".into())),
                 (MenuItem { label: "Checklist".into(), shortcut: None, enabled: true }, MenuAction::Custom("InsertChecklist".into())),
@@ -662,6 +688,30 @@ impl EditorModule for DocumentEditor {
                 "ToggleSubscript" => { self.apply_fmt_toggle_sub(); true }
                 "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
                 "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
+                "InsertImage" => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "ico"]).pick_file()
+                    {
+                        if let Ok(img) = image::open(&path) {
+                            let iw = img.width() as f32;
+                            let ih = img.height() as f32;
+                            let max_w = self.layout.content_width();
+                            let scale = if iw > max_w { max_w / iw } else { 1.0 };
+                            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+                            let fmt = match ext.to_lowercase().as_str() {
+                                "jpg" | "jpeg" => image::ImageFormat::Jpeg,
+                                "webp" => image::ImageFormat::WebP,
+                                "bmp" => image::ImageFormat::Bmp,
+                                _ => image::ImageFormat::Png,
+                            };
+                            let mut buf = Vec::new();
+                            img.write_to(&mut std::io::Cursor::new(&mut buf), fmt).ok();
+                            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("image.png").to_string();
+                            self.insert_image(buf, iw * scale, ih * scale, name);
+                        }
+                    }
+                    true
+                }
                 _ => false,
             },
             _ => false,

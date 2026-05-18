@@ -319,6 +319,7 @@
 - [x] Custom page sizes
 - [x] Be able to see saved/unsaved
 - [x] Further Table options (border color, border thickness, fill color)
+- [ ] Images
 
 ### CONVERTER: Img 2 Img
 

@@ -318,6 +318,7 @@
 - **DOCUMENT EDITOR**: Removed the "default font" and "default font size" fields, will later be moved to app settings on the main menu
 - **DOCUMENT EDITOR**: Added right click context menu on tables for cell coloring, border thickness, and border color
 - **DOCUMENT EDITOR**: Added shift + click on table cells to select multiple at once
+- **DOCUMENT EDITOR**: Added the ability to import, load, and save images
 
 #### Debugging
 

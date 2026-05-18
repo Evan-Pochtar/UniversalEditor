@@ -61,6 +61,10 @@
 - [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
+- [ ] Image is slightly too high, cuts off letters from the line above
+- [ ] While dragging and resizing images, sometimes highlights text in the background
+- [ ] Sometimes cuts off last line of text below loaded image
+- [ ] Can't see image handles when image is too big for the document
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -120,12 +124,15 @@
   - [ ] rtf
   - [ ] epub
   - [ ] html
-- [ ] Images
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
+- [ ] Page Breaks
+- [ ] Right click context menu
+  - [ ] Images
+  - [ ] Text
 - [ ] Header and footers
 - [ ] Improve look of find/replace panel
-- [ ] Hovering table cells/checkbox should change cursor to show that it is clickable
+- [ ] Hovering table cells/checkbox/images should change cursor to show that it is clickable
 
 ### CONVERTERS
 

@@ -2,7 +2,6 @@ use eframe::egui;
 use std::{io::{Read, Write}, path::PathBuf};
 use crate::style::ColorPalette;
 
-const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
 const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
 const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
 pub const DEFAULT_BASE_SIZE: u32 = 11;
@@ -30,7 +29,7 @@ impl FontChoice {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ParaStyle {
     #[default] Normal, H1, H2, H3, H4, H5, H6,
-    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule, Table,
+    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule, Table, Image,
 }
 impl ParaStyle {
     pub fn label(self) -> &'static str {
@@ -40,7 +39,7 @@ impl ParaStyle {
             Self::H6 => "Heading 6", Self::Title => "Title", Self::Subtitle => "Subtitle",
             Self::BlockQuote => "Block Quote", Self::Code => "Code Block",
             Self::ListBullet => "Bullet List", Self::ListOrdered => "Numbered List", Self::ListCheck => "Checklist",
-            Self::HRule => "Horizontal Rule", Self::Table => "Table",
+            Self::HRule => "Horizontal Rule", Self::Table => "Table", Self::Image => "Image",
         }
     }
     pub fn all() -> &'static [ParaStyle] {
@@ -51,7 +50,7 @@ impl ParaStyle {
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
     pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title => 8.0, _ => 0.0 } }
-    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 => 8.0, Self::Normal | Self::Table | Self::ListBullet | Self::ListOrdered | Self::ListCheck | Self::HRule => 0.0, _ => 6.0, } }
+    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 => 8.0, Self::Normal | Self::Table | Self::Image | Self::ListBullet | Self::ListOrdered | Self::ListCheck | Self::HRule => 0.0, _ => 6.0, } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
     pub fn default_font_size_pt(self) -> u32 {
         match self {
@@ -67,7 +66,7 @@ impl ParaStyle {
             Self::H4 => "Heading4", Self::H5 => "Heading5", Self::H6 => "Heading6",
             Self::Title => "Title", Self::Subtitle => "Subtitle", Self::BlockQuote => "Quote",
             Self::Code => "CodeBlock", Self::ListBullet => "ListBullet", Self::ListOrdered => "ListNumber", Self::ListCheck => "ListCheck",
-            Self::HRule => "HRule", Self::Table => "Table", }
+            Self::HRule => "HRule", Self::Table => "Table", Self::Image => "Image" }
     }
     pub fn from_docx_id(s: &str) -> Self {
         match s {
@@ -110,17 +109,20 @@ pub struct TableCell { pub text: String, pub spans: Vec<DocSpan>, pub bg_color: 
 #[derive(Debug, Clone)]
 pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32>, pub border_color: [u8; 3], pub border_width: f32 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DocImage { pub data: Vec<u8>, pub display_w: f32, pub display_h: f32, pub name: String, pub uid: u64, }
+
 #[derive(Debug, Clone)]
 pub struct DocParagraph {
     pub text: String, pub spans: Vec<DocSpan>, pub style: ParaStyle, pub align: Align,
     pub indent_left: f32, pub indent_first: f32, pub space_before: f32, pub space_after: f32,
-    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool, pub table: Option<Box<TableData>>,
+    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool, pub table: Option<Box<TableData>>, pub image: Option<DocImage>,
 }
 impl DocParagraph {
     pub fn new() -> Self {
         Self { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }],
             style: ParaStyle::Normal, align: Align::Left, indent_left: 0.0, indent_first: 0.0,
-            space_before: 0.0, space_after: 0.0, line_height: 1.15, list_num: None, checked: false, is_split: false, table: None, }
+            space_before: 0.0, space_after: 0.0, line_height: 1.15, list_num: None, checked: false, is_split: false, table: None, image: None, }
     }
     pub fn with_style(s: ParaStyle) -> Self {
         let mut p = Self::new();
@@ -459,6 +461,7 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
     let (style_id, display_name, based_on, outline, spacing_before, spacing_after, indent_left, size_hp, bold, italic, font_name) = match style {
         ParaStyle::Normal => return String::new(),
         ParaStyle::Table => return String::new(),
+        ParaStyle::Image => return String::new(),
         ParaStyle::H1 => ("Heading1", "Heading 1", Some("Normal"), Some(0), 320, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H2 => ("Heading2", "Heading 2", Some("Normal"), Some(1), 240, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H3 => ("Heading3", "Heading 3", Some("Normal"), Some(2), 200, 60, None, style_size_hp(style), true, false, None),
@@ -491,11 +494,10 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
     out
 }
 
-fn build_word_rels(hyperlinks: &[(String, String)]) -> String {
+fn build_word_rels(hyperlinks: &[(String, String)], image_names: &[String]) -> String {
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>");
-    for (id, url) in hyperlinks {
-        out.push_str(&format!("<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", id, xml_esc(url)));
-    }
+    for (id, url) in hyperlinks { out.push_str(&format!("<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", id, xml_esc(url))); }
+    for (idx, name) in image_names.iter().enumerate() { out.push_str(&format!("<Relationship Id=\"rId{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/{}\"/>", idx + 1003, name)); }
     out.push_str("</Relationships>");
     out
 }
@@ -572,10 +574,12 @@ fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     out
 }
 
-fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, Vec<String>) {
+fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, Vec<String>, Vec<(String, Vec<u8>)>) {
     let content_w_twips = ((layout.width - layout.margin_left - layout.margin_right) * 20.0).round() as u32;
     let mut hyperlinks: Vec<String> = Vec::new();
-    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n<w:body>\n");
+    let mut images: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut img_idx = 0usize;
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\n<w:body>\n");
     for para in paras {
         if para.style == ParaStyle::Table {
             if let Some(ref t) = para.table { out.push_str(&build_table_xml(t, content_w_twips)); }
@@ -585,27 +589,34 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, V
             out.push_str("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"auto\"/></w:pBdr></w:pPr></w:p>\n");
             continue;
         }
+        if para.style == ParaStyle::Image {
+            if let Some(ref img) = para.image {
+                if !img.data.is_empty() {
+                    let ext = img.name.rsplit('.').next().unwrap_or("png");
+                    let media_name = format!("image{}.{}", img_idx + 1, ext);
+                    let rid = format!("rId{}", img_idx + 1003);
+                    let cx = (img.display_w * 12700.0) as u64;
+                    let cy = (img.display_h * 12700.0) as u64;
+                    out.push_str("<w:p><w:pPr>");
+                    if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>", para.align.docx_val())); }
+                    out.push_str(&format!("</w:pPr><w:r><w:drawing><wp:inline><wp:extent cx=\"{}\" cy=\"{}\"/><wp:docPr id=\"{}\" name=\"{}\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"{}\"/><pic:cNvPicPr preferRelativeResize=\"0\"/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"{}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>\n",
+                        cx, cy, img_idx + 1, xml_esc(&media_name), xml_esc(&media_name), rid, cx, cy));
+                    images.push((media_name, img.data.clone()));
+                    img_idx += 1;
+                }
+            }
+            continue;
+        }
         out.push_str("<w:p>\n<w:pPr>\n");
         if para.style != ParaStyle::Normal { out.push_str(&format!("<w:pStyle w:val=\"{}\"/>\n", para.style.docx_id())); }
         if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>\n", para.align.docx_val())); }
         out.push_str(&format!("<w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"auto\"/>\n",
             (para.space_before * 20.0) as u32, (para.space_after * 20.0) as u32, (para.line_height * 240.0) as u32));
         match para.style {
-            ParaStyle::ListBullet => {
-                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
-                out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>\n");
-            }
-            ParaStyle::ListOrdered => {
-                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32)));
-                out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr>\n");
-            }
-            ParaStyle::ListCheck => {
-                let num_id = if para.checked { 4u32 } else { 3u32 };
-                out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"{}\"/></w:numPr>\n", 720u32.max((para.indent_left * 20.0) as u32), num_id));
-            }
-            _ if para.indent_left != 0.0 || para.indent_first != 0.0 => {
-                out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32));
-            }
+            ParaStyle::ListBullet => { out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32))); out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>\n"); }
+            ParaStyle::ListOrdered => { out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32))); out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr>\n"); }
+            ParaStyle::ListCheck => { let num_id = if para.checked { 4u32 } else { 3u32 }; out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"{}\"/></w:numPr>\n", 720u32.max((para.indent_left * 20.0) as u32), num_id)); }
+            _ if para.indent_left != 0.0 || para.indent_first != 0.0 => { out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32)); }
             _ => {}
         }
         out.push_str("</w:pPr>\n");
@@ -641,12 +652,14 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, V
     }
     let (w, h, mt, mb, ml, mr) = ((layout.width*20.0) as u32, (layout.height*20.0) as u32, (layout.margin_top*20.0) as u32, (layout.margin_bot*20.0) as u32, (layout.margin_left*20.0) as u32, (layout.margin_right*20.0) as u32);
     out.push_str(&format!("<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\"/></w:sectPr>\n</w:body>\n</w:document>", w, h, mt, mr, mb, ml));
-    (out, hyperlinks)
+    (out, hyperlinks, images)
 }
 
 pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) -> Result<(), String> {
-    let (doc, hyperlinks) = build_document_xml(paras, layout);
+    let (doc, hyperlinks, images) = build_document_xml(paras, layout);
     let hl_pairs: Vec<(String, String)> = hyperlinks.iter().enumerate().map(|(i, url)| (format!("rId{}", i + 3), url.clone())).collect();
+    let image_names: Vec<String> = images.iter().map(|(n, _)| n.clone()).collect();
+    let rels = build_word_rels(&hl_pairs, &image_names);
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default();
@@ -654,11 +667,14 @@ pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) ->
         zip.start_file(name, opts).map_err(|e| e.to_string())?;
         zip.write_all(data).map_err(|e| e.to_string())?;
     }
-    let rels = build_word_rels(&hl_pairs);
     zip.start_file("word/_rels/document.xml.rels", opts).map_err(|e| e.to_string())?;
     zip.write_all(rels.as_bytes()).map_err(|e| e.to_string())?;
     zip.start_file("word/document.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(doc.as_bytes()).map_err(|e| e.to_string())?;
+    for (name, bytes) in &images {
+        zip.start_file(format!("word/media/{}", name), opts).map_err(|e| e.to_string())?;
+        zip.write_all(bytes).map_err(|e| e.to_string())?;
+    }
     let styles = build_docx_styles_xml();
     zip.start_file("word/styles.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(styles.as_bytes()).map_err(|e| e.to_string())?;
@@ -678,8 +694,8 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut arch = zip::ZipArchive::new(file).map_err(|_| "Not a valid DOCX".to_string())?;
     let num_map = parse_docx_numbering(&mut arch);
-    
     let mut rels_map: std::collections::HashMap<String, String> = Default::default();
+    let mut image_rels: std::collections::HashMap<String, String> = Default::default();
     if let Ok(mut e) = arch.by_name("word/_rels/document.xml.rels") {
         let mut s = String::new();
         if e.read_to_string(&mut s).is_ok() {
@@ -690,6 +706,7 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
                         if ev.local_name().as_ref() == b"Relationship" {
                             if let (Some(id), Some(target), Some(typ)) = (get_attr(ev, b"Id"), get_attr(ev, b"Target"), get_attr(ev, b"Type")) {
                                 if typ.ends_with("/hyperlink") { rels_map.insert(id, target); }
+                                else if typ.ends_with("/image") { image_rels.insert(id, target); }
                             }
                         }
                     }
@@ -699,9 +716,27 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
             }
         }
     }
-
     let xml = { let mut e = arch.by_name("word/document.xml").map_err(|_| "Missing document.xml".to_string())?; let mut s = String::new(); e.read_to_string(&mut s).map_err(|e| e.to_string())?; s };
-    parse_docx_xml(&xml, &num_map, &rels_map)
+    let (mut paras, layout) = parse_docx_xml(&xml, &num_map, &rels_map)?;
+    let mut uid = 0u64;
+    for p in &mut paras {
+        if p.style == ParaStyle::Image {
+            if let Some(ref mut img) = p.image {
+                if let Some(media_path) = image_rels.get(&img.name) {
+                    let zip_path = format!("word/{}", media_path);
+                    if let Ok(mut entry) = arch.by_name(&zip_path) {
+                        let mut data = Vec::new();
+                        let _ = entry.read_to_end(&mut data);
+                        img.data = data;
+                    }
+                    img.name = media_path.rsplit('/').next().unwrap_or("image.png").to_string();
+                }
+                img.uid = uid;
+                uid += 1;
+            }
+        }
+    }
+    Ok((paras, layout))
 }
 
 fn parse_docx_numbering(arch: &mut zip::ZipArchive<std::fs::File>) -> std::collections::HashMap<u32, (ParaStyle, Option<bool>)> {
@@ -779,6 +814,7 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
     let mut cur_fmt = SpanFmt::default();
     let mut cur_run_text = String::new();
     let mut in_run = false; let mut in_rpr = false; let mut in_ppr = false; let mut in_t = false;
+    let (mut in_drawing, mut para_has_drawing, mut drawing_rid, mut drawing_cx, mut drawing_cy) = (false, false, String::new(), 0u64, 0u64);
     let mut in_pbdr = false; let mut has_hborder = false; let mut in_pict = false;
     let mut in_numpr = false; let mut pending_num_id: Option<u32> = None;
     let mut cur_para_numid: Option<u32> = None;
@@ -829,6 +865,12 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"tcPr" if in_tbl => { in_tc_pr = true; cur_tc_bg = None; }
                     b"tr" if in_tbl => { cur_tbl_row.clear(); }
                     b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
+                    b"drawing" => { in_drawing = true; }
+                    b"extent" if in_drawing => {
+                        if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
+                        if let Some(v) = get_attr(e, b"cy") { drawing_cy = v.parse().unwrap_or(0); }
+                    }
+                    b"blip" if in_drawing => { if let Some(v) = get_attr(e, b"embed") { drawing_rid = v; } }
                     b"vertAlign" => {
                         if in_rpr { if let Some(v) = get_attr(e, b"val") {
                             if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
@@ -915,6 +957,11 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"i" => { if in_rpr { cur_fmt.italic = true; } }
                     b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
                     b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"extent" if in_drawing => {
+                        if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
+                        if let Some(v) = get_attr(e, b"cy") { drawing_cy = v.parse().unwrap_or(0); }
+                    }
+                    b"blip" if in_drawing => { if let Some(v) = get_attr(e, b"embed") { drawing_rid = v; } }
                     b"vertAlign" => {
                         if in_rpr { if let Some(v) = get_attr(e, b"val") {
                             if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
@@ -993,9 +1040,17 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         cur_tbl_row.push(TableCell { text, spans, bg_color: cur_tc_bg.take() });
                         in_tc = false; in_tc_pr = false;
                     },
+                    b"drawing" => { if in_drawing { para_has_drawing = true; } in_drawing = false; }
                     b"p" => {
                         if !in_tbl {
-                            if let Some(mut p) = cur_para.take() {
+                            if para_has_drawing && !drawing_rid.is_empty() {
+                                let mut imgp = DocParagraph::with_style(ParaStyle::Image);
+                                imgp.align = cur_para.as_ref().map(|p| p.align).unwrap_or(Align::Left);
+                                imgp.image = Some(DocImage { data: vec![], display_w: drawing_cx as f32 / 12700.0, display_h: drawing_cy as f32 / 12700.0, name: drawing_rid.clone(), uid: 0 });
+                                paras.push(imgp);
+                                para_numids.push(None);
+                                cur_para = None;
+                            } else if let Some(mut p) = cur_para.take() {
                                 if has_hborder {
                                     if p.text.trim().is_empty() {
                                         p.style = ParaStyle::HRule;
@@ -1013,6 +1068,10 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                                 }
                             }
                             has_hborder = false;
+                            para_has_drawing = false;
+                            drawing_rid.clear();
+                            drawing_cx = 0;
+                            drawing_cy = 0;
                         }
                     }
                     b"pPr" => {
@@ -1181,7 +1240,7 @@ fn para_to_odt_style(s: ParaStyle) -> &'static str {
         ParaStyle::H6=>"Heading_20_6", ParaStyle::Title=>"Title", ParaStyle::Subtitle=>"Subtitle",
         ParaStyle::BlockQuote=>"Quotations", ParaStyle::Code=>"Preformatted_20_Text",
         ParaStyle::ListBullet=>"List_20_Bullet", ParaStyle::ListOrdered=>"List_20_Number", ParaStyle::ListCheck=>"List_20_Check",
-        ParaStyle::HRule=>"Standard", ParaStyle::Table => "Standard",
+        ParaStyle::HRule=>"Standard", ParaStyle::Table => "Standard", ParaStyle::Image => "Standard",
     }
 }
 
@@ -1263,6 +1322,7 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     }
     out.push_str("</office:automatic-styles><office:body><office:text>");
     for para in paras {
+        if para.style == ParaStyle::Image { continue; }
         if para.style == ParaStyle::Table {
             if let Some(ref tbl) = para.table {
                 let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1);

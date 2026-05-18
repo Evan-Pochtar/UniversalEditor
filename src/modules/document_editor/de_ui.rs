@@ -164,6 +164,55 @@ fn cell_in_sel(sel: Option<(usize, (usize, usize), (usize, usize))>, pi: usize, 
     ri >= r0 && ri <= r1 && ci >= c0 && ci <= c1
 }
 
+fn get_doc_image_texture(ctx: &egui::Context, ed: &mut DocumentEditor, img: &DocImage) -> egui::TextureId {
+    if let Some(&tid) = ed.image_textures.get(&img.uid) { return tid; }
+    let dyn_img = image::load_from_memory(&img.data).unwrap_or_else(|_| image::DynamicImage::new_rgba8(1, 1));
+    let rgba = dyn_img.to_rgba8();
+    let (w, h) = (rgba.width().max(1) as usize, rgba.height().max(1) as usize);
+    let ci = egui::ColorImage::from_rgba_unmultiplied([w, h], rgba.as_raw());
+    let tid = ctx.tex_manager().write().alloc(format!("doc_img_{}", img.uid).into(), ci.into(), egui::TextureOptions::LINEAR);
+    ed.image_textures.insert(img.uid, tid);
+    tid
+}
+
+fn image_handle_positions(rect: egui::Rect) -> [egui::Pos2; 8] {
+    let (cx, cy) = (rect.center().x, rect.center().y);
+    [rect.left_top(), egui::pos2(cx, rect.top()), rect.right_top(), egui::pos2(rect.right(), cy),
+     rect.right_bottom(), egui::pos2(cx, rect.bottom()), rect.left_bottom(), egui::pos2(rect.left(), cy)]
+}
+
+fn image_handle_cursor(handle: u8) -> egui::CursorIcon {
+    match handle {
+        0 | 4 => egui::CursorIcon::ResizeNwSe,
+        2 | 6 => egui::CursorIcon::ResizeNeSw,
+        1 | 5 => egui::CursorIcon::ResizeVertical,
+        _ => egui::CursorIcon::ResizeHorizontal,
+    }
+}
+
+fn image_drag_dims(ed: &DocumentEditor, ctx: &egui::Context, drag: (usize, u8, egui::Pos2, f32, f32, f32)) -> (f32, f32) {
+    let (_, handle, drag_start, orig_w, orig_h, orig_asp) = drag;
+    let cur = ctx.input(|inp| inp.pointer.latest_pos()).unwrap_or(drag_start);
+    let delta = (cur - drag_start) / ed.zoom;
+    let shift = ctx.input(|inp| inp.modifiers.shift);
+    let (mut nw, mut nh) = match handle {
+        0 => (orig_w - delta.x, orig_h - delta.y),
+        1 => (orig_w, orig_h - delta.y),
+        2 => (orig_w + delta.x, orig_h - delta.y),
+        3 => (orig_w + delta.x, orig_h),
+        4 => (orig_w + delta.x, orig_h + delta.y),
+        5 => (orig_w, orig_h + delta.y),
+        6 => (orig_w - delta.x, orig_h + delta.y),
+        _ => (orig_w - delta.x, orig_h),
+    };
+    nw = nw.max(20.0);
+    nh = nh.max(20.0);
+    if shift {
+        nh = nw / orig_asp.max(0.001);
+    }
+    (nw, nh)
+}
+
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     let is_dark = ui.visuals().dark_mode;
     let theme = if is_dark { ThemeMode::Dark } else { ThemeMode::Light };
@@ -207,6 +256,27 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
         if para_has_focus {
             let has_text = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_))));
             if has_text { ed.delete_sel(); }
+        }
+    }
+
+    if ed.selected_image_para.is_some() {
+        let del = ctx.input_mut(|i| {
+            let d = i.key_pressed(egui::Key::Backspace) || i.key_pressed(egui::Key::Delete);
+            if d { i.events.retain(|e| !matches!(e, egui::Event::Key { key: egui::Key::Backspace | egui::Key::Delete, pressed: true, .. })); }
+            d
+        });
+        if del {
+            let pi = ed.selected_image_para.take().unwrap();
+            if pi < ed.paras.len() {
+                ed.push_undo();
+                if let Some(ref img) = ed.paras[pi].image { ed.image_textures.remove(&img.uid); }
+                ed.paras.remove(pi);
+                ed.focused_para = pi.min(ed.paras.len().saturating_sub(1));
+                ed.sync_texts();
+                ed.dirty = true;
+                ed.heights_dirty = true;
+            }
+            return;
         }
     }
 
@@ -571,6 +641,13 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
             i += 1;
             continue;
         }
+        if para.style == ParaStyle::Image {
+            let h = para.image.as_ref().map(|img| img.display_h + 8.0).unwrap_or(20.0);
+            if cur_y > mt && cur_y + h > mt + page_content_h { cur_y = mt; }
+            cur_y += h.min(page_content_h);
+            i += 1;
+            continue;
+        }
         let wrap_w = (cw - para.indent_left).max(40.0);
         let h = measure_para_total_height(ctx, &para, wrap_w, is_dark);
         let remaining = mt + page_content_h - cur_y;
@@ -675,6 +752,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 } else { ed.para_heights[i] = 0.0; }
                 continue;
             }
+            if p.style == ParaStyle::Image {
+                ed.para_heights[i] = p.image.as_ref().map(|img| img.display_h + 8.0).unwrap_or(20.0);
+                continue;
+            }
             let wrap_w = (ed.layout.content_width() - p.indent_left).max(40.0);
             let job = build_layout_job(&p.spans, &p.text, p, wrap_w, is_dark, 1.0);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
@@ -736,6 +817,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let tbl_struct_op = std::cell::Cell::new(None::<(u8, usize, usize, usize)>);
     let tbl_cell_bg_op = std::cell::Cell::new(None::<(usize, usize, usize, Option<[u8; 3]>)>);
     let tbl_border_op = std::cell::Cell::new(None::<(usize, [u8; 3], f32)>);
+    let mut img_size_change: Option<(usize, f32, f32)> = None;
 
     scroll_area.show_viewport(ui, |ui, vp| {
         let page_x = ((avail_w - page_w) / 2.0).max(16.0);
@@ -799,6 +881,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     if para.style == ParaStyle::Table {
                         if btn_pressed {
                             ed.doc_sel = None;
+                            ed.selected_image_para = None;
                             if let Some(ref tbl) = ed.paras[i].table {
                                 let col_ws = table_col_widths(tbl, cw);
                                 let mut ry = text_y + 6.0 * ed.zoom;
@@ -858,6 +941,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
                             }
                             ed.table_sel = None;
+                            ed.selected_image_para = None;
                             let pos = DocPos { para: i, byte };
                             ed.doc_sel = if shift {
                                 ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos]))
@@ -884,6 +968,75 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             }
 
             if near_view {
+                if para.style == ParaStyle::Image {
+                    if let Some(img) = para.image.as_ref().cloned() {
+                        let draw_w = img.display_w * ed.zoom;
+                        let draw_h = img.display_h * ed.zoom;
+                        let mut preview_w = draw_w;
+                        let mut preview_h = draw_h;
+
+                        if let Some(drag) = ed.image_drag {
+                            if drag.0 == i {
+                                let (nw, nh) = image_drag_dims(ed, ctx, drag);
+                                preview_w = nw * ed.zoom;
+                                preview_h = nh * ed.zoom;
+                            }
+                        }
+
+                        let draw_x = match para.align {
+                            Align::Center => pm.x + ml + (cw - draw_w) / 2.0,
+                            Align::Right => pm.x + ml + cw - draw_w,
+                            _ => pm.x + ml,
+                        };
+                        let preview_x = match para.align {
+                            Align::Center => pm.x + ml + (cw - preview_w) / 2.0,
+                            Align::Right => pm.x + ml + cw - preview_w,
+                            _ => pm.x + ml,
+                        };
+
+                        let img_rect = egui::Rect::from_min_size(egui::pos2(draw_x, text_y), egui::vec2(draw_w, draw_h));
+                        let preview_rect = egui::Rect::from_min_size(egui::pos2(preview_x, text_y), egui::vec2(preview_w, preview_h));
+                        let page_rect = egui::Rect::from_min_size(pm, egui::vec2(page_w, page_h));
+                        let tid = get_doc_image_texture(ctx, ed, &img);
+
+                        let over_image = ptr.map(|p| p.y >= canvas_top && img_rect.expand(8.0).contains(p)).unwrap_or(false);
+                        if over_image && btn_pressed {
+                            ed.selected_image_para = Some(i);
+                            ed.focused_para = i;
+                            ed.doc_sel = None;
+                            if let Some((pi, ri, ci)) = ed.active_table.take() {
+                                table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
+                            }
+                        }
+
+                        painter.with_clip_rect(page_rect).image(tid, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+
+                        let show_handles = ed.selected_image_para == Some(i) || over_image || ed.image_drag.as_ref().map(|(di, _, _, _, _, _)| *di == i).unwrap_or(false);
+                        if show_handles {
+                            painter.with_clip_rect(page_rect).rect_stroke(preview_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
+                            for (hi, hp) in image_handle_positions(preview_rect).iter().enumerate() {
+                                let hr = egui::Rect::from_center_size(*hp, egui::vec2(10.0, 10.0));
+                                painter.with_clip_rect(page_rect).rect_filled(hr, 1.0, egui::Color32::WHITE);
+                                painter.with_clip_rect(page_rect).rect_stroke(hr, 1.0, egui::Stroke::new(1.5, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
+                                let h_resp = ui.interact(hr.expand(4.0), ui.id().with(("img_h", i, hi)), egui::Sense::click_and_drag());
+                                if h_resp.hovered() || h_resp.dragged() {
+                                    ctx.set_cursor_icon(image_handle_cursor(hi as u8));
+                                }
+                                if h_resp.drag_started() {
+                                    ed.selected_image_para = Some(i);
+                                    ed.focused_para = i;
+                                    ed.doc_sel = None;
+                                    if let Some((pi, ri, ci)) = ed.active_table.take() {
+                                        table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone()));
+                                    }
+                                    ed.image_drag = Some((i, hi as u8, h_resp.interact_pointer_pos().unwrap_or(*hp), img.display_w, img.display_h, img.display_w / img.display_h.max(0.001)));
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                
                 if para.style == ParaStyle::HRule {
                     let rule_col = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
                     let mid_y = text_y + text_h / 2.0;
@@ -1542,8 +1695,21 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         }
     });
 
+    if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
+        if let Some(drag) = ed.image_drag.take() {
+            let (nw, nh) = image_drag_dims(ed, ctx, drag);
+            img_size_change = Some((drag.0, nw, nh));
+        }
+    }
+
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); }
     if let Some(sel) = new_selection { ed.last_selection = Some(sel); }
+    if let Some((pi, nw, nh)) = img_size_change {
+        if let Some(ref mut img) = ed.paras[pi].image {
+            img.display_w = nw; img.display_h = nh;
+        }
+        ed.heights_dirty = true; ed.dirty = true;
+    }
     if let Some((pi, row, col, text)) = table_cell_change {
         if pi < ed.paras.len() {
             ed.push_undo();
