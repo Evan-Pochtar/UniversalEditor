@@ -50,8 +50,8 @@ impl ParaStyle {
     pub fn is_heading(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title|Self::Subtitle) }
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
-    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
-    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 | Self::HRule => 8.0, Self::Normal | Self::Table => 0.0, _ => 6.0, } }
+    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title => 8.0, _ => 0.0 } }
+    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 => 8.0, Self::Normal | Self::Table | Self::ListBullet | Self::ListOrdered | Self::ListCheck | Self::HRule => 0.0, _ => 6.0, } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
     pub fn default_font_size_pt(self) -> u32 {
         match self {
@@ -469,9 +469,9 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
         ParaStyle::Subtitle => ("Subtitle", "Subtitle", Some("Normal"), Some(0), 0, 120, None, style_size_hp(style), false, true, None),
         ParaStyle::BlockQuote => ("Quote", "Quote", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, true, None),
         ParaStyle::Code => ("CodeBlock", "Code Block", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, false, Some("Consolas")),
-        ParaStyle::ListBullet => ("ListBullet", "List Bullet", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
-        ParaStyle::ListOrdered => ("ListNumber", "List Number", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
-        ParaStyle::ListCheck => ("ListCheck", "List Check", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
+        ParaStyle::ListBullet => ("ListBullet", "List Bullet", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
+        ParaStyle::ListOrdered => ("ListNumber", "List Number", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
+        ParaStyle::ListCheck => ("ListCheck", "List Check", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
         ParaStyle::HRule => return String::new(),
     };
 
@@ -1211,9 +1211,9 @@ fn build_odt_styles(layout: &PageLayout) -> String {
         ("Heading_20_6", "Standard", Some(11.0), true, false, 8.0, 4.0, 0.0, Some(6)),
         ("Quotations", "Standard", Some(12.0), false, true, 6.0, 6.0, 24.0, None),
         ("Preformatted_20_Text", "Standard", Some(11.0), false, false, 6.0, 6.0, 24.0, None),
-        ("List_20_Bullet", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
-        ("List_20_Number", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
-        ("List_20_Check", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
+        ("List_20_Bullet", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
+        ("List_20_Number", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
+        ("List_20_Check", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
     ] {
         out.push_str("<style:style style:name=\"");
         out.push_str(name);

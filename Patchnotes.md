@@ -332,3 +332,4 @@
 - **DOCUMENT EDITOR**: Fixed not being able to change/save the font size/font type on empty spaces
 - **DOCUMENT EDITOR**: Text and formatting no longer "jitters" when removing new lines or changing zoom
 - **DOCUMENT EDITOR**: Zoom no longer changes size of text and formatting on the page
+- **DOCUMENT EDITOR**: Fixing spacing after lists and horizontal lines
