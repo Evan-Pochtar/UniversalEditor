@@ -877,7 +877,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
                 }
 
-                if edit_rect.contains(pp) {
+                if edit_rect.contains(pp) && ed.image_drag.is_none() {
                     if para.style == ParaStyle::Table {
                         if btn_pressed {
                             ed.doc_sel = None;
@@ -994,11 +994,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             _ => pm.x + ml,
                         };
 
-                        let img_rect = egui::Rect::from_min_size(egui::pos2(draw_x, text_y), egui::vec2(draw_w, draw_h));
-                        let preview_rect = egui::Rect::from_min_size(egui::pos2(preview_x, text_y), egui::vec2(preview_w, preview_h));
+                        let img_y = text_y + 4.0;
+                        let img_rect = egui::Rect::from_min_size(egui::pos2(draw_x, img_y), egui::vec2(draw_w, draw_h));
+                        let preview_rect = egui::Rect::from_min_size(egui::pos2(preview_x, img_y), egui::vec2(preview_w, preview_h));
                         let page_rect = egui::Rect::from_min_size(pm, egui::vec2(page_w, page_h));
                         let tid = get_doc_image_texture(ctx, ed, &img);
-
                         let over_image = ptr.map(|p| p.y >= canvas_top && img_rect.expand(8.0).contains(p)).unwrap_or(false);
                         if over_image && btn_pressed {
                             ed.selected_image_para = Some(i);
@@ -1010,14 +1010,13 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         }
 
                         painter.with_clip_rect(page_rect).image(tid, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-
-                        let show_handles = ed.selected_image_para == Some(i) || over_image || ed.image_drag.as_ref().map(|(di, _, _, _, _, _)| *di == i).unwrap_or(false);
+                        let show_handles = ed.selected_image_para == Some(i) || ed.image_drag.as_ref().map(|(di, _, _, _, _, _)| *di == i).unwrap_or(false);
                         if show_handles {
-                            painter.with_clip_rect(page_rect).rect_stroke(preview_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
+                            painter.rect_stroke(preview_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
                             for (hi, hp) in image_handle_positions(preview_rect).iter().enumerate() {
                                 let hr = egui::Rect::from_center_size(*hp, egui::vec2(10.0, 10.0));
-                                painter.with_clip_rect(page_rect).rect_filled(hr, 1.0, egui::Color32::WHITE);
-                                painter.with_clip_rect(page_rect).rect_stroke(hr, 1.0, egui::Stroke::new(1.5, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
+                                painter.rect_filled(hr, 1.0, egui::Color32::WHITE);
+                                painter.rect_stroke(hr, 1.0, egui::Stroke::new(1.5, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
                                 let h_resp = ui.interact(hr.expand(4.0), ui.id().with(("img_h", i, hi)), egui::Sense::click_and_drag());
                                 if h_resp.hovered() || h_resp.dragged() {
                                     ctx.set_cursor_icon(image_handle_cursor(hi as u8));

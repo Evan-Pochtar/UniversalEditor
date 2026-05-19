@@ -185,6 +185,9 @@
 - [x] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
 - [x] Deleting newlines sometimes causes a "jitter" and text flashing
 - [x] Zooming in and zooming out sometimes causes text to "jitter" or switch position
+- [x] Can't see image handles when image is too big for the document
+- [x] Image is slightly too high, cuts off letters from the line above
+- [x] While dragging and resizing images, sometimes highlights text in the background
 
 ### Other Bugs
 
@@ -319,7 +322,7 @@
 - [x] Custom page sizes
 - [x] Be able to see saved/unsaved
 - [x] Further Table options (border color, border thickness, fill color)
-- [ ] Images
+- [x] Images
 
 ### CONVERTER: Img 2 Img
 

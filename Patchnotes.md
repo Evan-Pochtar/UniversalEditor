@@ -334,3 +334,6 @@
 - **DOCUMENT EDITOR**: Text and formatting no longer "jitters" when removing new lines or changing zoom
 - **DOCUMENT EDITOR**: Zoom no longer changes size of text and formatting on the page
 - **DOCUMENT EDITOR**: Fixing spacing after lists and horizontal lines
+- **DOCUMENT EDITOR**: Images no longer cut off text above it
+- **DOCUMENT EDITOR**: Blue highlight and drag handles no longer disappear on large images
+- **DOCUMENT EDITOR**: Text no longer highlights while attempting to resize images
