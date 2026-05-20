@@ -60,9 +60,8 @@
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
-- [ ] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
 - [ ] Sometimes cuts off last line of text below loaded image
-- [ ] When clicking on an image, highlights everywhere between where the cursor was and the image
+- [ ] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -134,10 +133,8 @@
   - [ ] Images
   - [ ] Text
 - [ ] Header and footers
-- [ ] Improve look of find/replace panel
 - [ ] Ability to move images by dragging
 - [ ] Increase max table size creation from the table button
-- [ ] Hovering table cells/checkbox/images should change cursor to show that it is clickable
 
 ### CONVERTERS
 

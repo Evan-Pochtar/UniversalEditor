@@ -188,6 +188,13 @@
 - [x] Can't see image handles when image is too big for the document
 - [x] Image is slightly too high, cuts off letters from the line above
 - [x] While dragging and resizing images, sometimes highlights text in the background
+- [x] When clicking on an image, highlights everywhere between where the cursor was and the image
+- [x] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
+- [x] When using ctrl+f search, words do not highlight properly
+- [x] Ctrl+f replace all doesn't work
+- [x] Ctrl+f should automatically move focus to the search bar
+- [x] Cannot change formatting of text with multiple table cells selected
+- [x] Hard to select text within a table cell because it keeps selecting the cell itself
 
 ### Other Bugs
 
@@ -323,6 +330,8 @@
 - [x] Be able to see saved/unsaved
 - [x] Further Table options (border color, border thickness, fill color)
 - [x] Images
+- [x] Hovering table cells/checkbox/images should change cursor to show that it is clickable
+- [x] Improve look of find/replace panel
 
 ### CONVERTER: Img 2 Img
 

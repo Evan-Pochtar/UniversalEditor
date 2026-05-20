@@ -319,6 +319,8 @@
 - **DOCUMENT EDITOR**: Added right click context menu on tables for cell coloring, border thickness, and border color
 - **DOCUMENT EDITOR**: Added shift + click on table cells to select multiple at once
 - **DOCUMENT EDITOR**: Added the ability to import, load, and save images
+- **DOCUMENT EDITOR**: Improved find/search bar (ctrl+f)
+- **DOCUMENT EDITOR**: Hovering checkboxes, tables, and images now properly show with the cursor when it's clickable
 
 #### Debugging
 
@@ -338,3 +340,7 @@
 - **DOCUMENT EDITOR**: Blue highlight and drag handles no longer disappear on large images
 - **DOCUMENT EDITOR**: Text no longer highlights while attempting to resize images
 - **DOCUMENT EDITOR**: Docx no longer randomly loads with different text formatting or horizontal lines
+- **DOCUMENT EDITOR**: Clicking on an image no longer creates random highlights
+- **DOCUMENT EDITOR**: Highlight now follows the cursor when using arrow keys to navigate within table cells
+- **DOCUMENT EDITOR**: Can now properly apply formatting to table cell text
+- **DOCUMENT EDITOR**: Much easier to select text within a text cell

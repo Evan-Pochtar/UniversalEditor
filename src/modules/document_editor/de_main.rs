@@ -22,6 +22,7 @@ pub struct DocumentEditor {
     pub(super) find_text: String,
     pub(super) replace_text: String,
     pub(super) show_find: bool,
+    pub(super) focus_find: bool,
     pub(super) find_results: Vec<(usize, usize, usize)>,
     pub(super) find_cursor: usize,
     pub(super) find_stale: bool,
@@ -43,6 +44,7 @@ pub struct DocumentEditor {
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
     pub(super) table_sel: Option<(usize, (usize, usize), (usize, usize))>,
+    pub(super) table_text_sel: Option<(usize, usize, usize, usize, usize)>,
     pub(super) cell_edit_buf: String,
     pub(super) image_textures: std::collections::HashMap<u64, egui::TextureId>,
     pub(super) selected_image_para: Option<usize>,
@@ -66,9 +68,7 @@ impl DocumentEditor {
         };
         let mut s = Self::make(paras, Some(path), layout);
         let mut uid = 0u64;
-        for p in &mut s.paras {
-            if let Some(ref mut img) = p.image { img.uid = uid; uid += 1; }
-        }
+        for p in &mut s.paras { if let Some(ref mut img) = p.image { img.uid = uid; uid += 1; } }
         s.next_image_uid = uid;
         s.sync_texts(); s
     }
@@ -79,7 +79,7 @@ impl DocumentEditor {
             file_path: path, dirty: false, paras, layout, cur_fmt: SpanFmt::default(),
             focused_para: 0, last_selection: None, pending_focus: None,
             show_outline: false, show_stats: false, show_page_settings: false,
-            find_text: String::new(), replace_text: String::new(), show_find: false,
+            find_text: String::new(), replace_text: String::new(), show_find: false, focus_find: false,
             find_results: Vec::new(), find_cursor: 0, find_stale: false,
             zoom: 1.0, auto_zoom_done: false, scroll_to_para: None,
             undo_stack: VecDeque::new(), redo_stack: VecDeque::new(),
@@ -88,7 +88,7 @@ impl DocumentEditor {
             para_heights: vec![0.0; n], heights_dirty: true,
             preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
-            table_picker_hover: (0, 0), active_table: None, table_sel: None, cell_edit_buf: String::new(),
+            table_picker_hover: (0, 0), active_table: None, table_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false,
         }
@@ -167,15 +167,11 @@ impl DocumentEditor {
                 self.paras[from.para].style = self.paras[to.para].style;
                 self.paras[from.para].align = self.paras[to.para].align;
                 self.paras[from.para].indent_left = self.paras[to.para].indent_left;
-            } else {
-                self.paras[from.para].style = ParaStyle::Normal;
-            }
+            } else { self.paras[from.para].style = ParaStyle::Normal; }
         }
 
         rebuild_spans(&mut self.paras[from.para], format!("{}{}", prefix, suffix), &self.cur_fmt);
-        if to.para > from.para && to.para < n {
-            self.paras.drain(from.para + 1..=to.para.min(n - 1));
-        }
+        if to.para > from.para && to.para < n { self.paras.drain(from.para + 1..=to.para.min(n - 1)); }
         self.doc_sel = None;
         self.focused_para = from.para.min(self.paras.len().saturating_sub(1));
         self.pending_focus = Some(self.focused_para);
@@ -225,6 +221,12 @@ impl DocumentEditor {
     }
 
     pub(super) fn apply_fmt_property<F: Fn(&mut SpanFmt)>(&mut self, op: F) -> bool {
+        if self.table_text_sel.map(|(_, _, _, s, e)| s < e).unwrap_or(false) {
+            return self.apply_fmt_to_table_text_sel_fn(op);
+        }
+        if self.table_sel.is_some() {
+            return self.apply_fmt_to_table_sel_fn(op);
+        }
         if self.has_cross_sel() {
             if let Some((from, to)) = self.norm_sel() {
                 if from.para != to.para || from.byte != to.byte {
@@ -257,6 +259,18 @@ impl DocumentEditor {
     }
 
     pub(super) fn apply_fmt_toggle<Get, Set>(&mut self, get: Get, set: Set) where Get: Fn(&SpanFmt) -> bool, Set: Fn(&mut SpanFmt, bool) {
+        if self.table_text_sel.map(|(_, _, _, s, e)| s < e).unwrap_or(false) {
+            let enabled = !self.table_text_all_set_in_sel(get);
+            set(&mut self.cur_fmt, enabled);
+            self.apply_fmt_to_table_text_sel_fn(move |f| set(f, enabled));
+            return;
+        }
+        if self.table_sel.is_some() {
+            let enabled = !self.table_all_set_in_sel(get);
+            set(&mut self.cur_fmt, enabled);
+            self.apply_fmt_to_table_sel_fn(move |f| set(f, enabled));
+            return;
+        }
         if self.has_cross_sel() {
             if let Some((from, to)) = self.norm_sel() {
                 if from.para != to.para || from.byte != to.byte {
@@ -316,9 +330,7 @@ impl DocumentEditor {
         if self.apply_fmt_property(|f| f.size_hp = Some(hp)) { self.cur_fmt.size_hp = Some(hp); return; }
         self.cur_fmt.size_hp = Some(hp);
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        if self.paras[pi].text.is_empty() {
-            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.size_hp = Some(hp); self.heights_dirty = true; }
-        }
+        if self.paras[pi].text.is_empty() { if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.size_hp = Some(hp); self.heights_dirty = true; } }
     }
 
     pub(super) fn apply_fmt_toggle_bold(&mut self) { self.apply_fmt_toggle(|f| f.bold, |f, v| f.bold = v); }
@@ -332,27 +344,21 @@ impl DocumentEditor {
         if self.apply_fmt_property(|f| f.font = font) { self.cur_fmt.font = font; return; }
         self.cur_fmt.font = font;
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        if self.paras[pi].text.is_empty() {
-            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.font = font; self.heights_dirty = true; }
-        }
+        if self.paras[pi].text.is_empty() { if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.font = font; self.heights_dirty = true; } }
     }
     
     pub(super) fn apply_fmt_color(&mut self, color: Option<[u8; 3]>) {
         if self.apply_fmt_property(|f| f.color = color) { self.cur_fmt.color = color; return; }
         self.cur_fmt.color = color;
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        if self.paras[pi].text.is_empty() {
-            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.color = color; self.heights_dirty = true; }
-        }
+        if self.paras[pi].text.is_empty() { if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.color = color; self.heights_dirty = true; } }
     }
 
     pub(super) fn apply_fmt_highlight(&mut self, highlight: Option<[u8; 3]>) {
         if self.apply_fmt_property(|f| f.highlight = highlight) { self.cur_fmt.highlight = highlight; return; }
         self.cur_fmt.highlight = highlight;
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        if self.paras[pi].text.is_empty() {
-            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.highlight = highlight; self.heights_dirty = true; }
-        }
+        if self.paras[pi].text.is_empty() { if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.highlight = highlight; self.heights_dirty = true; } }
     }
 
     pub(super) fn apply_fmt_link(&mut self, link: Option<String>) {
@@ -360,9 +366,7 @@ impl DocumentEditor {
         if self.apply_fmt_property(|f| f.link = lnk.clone()) { self.cur_fmt.link = link; return; }
         self.cur_fmt.link = link.clone();
         let pi = self.focused_para.min(self.paras.len().saturating_sub(1));
-        if self.paras[pi].text.is_empty() {
-            if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.link = link; self.heights_dirty = true; }
-        }
+        if self.paras[pi].text.is_empty() { if let Some(span) = self.paras[pi].spans.first_mut() { span.fmt.link = link; self.heights_dirty = true; } }
     }
 
     pub(super) fn apply_fmt_line_height(&mut self, lh: f32) {
@@ -378,13 +382,8 @@ impl DocumentEditor {
                         changed = true;
                     }
                 }
-                if changed {
-                    self.dirty = true;
-                    self.heights_dirty = true;
-                    self.line_spacing_input = lh;
-                } else {
-                    self.undo_stack.pop_back();
-                }
+                if changed { self.dirty = true; self.heights_dirty = true; self.line_spacing_input = lh; }
+                else { self.undo_stack.pop_back(); }
                 return;
             }
         }
@@ -392,10 +391,93 @@ impl DocumentEditor {
         if (self.paras[pi].line_height - lh).abs() > 0.01 {
             self.push_undo();
             self.paras[pi].line_height = lh;
-            self.dirty = true;
-            self.heights_dirty = true;
-            self.line_spacing_input = lh;
+            self.dirty = true; self.heights_dirty = true; self.line_spacing_input = lh;
         }
+    }
+
+    fn table_all_set_in_sel(&self, get: impl Fn(&SpanFmt) -> bool) -> bool {
+        let Some((pi, (ar, ac), (br, bc))) = self.table_sel else { return false };
+        let (r0, r1) = (ar.min(br), ar.max(br));
+        let (c0, c1) = (ac.min(bc), ac.max(bc));
+        self.paras.get(pi).and_then(|p| p.table.as_ref()).map_or(false, |tbl| {
+            (r0..=r1).all(|r| (c0..=c1).all(|c| {
+                tbl.rows.get(r).and_then(|row| row.get(c))
+                    .map_or(false, |cell| cell.spans.iter().all(|s| get(&s.fmt)))
+            }))
+        })
+    }
+
+    fn table_text_all_set_in_sel(&self, get: impl Fn(&SpanFmt) -> bool) -> bool {
+        let Some((pi, ri, ci, start, end)) = self.table_text_sel else { return false };
+        if start >= end || pi >= self.paras.len() { return false; }
+        self.paras.get(pi).and_then(|p| p.table.as_ref()).and_then(|tbl| tbl.rows.get(ri)).and_then(|row| row.get(ci)).map_or(false, |cell| {
+            let mut pos = 0usize;
+            let mut any = false;
+            for span in &cell.spans {
+                let span_end = pos + span.len;
+                let overlaps = pos < end && span_end > start;
+                if overlaps {
+                    any = true;
+                    if !get(&span.fmt) { return false; }
+                }
+                pos = span_end;
+            }
+            any
+        })
+    }
+
+    pub(super) fn apply_fmt_to_table_text_sel_fn(&mut self, op: impl Fn(&mut SpanFmt)) -> bool {
+        let Some((pi, ri, ci, start, end)) = self.table_text_sel else { return false };
+        if start >= end || pi >= self.paras.len() { return false; }
+        self.push_undo();
+        let mut applied = false;
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            if let Some(row) = tbl.rows.get_mut(ri) {
+                if let Some(cell) = row.get_mut(ci) {
+                    let mut tmp = DocParagraph {
+                        text: cell.text.clone(),
+                        spans: cell.spans.clone(),
+                        style: ParaStyle::Normal,
+                        align: Align::Left,
+                        indent_left: 0.0,
+                        indent_first: 0.0,
+                        space_before: 0.0,
+                        space_after: 0.0,
+                        line_height: 1.15,
+                        list_num: None,
+                        checked: false,
+                        is_split: false,
+                        table: None,
+                        image: None,
+                    };
+                    apply_fmt_range(&mut tmp, start, end, op);
+                    cell.spans = tmp.spans;
+                    applied = true;
+                }
+            }
+        }
+        if applied { self.dirty = true; self.heights_dirty = true; true } else { self.undo_stack.pop_back(); false }
+    }
+
+    pub(super) fn apply_fmt_to_table_sel_fn(&mut self, op: impl Fn(&mut SpanFmt)) -> bool {
+        let Some((pi, (ar, ac), (br, bc))) = self.table_sel else { return false };
+        if pi >= self.paras.len() { return false; }
+        self.push_undo();
+        let (r0, r1) = (ar.min(br), ar.max(br));
+        let (c0, c1) = (ac.min(bc), ac.max(bc));
+        if let Some(ref mut tbl) = self.paras[pi].table {
+            for r in r0..=r1 {
+                if let Some(row) = tbl.rows.get_mut(r) {
+                    for c in c0..=c1 {
+                        if let Some(cell) = row.get_mut(c) {
+                            for span in &mut cell.spans { op(&mut span.fmt); }
+                        }
+                    }
+                }
+            }
+        }
+        self.dirty = true; self.heights_dirty = true;
+        true
     }
 
     pub(super) fn replace_current(&mut self) {
@@ -412,15 +494,31 @@ impl DocumentEditor {
     pub(super) fn replace_all(&mut self) {
         if self.find_text.is_empty() { return; }
         self.push_undo();
-        let q = self.find_text.clone(); let rep = self.replace_text.clone();
+        let q = self.find_text.to_lowercase();
+        let rep = &self.replace_text;
+        let mut changed = false;
         for i in 0..self.paras.len() {
-            if self.paras[i].text.contains(&q) {
-                let new_text = self.paras[i].text.replace(&q, &rep);
+            let text = &self.paras[i].text;
+            let lower = text.to_lowercase();
+            if lower.contains(&q) {
+                let mut new_text = String::new();
+                let mut last = 0;
+                let mut off = 0;
+                while let Some(pos) = lower[off..].find(&q) {
+                    let s = off + pos;
+                    new_text.push_str(&text[last..s]);
+                    new_text.push_str(rep);
+                    last = s + q.len();
+                    off = last;
+                }
+                new_text.push_str(&text[last..]);
                 rebuild_spans(&mut self.paras[i], new_text.clone(), &self.cur_fmt);
                 self.para_texts[i] = new_text;
+                changed = true;
             }
         }
-        self.dirty = true; self.heights_dirty = true; self.find_stale = true; self.run_find();
+        if changed { self.dirty = true; self.heights_dirty = true; self.find_stale = true; self.run_find(); }
+        else { self.undo_stack.pop_back(); }
     }
 
     pub(super) fn apply_style(&mut self, style: ParaStyle) {
@@ -435,20 +533,87 @@ impl DocumentEditor {
         self.apply_style(if cur == style { ParaStyle::Normal } else { style });
     }
 
-    pub(super) fn apply_align(&mut self, align: Align) {
-        self.paras[self.focused_para].align = align; self.dirty = true;
-    }
+    pub(super) fn apply_align(&mut self, align: Align) { self.paras[self.focused_para].align = align; self.dirty = true; }
 
     pub(super) fn fmt_state_bold(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.bold); } }
+        if let Some((pi, ri, ci, s, e)) = self.table_text_sel {
+            if s != e && pi < self.paras.len() {
+                if let Some(cell) = self.paras.get(pi).and_then(|p| p.table.as_ref()).and_then(|tbl| tbl.rows.get(ri)).and_then(|row| row.get(ci)) {
+                    let tmp = DocParagraph {
+                        text: cell.text.clone(),
+                        spans: cell.spans.clone(),
+                        style: ParaStyle::Normal,
+                        align: Align::Left,
+                        indent_left: 0.0,
+                        indent_first: 0.0,
+                        space_before: 0.0,
+                        space_after: 0.0,
+                        line_height: 1.15,
+                        list_num: None,
+                        checked: false,
+                        is_split: false,
+                        table: None,
+                        image: None,
+                    };
+                    return all_set_range(&tmp, s, e, |f| f.bold);
+                }
+            }
+        }
         self.cur_fmt.bold
     }
     pub(super) fn fmt_state_italic(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.italic); } }
+        if let Some((pi, ri, ci, s, e)) = self.table_text_sel {
+            if s != e && pi < self.paras.len() {
+                if let Some(cell) = self.paras.get(pi).and_then(|p| p.table.as_ref()).and_then(|tbl| tbl.rows.get(ri)).and_then(|row| row.get(ci)) {
+                    let tmp = DocParagraph {
+                        text: cell.text.clone(),
+                        spans: cell.spans.clone(),
+                        style: ParaStyle::Normal,
+                        align: Align::Left,
+                        indent_left: 0.0,
+                        indent_first: 0.0,
+                        space_before: 0.0,
+                        space_after: 0.0,
+                        line_height: 1.15,
+                        list_num: None,
+                        checked: false,
+                        is_split: false,
+                        table: None,
+                        image: None,
+                    };
+                    return all_set_range(&tmp, s, e, |f| f.italic);
+                }
+            }
+        }
         self.cur_fmt.italic
     }
     pub(super) fn fmt_state_underline(&self) -> bool {
         if let Some((pi, s, e)) = self.last_selection { if s != e && pi < self.paras.len() { return all_set_range(&self.paras[pi], s, e, |f| f.underline); } }
+        if let Some((pi, ri, ci, s, e)) = self.table_text_sel {
+            if s != e && pi < self.paras.len() {
+                if let Some(cell) = self.paras.get(pi).and_then(|p| p.table.as_ref()).and_then(|tbl| tbl.rows.get(ri)).and_then(|row| row.get(ci)) {
+                    let tmp = DocParagraph {
+                        text: cell.text.clone(),
+                        spans: cell.spans.clone(),
+                        style: ParaStyle::Normal,
+                        align: Align::Left,
+                        indent_left: 0.0,
+                        indent_first: 0.0,
+                        space_before: 0.0,
+                        space_after: 0.0,
+                        line_height: 1.15,
+                        list_num: None,
+                        checked: false,
+                        is_split: false,
+                        table: None,
+                        image: None,
+                    };
+                    return all_set_range(&tmp, s, e, |f| f.underline);
+                }
+            }
+        }
         self.cur_fmt.underline
     }
 
@@ -462,12 +627,7 @@ impl DocumentEditor {
             self.paras[pi].indent_left = (self.paras[pi].indent_left + delta).clamp(0.0, max_indent);
             changed |= (self.paras[pi].indent_left - before).abs() > f32::EPSILON;
         }
-        if changed {
-            self.dirty = true;
-            self.heights_dirty = true;
-        } else {
-            self.undo_stack.pop_back();
-        }
+        if changed { self.dirty = true; self.heights_dirty = true; } else { self.undo_stack.pop_back(); }
     }
 
     pub(super) fn insert_image(&mut self, data: Vec<u8>, display_w: f32, display_h: f32, name: String) {
@@ -480,8 +640,7 @@ impl DocumentEditor {
         self.paras.insert(idx, p);
         self.focused_para = idx;
         self.sync_texts();
-        self.dirty = true;
-        self.heights_dirty = true;
+        self.dirty = true; self.heights_dirty = true;
     }
 
     pub(super) fn insert_table(&mut self, rows: usize, cols: usize) {
@@ -493,8 +652,7 @@ impl DocumentEditor {
         self.paras.insert(idx, p);
         self.focused_para = idx;
         self.sync_texts();
-        self.dirty = true;
-        self.heights_dirty = true;
+        self.dirty = true; self.heights_dirty = true;
     }
 
     pub(super) fn insert_horizontal_rule_after_focus(&mut self) {
@@ -504,29 +662,33 @@ impl DocumentEditor {
         if idx + 2 >= self.paras.len() { self.paras.push(DocParagraph::new()); }
         self.focused_para = idx + 2;
         self.pending_focus = Some(self.focused_para);
-        self.sync_texts();
-        self.dirty = true;
+        self.sync_texts(); self.dirty = true;
     }
 
     pub(super) fn commit_active_table_cell(&mut self) -> bool {
-        let (pi, row, col) = match self.active_table.take() {
-            Some(pos) => pos,
-            None => return false,
-        };
+        let (pi, row, col) = match self.active_table.take() { Some(pos) => pos, None => return false };
         if pi >= self.paras.len() { return false; }
         self.push_undo();
         if let Some(ref mut tbl) = self.paras[pi].table {
             if let Some(r) = tbl.rows.get_mut(row) {
                 if let Some(c) = r.get_mut(col) {
                     let text = self.cell_edit_buf.clone();
-                    c.text = text.clone();
-                    c.spans = if text.is_empty() {
-                        vec![DocSpan { len: 0, fmt: SpanFmt::default() }]
-                    } else {
-                        vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }]
-                    };
-                    self.dirty = true;
-                    self.heights_dirty = true;
+                    if c.text != text {
+                        c.text = text.clone();
+                        if c.spans.is_empty() {
+                            c.spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
+                                      else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
+                        } else if c.spans.iter().any(|s| s.fmt != SpanFmt::default()) {
+                            let fmt = c.spans.iter().find(|s| s.len > 0).map(|s| s.fmt.clone()).unwrap_or_default();
+                            c.spans = if text.is_empty() { vec![DocSpan { len: 0, fmt }] }
+                                      else { vec![DocSpan { len: text.len(), fmt }] };
+                        } else {
+                            c.spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
+                                      else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
+                        }
+                    }
+                    self.table_text_sel = None;
+                    self.dirty = true; self.heights_dirty = true;
                     return true;
                 }
             }
@@ -544,9 +706,7 @@ impl DocumentEditor {
                 merge_paragraphs(&mut save_paras, j - 1);
                 save_paras[j - 1].space_after = orig_space_after;
                 save_paras[j - 1].is_split = false;
-            } else {
-                j += 1;
-            }
+            } else { j += 1; }
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         match ext.as_str() {
@@ -672,7 +832,7 @@ impl EditorModule for DocumentEditor {
             MenuAction::Undo => { self.undo(); true }
             MenuAction::Redo => { self.redo(); true }
             MenuAction::Custom(ref v) => match v.as_str() {
-                "Find" => { self.show_find = true; true }
+                "Find" => { self.show_find = true; self.focus_find = true; true }
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
                 "ToggleOutline" => { self.show_outline = !self.show_outline; true }
@@ -689,21 +849,14 @@ impl EditorModule for DocumentEditor {
                 "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
                 "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
                 "InsertImage" => {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "ico"]).pick_file()
-                    {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "ico"]).pick_file() {
                         if let Ok(img) = image::open(&path) {
                             let iw = img.width() as f32;
                             let ih = img.height() as f32;
                             let max_w = self.layout.content_width();
                             let scale = if iw > max_w { max_w / iw } else { 1.0 };
                             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
-                            let fmt = match ext.to_lowercase().as_str() {
-                                "jpg" | "jpeg" => image::ImageFormat::Jpeg,
-                                "webp" => image::ImageFormat::WebP,
-                                "bmp" => image::ImageFormat::Bmp,
-                                _ => image::ImageFormat::Png,
-                            };
+                            let fmt = match ext.to_lowercase().as_str() { "jpg" | "jpeg" => image::ImageFormat::Jpeg, "webp" => image::ImageFormat::WebP, "bmp" => image::ImageFormat::Bmp, _ => image::ImageFormat::Png };
                             let mut buf = Vec::new();
                             img.write_to(&mut std::io::Cursor::new(&mut buf), fmt).ok();
                             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("image.png").to_string();
