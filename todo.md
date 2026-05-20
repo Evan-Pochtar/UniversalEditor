@@ -62,6 +62,7 @@
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
 - [ ] Sometimes cuts off last line of text below loaded image
+- [ ] When clicking on an image, highlights everywhere between where the cursor was and the image
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -80,6 +81,11 @@
 - [ ] Latex?
 - [ ] Spell Check
 - [ ] Grammar Check
+- [ ] Images
+- [ ] Highlighting
+- [ ] Footnotes
+- [ ] Definition list
+- [ ] Emojis
 - [ ] Hovering over links with ctrl pressed should change the cursor to a pointer
 - [ ] Hovering over a checklist item should change cursor to a pointer
 
@@ -130,6 +136,7 @@
 - [ ] Header and footers
 - [ ] Improve look of find/replace panel
 - [ ] Ability to move images by dragging
+- [ ] Increase max table size creation from the table button
 - [ ] Hovering table cells/checkbox/images should change cursor to show that it is clickable
 
 ### CONVERTERS

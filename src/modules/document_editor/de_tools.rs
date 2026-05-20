@@ -836,8 +836,11 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => if in_ppr { in_pbdr = true; },
                     b"numPr" => if in_ppr { in_numpr = true; },
                     b"pict" => in_pict = true,
-                    b"bottom" | b"top" => {
-                        if in_pbdr { has_hborder = true; }
+                    b"bottom" | b"top" | b"left" | b"right" | b"insideH" | b"insideV" => {
+                        if in_pbdr {
+                            let val = get_attr(e, b"val");
+                            if val.as_deref() != Some("nil") && val.as_deref() != Some("none") { has_hborder = true; }
+                        }
                         if in_tbl_borders {
                             if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
                                 let h = c.trim_start_matches('#');
@@ -856,10 +859,10 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"t" => { in_t = true; }
                     b"tab" => { if in_run { cur_run_text.push('\t'); } }
                     b"br" => { if in_run { cur_run_text.push('\n'); } }
-                    b"b" => { if in_rpr { cur_fmt.bold = true; } }
-                    b"i" => { if in_rpr { cur_fmt.italic = true; } }
-                    b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
-                    b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"b" => { if in_rpr { cur_fmt.bold = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"i" => { if in_rpr { cur_fmt.italic = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"u" => { if in_rpr { cur_fmt.underline = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"strike" => { if in_rpr { cur_fmt.strike = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
                     b"tbl" => { in_tbl = true; cur_tbl_rows.clear(); }
                     b"tblPr" if in_tbl => in_tbl_pr = true,
                     b"tblBorders" if in_tbl_pr => in_tbl_borders = true,
@@ -936,7 +939,10 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
                     b"bottom" | b"top" | b"left" | b"right" | b"insideH" | b"insideV" => {
-                        if in_pbdr && in_ppr { has_hborder = true; }
+                        if in_pbdr && in_ppr {
+                            let val = get_attr(e, b"val");
+                            if val.as_deref() != Some("nil") && val.as_deref() != Some("none") { has_hborder = true; }
+                        }
                         if in_tbl_borders {
                             if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
                                 let h = c.trim_start_matches('#');
@@ -954,10 +960,10 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     }
                     b"tab" => { if in_run { cur_run_text.push('\t'); } }
                     b"br" => { if in_run { cur_run_text.push('\n'); } }
-                    b"b" => { if in_rpr { cur_fmt.bold = true; } }
-                    b"i" => { if in_rpr { cur_fmt.italic = true; } }
-                    b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
-                    b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"b" => { if in_rpr { cur_fmt.bold = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"i" => { if in_rpr { cur_fmt.italic = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"u" => { if in_rpr { cur_fmt.underline = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"strike" => { if in_rpr { cur_fmt.strike = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
                     b"extent" if in_drawing => {
                         if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
                         if let Some(v) = get_attr(e, b"cy") { drawing_cy = v.parse().unwrap_or(0); }

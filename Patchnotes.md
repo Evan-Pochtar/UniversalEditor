@@ -337,3 +337,4 @@
 - **DOCUMENT EDITOR**: Images no longer cut off text above it
 - **DOCUMENT EDITOR**: Blue highlight and drag handles no longer disappear on large images
 - **DOCUMENT EDITOR**: Text no longer highlights while attempting to resize images
+- **DOCUMENT EDITOR**: Docx no longer randomly loads with different text formatting or horizontal lines
