@@ -61,7 +61,9 @@
 - [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] Sometimes cuts off last line of text below loaded image
+- [ ] Highlight doesn't go away when clicking on table cell
 - [ ] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
+- [ ] Table formatting doesn't save
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -81,7 +83,6 @@
 - [ ] Spell Check
 - [ ] Grammar Check
 - [ ] Images
-- [ ] Highlighting
 - [ ] Footnotes
 - [ ] Definition list
 - [ ] Emojis

@@ -79,6 +79,7 @@ impl TextEditor {
     pub(super) fn format_underline(&mut self) { self.wrap_selection("__"); }
     pub(super) fn format_strikethrough(&mut self) { self.wrap_selection("~~"); }
     pub(super) fn format_code(&mut self) { self.wrap_selection("`"); }
+    pub(super) fn format_highlight(&mut self) { self.wrap_selection("=="); }
 
     pub(super) fn format_heading(&mut self, level: usize) {
         if let Some(range) = self.last_cursor_range {

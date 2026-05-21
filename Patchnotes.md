@@ -313,6 +313,7 @@
 
 #### Features
 
+- **TEXT EDITOR**: Adding Highlight ("==") to markdown mode
 - **DOCUMENT EDITOR**: Added ability to create custom page sizes
 - **DOCUMENT EDITOR**: Added unsaved/saved indicator on the right of the toolbar
 - **DOCUMENT EDITOR**: Removed the "default font" and "default font size" fields, will later be moved to app settings on the main menu
