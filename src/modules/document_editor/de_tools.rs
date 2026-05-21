@@ -566,8 +566,19 @@ fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
         out.push_str("<w:tr>");
         for cell in row {
             let shd = cell.bg_color.map(|c| format!("<w:shd w:val=\"clear\" w:fill=\"{:02X}{:02X}{:02X}\" w:color=\"auto\"/>", c[0], c[1], c[2])).unwrap_or_default();
-            out.push_str(&format!("<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{}</w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
-                col_tw, shd, xml_esc(&cell.text)));
+            out.push_str(&format!("<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{}</w:tcPr><w:p>", col_tw, shd));
+            let mut pos = 0usize; let mut wrote = false;
+            for span in &cell.spans {
+                if span.len == 0 || pos >= cell.text.len() { continue; }
+                let end = (pos + span.len).min(cell.text.len()); let seg = &cell.text[pos..end]; pos = end;
+                if seg.is_empty() { continue; }
+                write_run(&mut out, seg, &run_rpr(span, DEFAULT_BASE_FONT)); wrote = true;
+            }
+            if !wrote {
+                let fmt = cell.spans.first().map(|s| s.fmt.clone()).unwrap_or_default();
+                out.push_str(&format!("<w:r>{}<w:t/></w:r>", run_rpr(&DocSpan { len: 0, fmt }, DEFAULT_BASE_FONT)));
+            }
+            out.push_str("</w:p></w:tc>");
         }
         out.push_str("</w:tr>");
     }
@@ -821,6 +832,7 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
     let mut cur_para_numid: Option<u32> = None;
     let mut cur_link_url: Option<String> = None;
     let (mut in_tbl, mut in_tc) = (false, false);
+    let mut cur_tc_spans: Vec<DocSpan> = Vec::new();
     let (mut in_tbl_pr, mut in_tbl_borders, mut in_tc_pr) = (false, false, false);
     let (mut cur_tbl_bc, mut cur_tbl_bw, mut cur_tc_bg) = ([100u8, 100, 110], 1.0f32, None::<[u8; 3]>);
     let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
@@ -868,7 +880,7 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"tblBorders" if in_tbl_pr => in_tbl_borders = true,
                     b"tcPr" if in_tbl => { in_tc_pr = true; cur_tc_bg = None; }
                     b"tr" if in_tbl => { cur_tbl_row.clear(); }
-                    b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
+                    b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); cur_tc_spans.clear(); }
                     b"drawing" => { in_drawing = true; }
                     b"extent" if in_drawing => {
                         if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
@@ -1042,8 +1054,9 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
                     b"tc" if in_tbl => {
                         let text = std::mem::take(&mut cur_tc_text);
-                        let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
-                            else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
+                        let mut spans = std::mem::take(&mut cur_tc_spans);
+                        if spans.is_empty() { spans.push(DocSpan { len: text.len(), fmt: SpanFmt::default() }); }
+                        ensure_non_empty_spans(&mut spans);
                         cur_tbl_row.push(TableCell { text, spans, bg_color: cur_tc_bg.take() });
                         in_tc = false; in_tc_pr = false;
                     },
@@ -1098,7 +1111,18 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => in_pbdr = false,
                     b"r" => {
                         in_run = false;
-                        if in_tbl && in_tc { cur_tc_text.push_str(&cur_run_text); }
+                        if in_tbl && in_tc {
+                            let blen = cur_run_text.len();
+                            cur_tc_text.push_str(&cur_run_text);
+                            if blen > 0 {
+                                if cur_tc_spans.last().map(|s: &DocSpan| s.fmt == cur_fmt).unwrap_or(false) {
+                                    cur_tc_spans.last_mut().unwrap().len += blen;
+                                } else {
+                                    if cur_tc_spans.last().map(|s| s.len == 0).unwrap_or(false) { cur_tc_spans.pop(); }
+                                    cur_tc_spans.push(DocSpan { len: blen, fmt: cur_fmt.clone() });
+                                }
+                            }
+                        }
                         else if let Some(ref mut para) = cur_para {
                             let blen = cur_run_text.len();
                             para.text.push_str(&cur_run_text);
@@ -1313,6 +1337,9 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     let mut span_styles: std::collections::BTreeMap<String, SpanFmt> = Default::default();
     for p in paras {
         for s in &p.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } }
+        if let Some(ref tbl) = p.table {
+            for row in &tbl.rows { for cell in row { for s in &cell.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } } } }
+        }
     }
     let ns = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"";    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content {}><office:automatic-styles>", ns);
     for (id, fmt) in &span_styles {
@@ -1338,7 +1365,17 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
                 for row in &tbl.rows {
                     out.push_str("<table:table-row>");
                     for cell in row {
-                        out.push_str(&format!("<table:table-cell><text:p>{}</text:p></table:table-cell>", xml_esc(&cell.text)));
+                        out.push_str("<table:table-cell><text:p>");
+                        let mut pos = 0usize;
+                        for span in &cell.spans {
+                            if span.len == 0 || pos >= cell.text.len() { continue; }
+                            let end = (pos + span.len).min(cell.text.len()); let seg = &cell.text[pos..end]; pos = end;
+                            if seg.is_empty() { continue; }
+                            let esc = xml_esc(seg);
+                            if span.fmt == SpanFmt::default() { out.push_str(&esc); }
+                            else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+                        }
+                        out.push_str("</text:p></table:table-cell>");
                     }
                     out.push_str("</table:table-row>");
                 }

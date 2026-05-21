@@ -195,6 +195,8 @@
 - [x] Ctrl+f should automatically move focus to the search bar
 - [x] Cannot change formatting of text with multiple table cells selected
 - [x] Hard to select text within a table cell because it keeps selecting the cell itself
+- [x] Table formatting doesn't save
+- [x] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
 
 ### Other Bugs
 

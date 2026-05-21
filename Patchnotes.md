@@ -322,6 +322,7 @@
 - **DOCUMENT EDITOR**: Added the ability to import, load, and save images
 - **DOCUMENT EDITOR**: Improved find/search bar (ctrl+f)
 - **DOCUMENT EDITOR**: Hovering checkboxes, tables, and images now properly show with the cursor when it's clickable
+- **DOCUMENT EDITOR**: Added Ctrl + Click on tables to select any of the cells within the table at once
 
 #### Debugging
 
@@ -345,3 +346,5 @@
 - **DOCUMENT EDITOR**: Highlight now follows the cursor when using arrow keys to navigate within table cells
 - **DOCUMENT EDITOR**: Can now properly apply formatting to table cell text
 - **DOCUMENT EDITOR**: Much easier to select text within a text cell
+- **DOCUMENT EDITOR**: Formatting within tables now save properly between sessions
+- **DOCUMENT EDITOR**: Highlight and text color no longer deselect table cells before applying

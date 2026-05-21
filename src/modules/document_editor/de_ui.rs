@@ -147,6 +147,10 @@ fn cell_in_sel(sel: Option<(usize, (usize, usize), (usize, usize))>, pi: usize, 
     ri >= r0 && ri <= r1 && ci >= c0 && ci <= c1
 }
 
+fn cell_in_multi_sel(ms: Option<&(usize, Vec<(usize, usize)>)>, pi: usize, ri: usize, ci: usize) -> bool {
+    ms.map_or(false, |(sp, cells)| *sp == pi && cells.contains(&(ri, ci)))
+}
+
 fn get_doc_image_texture(ctx: &egui::Context, ed: &mut DocumentEditor, img: &DocImage) -> egui::TextureId {
     if let Some(&tid) = ed.image_textures.get(&img.uid) { return tid; }
     let dyn_img = image::load_from_memory(&img.data).unwrap_or_else(|_| image::DynamicImage::new_rgba8(1, 1));
@@ -268,11 +272,12 @@ fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
                     let lc = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).saturating_sub(1);
                     (pi, (0usize, 0usize), (lr, lc))
                 });
-                if let Some(s) = new_sel { ed.table_sel = Some(s); }
+                if let Some(s) = new_sel { ed.table_sel = Some(s); ed.table_multi_sel = None; }
             } else {
                 let last = ed.paras.len().saturating_sub(1);
                 let end = ed.paras.last().map(|p| p.text.len()).unwrap_or(0);
                 ed.doc_sel = Some([DocPos { para: 0, byte: 0 }, DocPos { para: last, byte: end }]);
+                ed.table_multi_sel = None;
             }
         }
     });
@@ -644,7 +649,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let canvas_top = ui.available_rect_before_wrap().min.y;
     let press_origin = ctx.input(|i| i.pointer.press_origin());
     let drag_in_canvas = press_origin.map_or(true, |p| p.y >= canvas_top);
-    let btn_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && drag_in_canvas;
+    let on_popup = press_origin.map_or(false, |p| ctx.layer_id_at(p).map_or(false, |l| l.order > egui::Order::Middle));
+    let btn_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && drag_in_canvas && !on_popup;
     let btn_down = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) && drag_in_canvas;
     let shift = ctx.input(|i| i.modifiers.shift);
     let ctrl = ctx.input(|i| i.modifiers.ctrl);
@@ -771,7 +777,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             }
                         } else if btn_pressed {
                             if let Some((pi, ri, ci)) = ed.active_table.take() { table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone())); }
-                            ed.table_sel = None; ed.selected_image_para = None;
+                            ed.table_sel = None; ed.table_multi_sel = None; ed.selected_image_para = None;
                             let pos = DocPos { para: i, byte };
                             ed.doc_sel = if shift { ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos])) } else { Some([pos, pos]) };
                         } else if btn_down {
@@ -806,6 +812,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         if over_image && btn_pressed {
                             ed.selected_image_para = Some(i); ed.focused_para = i; ed.doc_sel = None;
                             if let Some((pi, ri, ci)) = ed.active_table.take() { table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone())); }
+                            ed.table_multi_sel = None;
                         }
                         painter.with_clip_rect(page_rect).image(tid, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
                         let show_handles = ed.selected_image_para == Some(i) || ed.image_drag.as_ref().map(|(di, _, _, _, _, _)| *di == i).unwrap_or(false);
@@ -863,20 +870,34 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 let cell_bg = cell.bg_color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(if ri % 2 == 0 { tbl_bg } else { alt_bg });
                                 let cell_rect = egui::Rect::from_min_size(egui::pos2(cx, ry), egui::vec2(cw_cell, rh));
                                 painter.rect_filled(cell_rect, 0.0, cell_bg);
-                                if cell_in_sel(ed.table_sel, i, ri, ci) { painter.rect_filled(cell_rect, 0.0, sel_color); }
+                                if cell_in_sel(ed.table_sel, i, ri, ci) || cell_in_multi_sel(ed.table_multi_sel.as_ref(), i, ri, ci) { painter.rect_filled(cell_rect, 0.0, sel_color); }
                                 let is_active = ed.active_table == Some((i, ri, ci));
                                 let cell_ctx_id = ui.id().with(("tc_ctx", i, ri, ci));
                                 let cell_resp = ui.interact(cell_rect, cell_ctx_id, egui::Sense::click());
                                 if cell_resp.hovered() { ctx.set_cursor_icon(egui::CursorIcon::Text); }
                                 if cell_resp.clicked() {
-                                    if shift {
+                                    if ctrl && !shift {
                                         if let Some((old_i, old_r, old_c)) = ed.active_table.take() { table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone())); }
+                                        ed.active_table = None; ed.table_text_sel = None;
+                                        if ed.table_multi_sel.as_ref().map_or(false, |(sp, _)| *sp == i) {
+                                            let ms = ed.table_multi_sel.as_mut().unwrap();
+                                            if let Some(p) = ms.1.iter().position(|&(r, c)| r == ri && c == ci) { ms.1.remove(p); }
+                                            else { ms.1.push((ri, ci)); }
+                                            if ms.1.is_empty() { ed.table_multi_sel = None; }
+                                        } else {
+                                            ed.table_sel = None;
+                                            ed.table_multi_sel = Some((i, vec![(ri, ci)]));
+                                        }
+                                        ed.focused_para = i;
+                                    } else if shift {
+                                        if let Some((old_i, old_r, old_c)) = ed.active_table.take() { table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone())); }
+                                        ed.table_multi_sel = None;
                                         let anchor = ed.table_sel.filter(|(sp, _, _)| *sp == i).map(|(_, a, _)| a).unwrap_or((ri, ci));
                                         ed.table_sel = Some((i, anchor, (ri, ci)));
-                                        ed.table_text_sel = None;
-                                        ed.active_table = None;
+                                        ed.table_text_sel = None; ed.active_table = None;
                                     } else if ed.active_table != Some((i, ri, ci)) {
                                         if let Some((old_i, old_r, old_c)) = ed.active_table { table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone())); }
+                                        ed.table_multi_sel = None;
                                         ed.active_table = Some((i, ri, ci));
                                         ed.table_sel = Some((i, (ri, ci), (ri, ci)));
                                         ed.table_text_sel = None;
@@ -1471,18 +1492,20 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             2 => ed.insert_table_col(pi, col, true), 3 => ed.insert_table_col(pi, col, false),
             4 => ed.delete_table_row(pi, row), 5 => ed.delete_table_col(pi, col), _ => {}
         }
-        ed.sync_texts(); ed.find_stale = true;
+        ed.table_multi_sel = None; ed.sync_texts(); ed.find_stale = true;
     }
     if let Some((pi, row, col, color)) = tbl_cell_bg_op.get() {
         if pi < ed.paras.len() {
             ed.push_undo();
-            let targets: Vec<(usize, usize)> = match ed.table_sel {
+            let mut targets: Vec<(usize, usize)> = match ed.table_sel {
                 Some((sp, (ar, ac), (br, bc))) if sp == pi => {
                     let (r0, r1) = (ar.min(br), ar.max(br)); let (c0, c1) = (ac.min(bc), ac.max(bc));
                     (r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))).collect()
                 }
-                _ => vec![(row, col)],
+                _ => Vec::new(),
             };
+            if let Some((sp, ref cells)) = ed.table_multi_sel { if sp == pi { targets.extend_from_slice(cells); } }
+            if targets.is_empty() { targets.push((row, col)); }
             if let Some(ref mut tbl) = ed.paras[pi].table {
                 for (r, c) in targets { if let Some(rw) = tbl.rows.get_mut(r) { if let Some(cl) = rw.get_mut(c) { cl.bg_color = color; } } }
             }

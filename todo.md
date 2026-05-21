@@ -62,8 +62,8 @@
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] Highlight doesn't go away when clicking on table cell
-- [ ] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
-- [ ] Table formatting doesn't save
+- [ ] When Ctrl+clicking multiple table cells, clicking on the text deselects all currently selected cells
+- [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

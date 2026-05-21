@@ -44,6 +44,7 @@ pub struct DocumentEditor {
     pub(super) table_picker_hover: (usize, usize),
     pub(super) active_table: Option<(usize, usize, usize)>,
     pub(super) table_sel: Option<(usize, (usize, usize), (usize, usize))>,
+    pub(super) table_multi_sel: Option<(usize, Vec<(usize, usize)>)>,
     pub(super) table_text_sel: Option<(usize, usize, usize, usize, usize)>,
     pub(super) cell_edit_buf: String,
     pub(super) image_textures: std::collections::HashMap<u64, egui::TextureId>,
@@ -88,7 +89,7 @@ impl DocumentEditor {
             para_heights: vec![0.0; n], heights_dirty: true,
             preset_idx, line_spacing_input: 1.15, link_input: String::new(),
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
-            table_picker_hover: (0, 0), active_table: None, table_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
+            table_picker_hover: (0, 0), active_table: None, table_sel: None, table_multi_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false,
         }
@@ -173,6 +174,7 @@ impl DocumentEditor {
         rebuild_spans(&mut self.paras[from.para], format!("{}{}", prefix, suffix), &self.cur_fmt);
         if to.para > from.para && to.para < n { self.paras.drain(from.para + 1..=to.para.min(n - 1)); }
         self.doc_sel = None;
+        self.table_sel = None; self.table_multi_sel = None;
         self.focused_para = from.para.min(self.paras.len().saturating_sub(1));
         self.pending_focus = Some(self.focused_para);
         self.sync_texts();
@@ -224,7 +226,7 @@ impl DocumentEditor {
         if self.table_text_sel.map(|(_, _, _, s, e)| s < e).unwrap_or(false) {
             return self.apply_fmt_to_table_text_sel_fn(op);
         }
-        if self.table_sel.is_some() {
+        if self.table_sel.is_some() || self.table_multi_sel.as_ref().map_or(false, |(_, v)| !v.is_empty()) {
             return self.apply_fmt_to_table_sel_fn(op);
         }
         if self.has_cross_sel() {
@@ -265,7 +267,7 @@ impl DocumentEditor {
             self.apply_fmt_to_table_text_sel_fn(move |f| set(f, enabled));
             return;
         }
-        if self.table_sel.is_some() {
+        if self.table_sel.is_some() || self.table_multi_sel.as_ref().map_or(false, |(_, v)| !v.is_empty()) {
             let enabled = !self.table_all_set_in_sel(get);
             set(&mut self.cur_fmt, enabled);
             self.apply_fmt_to_table_sel_fn(move |f| set(f, enabled));
@@ -396,15 +398,25 @@ impl DocumentEditor {
     }
 
     fn table_all_set_in_sel(&self, get: impl Fn(&SpanFmt) -> bool) -> bool {
-        let Some((pi, (ar, ac), (br, bc))) = self.table_sel else { return false };
-        let (r0, r1) = (ar.min(br), ar.max(br));
-        let (c0, c1) = (ac.min(bc), ac.max(bc));
-        self.paras.get(pi).and_then(|p| p.table.as_ref()).map_or(false, |tbl| {
-            (r0..=r1).all(|r| (c0..=c1).all(|c| {
-                tbl.rows.get(r).and_then(|row| row.get(c))
-                    .map_or(false, |cell| cell.spans.iter().all(|s| get(&s.fmt)))
-            }))
-        })
+        let mut any = false;
+        if let Some((pi, (ar, ac), (br, bc))) = self.table_sel {
+            let (r0, r1) = (ar.min(br), ar.max(br)); let (c0, c1) = (ac.min(bc), ac.max(bc));
+            if let Some(tbl) = self.paras.get(pi).and_then(|p| p.table.as_ref()) {
+                for r in r0..=r1 { for c in c0..=c1 {
+                    any = true;
+                    if !tbl.rows.get(r).and_then(|row| row.get(c)).map_or(false, |cell| cell.spans.iter().all(|s| get(&s.fmt))) { return false; }
+                }}
+            }
+        }
+        if let Some((pi, ref cells)) = self.table_multi_sel {
+            if let Some(tbl) = self.paras.get(pi).and_then(|p| p.table.as_ref()) {
+                for (r, c) in cells {
+                    any = true;
+                    if !tbl.rows.get(*r).and_then(|row| row.get(*c)).map_or(false, |cell| cell.spans.iter().all(|s| get(&s.fmt))) { return false; }
+                }
+            }
+        }
+        any
     }
 
     fn table_text_all_set_in_sel(&self, get: impl Fn(&SpanFmt) -> bool) -> bool {
@@ -460,19 +472,23 @@ impl DocumentEditor {
     }
 
     pub(super) fn apply_fmt_to_table_sel_fn(&mut self, op: impl Fn(&mut SpanFmt)) -> bool {
-        let Some((pi, (ar, ac), (br, bc))) = self.table_sel else { return false };
-        if pi >= self.paras.len() { return false; }
+        let has_range = self.table_sel.is_some();
+        let has_multi = self.table_multi_sel.as_ref().map_or(false, |(_, v)| !v.is_empty());
+        if !has_range && !has_multi { return false; }
         self.push_undo();
-        let (r0, r1) = (ar.min(br), ar.max(br));
-        let (c0, c1) = (ac.min(bc), ac.max(bc));
-        if let Some(ref mut tbl) = self.paras[pi].table {
-            for r in r0..=r1 {
-                if let Some(row) = tbl.rows.get_mut(r) {
-                    for c in c0..=c1 {
-                        if let Some(cell) = row.get_mut(c) {
-                            for span in &mut cell.spans { op(&mut span.fmt); }
-                        }
-                    }
+        if let Some((pi, (ar, ac), (br, bc))) = self.table_sel {
+            if pi < self.paras.len() {
+                let (r0, r1) = (ar.min(br), ar.max(br)); let (c0, c1) = (ac.min(bc), ac.max(bc));
+                if let Some(ref mut tbl) = self.paras[pi].table {
+                    for r in r0..=r1 { if let Some(row) = tbl.rows.get_mut(r) { for c in c0..=c1 { if let Some(cell) = row.get_mut(c) { for span in &mut cell.spans { op(&mut span.fmt); } } } } }
+                }
+            }
+        }
+        let multi = self.table_multi_sel.clone();
+        if let Some((pi, cells)) = multi {
+            if pi < self.paras.len() {
+                if let Some(ref mut tbl) = self.paras[pi].table {
+                    for (r, c) in &cells { if let Some(row) = tbl.rows.get_mut(*r) { if let Some(cell) = row.get_mut(*c) { for span in &mut cell.spans { op(&mut span.fmt); } } } }
                 }
             }
         }
