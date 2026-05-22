@@ -323,6 +323,7 @@
 - **DOCUMENT EDITOR**: Improved find/search bar (ctrl+f)
 - **DOCUMENT EDITOR**: Hovering checkboxes, tables, and images now properly show with the cursor when it's clickable
 - **DOCUMENT EDITOR**: Added Ctrl + Click on tables to select any of the cells within the table at once
+- **DOCUMENT EDITOR**: Added way to delete tables in the right click context menu
 
 #### Debugging
 
@@ -348,3 +349,4 @@
 - **DOCUMENT EDITOR**: Much easier to select text within a text cell
 - **DOCUMENT EDITOR**: Formatting within tables now save properly between sessions
 - **DOCUMENT EDITOR**: Highlight and text color no longer deselect table cells before applying
+- **DOCUMENT EDITOR**: Multi-line highlight now disappears when selecting table cells

@@ -61,9 +61,8 @@
 - [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] Sometimes cuts off last line of text below loaded image
-- [ ] Highlight doesn't go away when clicking on table cell
-- [ ] When Ctrl+clicking multiple table cells, clicking on the text deselects all currently selected cells
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
+- [ ] Can't right click to open context menu while editing text in table cell
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -135,6 +134,7 @@
   - [ ] Text
 - [ ] Header and footers
 - [ ] Ability to move images by dragging
+- [ ] Cell colors in tables for dark mode
 - [ ] Increase max table size creation from the table button
 
 ### CONVERTERS

@@ -871,11 +871,17 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 let cell_rect = egui::Rect::from_min_size(egui::pos2(cx, ry), egui::vec2(cw_cell, rh));
                                 painter.rect_filled(cell_rect, 0.0, cell_bg);
                                 if cell_in_sel(ed.table_sel, i, ri, ci) || cell_in_multi_sel(ed.table_multi_sel.as_ref(), i, ri, ci) { painter.rect_filled(cell_rect, 0.0, sel_color); }
+                                if btn_pressed && ctrl && !shift && ptr.map_or(false, |p| cell_rect.contains(p) && p.y >= canvas_top) && ed.active_table == Some((i, ri, ci)) {
+                                    table_cell_change = Some((i, ri, ci, ed.cell_edit_buf.clone()));
+                                    ed.active_table = None; ed.table_text_sel = None; ed.last_selection = None; ed.doc_sel = None;
+                                }
                                 let is_active = ed.active_table == Some((i, ri, ci));
                                 let cell_ctx_id = ui.id().with(("tc_ctx", i, ri, ci));
                                 let cell_resp = ui.interact(cell_rect, cell_ctx_id, egui::Sense::click());
                                 if cell_resp.hovered() { ctx.set_cursor_icon(egui::CursorIcon::Text); }
                                 if cell_resp.clicked() {
+                                    ed.last_selection = None;
+                                    ed.doc_sel = None;
                                     if ctrl && !shift {
                                         if let Some((old_i, old_r, old_c)) = ed.active_table.take() { table_cell_change = Some((old_i, old_r, old_c, ed.cell_edit_buf.clone())); }
                                         ed.active_table = None; ed.table_text_sel = None;
@@ -1083,6 +1089,9 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                     let clip = egui::Rect::from_min_size(egui::pos2(cx + 4.0, ry), egui::vec2(cw_cell - 8.0, rh));
                                     painter.with_clip_rect(clip).galley(egui::pos2(cx + 8.0 * ed.zoom, ty), galley, tc);
                                 }
+                                if ctx.input(|inp| inp.pointer.button_pressed(egui::PointerButton::Secondary)) && ptr.map_or(false, |p| p.y >= canvas_top && cell_rect.contains(p)) {
+                                    egui::Popup::open_id(ui.ctx(), cell_ctx_id.with("__context_menu"));
+                                }
                                 cell_resp.context_menu(|ui| {
                                     ui.set_min_width(200.0);
                                     let lc = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 };
@@ -1103,10 +1112,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                     if ui.button("Clear").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_cell_bg_op.set(Some((i, ri, ci, None))); ui.close(); }
                                     ui.add_space(2.0);
                                     const CP: &[([u8; 3], &str)] = &[
-                                        ([255,255,255],"White"),([229,231,235],"Gray"),([239,246,255],"Blue 50"),([219,234,254],"Blue 100"),([240,253,244],"Green 50"),([255,251,235],"Amber 50"),
-                                        ([254,242,242],"Red 50"),([250,245,255],"Purple 50"),([167,243,208],"Mint"),([147,197,253],"Sky"),([253,230,138],"Yellow"),([196,181,253],"Lavender"),
+                                        ([255,255,255],"White"),([229,231,235],"Gray"),([239,246,255],"Blue 50"),([219,234,254],"Blue 100"),([240,253,244],"Green 50"),([204,251,241],"Teal 50"),([255,251,235],"Amber 50"),
+                                        ([254,242,242],"Red 50"),([255,228,230],"Rose 50"),([250,245,255],"Purple 50"),([167,243,208],"Mint"),([147,197,253],"Sky"),([253,230,138],"Yellow"),([196,181,253],"Lavender"),
                                     ];
-                                    for chunk in CP.chunks(6) {
+                                    for chunk in CP.chunks(7) {
                                         ui.horizontal(|ui| {
                                             for &(c, name) in chunk {
                                                 let bd = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
@@ -1119,10 +1128,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                     ui.separator();
                                     ui.label(egui::RichText::new("TABLE BORDER COLOR").size(10.0).color(lc));
                                     const BP: &[([u8; 3], &str)] = &[
-                                        ([0,0,0],"Black"),([55,65,81],"Dark Gray"),([100,100,110],"Gray"),([156,163,175],"Silver"),([209,213,219],"Light Gray"),([255,255,255],"White"),
-                                        ([220,38,38],"Red"),([234,88,12],"Orange"),([22,163,74],"Green"),([20,184,166],"Teal"),([59,130,246],"Blue"),([168,85,247],"Purple"),
+                                        ([0,0,0],"Black"),([55,65,81],"Dark Gray"),([100,100,110],"Gray"),([156,163,175],"Silver"),([209,213,219],"Light Gray"),([255,255,255],"White"),([220,38,38],"Red"),
+                                        ([234,88,12],"Orange"),([234,179,8],"Yellow"),([22,163,74],"Green"),([20,184,166],"Teal"),([59,130,246],"Blue"),([168,85,247],"Purple"),([236,72,153],"Pink"),
                                     ];
-                                    for chunk in BP.chunks(6) {
+                                    for chunk in BP.chunks(7) {
                                         ui.horizontal(|ui| {
                                             for &(c, name) in chunk {
                                                 let bd = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 }; let active = border_color_snap == c;
@@ -1144,6 +1153,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                             }
                                         }
                                     });
+                                    ui.separator();
+                                    if ui.button(egui::RichText::new("Delete Table").color(ColorPalette::RED_400)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { tbl_struct_op.set(Some((6, i, ri, ci))); ui.close(); }
                                 });
                                 if ci > 0 { painter.vline(cx, ry..=(ry + rh), bdr_stroke); }
                                 cx += cw_cell;
@@ -1490,7 +1501,10 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         match op {
             0 => ed.insert_table_row(pi, row, true), 1 => ed.insert_table_row(pi, row, false),
             2 => ed.insert_table_col(pi, col, true), 3 => ed.insert_table_col(pi, col, false),
-            4 => ed.delete_table_row(pi, row), 5 => ed.delete_table_col(pi, col), _ => {}
+            4 => ed.delete_table_row(pi, row),
+            5 => ed.delete_table_col(pi, col),
+            6 => { if pi < ed.paras.len() { ed.paras.remove(pi); ed.focused_para = pi.min(ed.paras.len().saturating_sub(1)); ed.active_table = None; ed.table_sel = None; } }
+            _ => {}
         }
         ed.table_multi_sel = None; ed.sync_texts(); ed.find_stale = true;
     }

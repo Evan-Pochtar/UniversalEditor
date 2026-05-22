@@ -197,6 +197,9 @@
 - [x] Hard to select text within a table cell because it keeps selecting the cell itself
 - [x] Table formatting doesn't save
 - [x] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
+- [x] Can't delete tables
+- [x] Highlight doesn't go away when clicking on table cell
+- [x] When Ctrl+clicking multiple table cells, clicking on the text deselects all currently selected cells
 
 ### Other Bugs
 
