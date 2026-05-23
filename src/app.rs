@@ -1191,6 +1191,16 @@ impl eframe::App for UniversalEditor {
             self.switch_to_module(Box::new(converter));
         }
 
+        let open_img = self.active_module.as_mut().and_then(|m| m.take_open_in_image_editor());
+        if let Some(data) = open_img {
+            if let Ok(img) = image::load_from_memory(&data) {
+                let mut editor = ImageEditor::from_image(img);
+                let tx = self.recent_file_tx.clone();
+                editor.set_file_callback(Box::new(move |p: PathBuf| { let _ = tx.send(p); }));
+                self.switch_to_module(Box::new(editor));
+            }
+        }
+
         if self.show_unsaved_dialog { ctx.set_cursor_icon(egui::CursorIcon::Default); }
     }
 }

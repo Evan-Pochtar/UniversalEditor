@@ -324,6 +324,7 @@
 - **DOCUMENT EDITOR**: Hovering checkboxes, tables, and images now properly show with the cursor when it's clickable
 - **DOCUMENT EDITOR**: Added Ctrl + Click on tables to select any of the cells within the table at once
 - **DOCUMENT EDITOR**: Added way to delete tables in the right click context menu
+- **DOCUMENT EDITOR**: Added right click context menus for text and images
 
 #### Debugging
 

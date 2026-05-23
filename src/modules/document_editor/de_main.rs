@@ -52,6 +52,7 @@ pub struct DocumentEditor {
     pub(super) image_drag: Option<(usize, u8, egui::Pos2, f32, f32, f32)>,
     pub(super) next_image_uid: u64,
     pub(super) toolbar_has_focus: bool,
+    pub pending_open_in_image_editor: Option<Vec<u8>>,
 }
 
 impl DocumentEditor {
@@ -91,7 +92,7 @@ impl DocumentEditor {
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
             table_picker_hover: (0, 0), active_table: None, table_sel: None, table_multi_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
-            toolbar_has_focus: false,
+            toolbar_has_focus: false, pending_open_in_image_editor: None,
         }
     }
 
@@ -805,6 +806,9 @@ impl EditorModule for DocumentEditor {
             .add_filter("Text", &["txt"])
             .save_file() { self.save_impl(path) }
         else { Err("Cancelled".to_string()) }
+    }
+    fn take_open_in_image_editor(&mut self) -> Option<Vec<u8>> {
+        self.pending_open_in_image_editor.take()
     }
     fn get_menu_contributions(&self) -> MenuContribution {
         MenuContribution {

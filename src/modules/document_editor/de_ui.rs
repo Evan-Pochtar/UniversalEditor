@@ -7,6 +7,14 @@ use super::de_tools::*;
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
+enum CtxAction {
+    Copy, Cut, Paste, Delete,
+    Bold, Italic, Underline, Strike, ClearFmt,
+    TextColor(Option<[u8; 3]>), Highlight(Option<[u8; 3]>), RemoveLink,
+    ImgCopy(usize), ImgCut(usize), ImgDelete(usize),
+    ImgOpen(usize), ImgReplace(usize),
+}
+
 fn multiline_highlight(galley: &egui::text::Galley, text: &str, start_byte: usize, end_byte: usize) -> Vec<egui::Rect> {
     let start_byte = start_byte.min(text.len()); let end_byte = end_byte.min(text.len());
     let start_char = text[..start_byte].chars().count(); let end_char = text[..end_byte].chars().count();
@@ -191,6 +199,205 @@ fn image_drag_dims(ed: &DocumentEditor, ctx: &egui::Context, drag: (usize, u8, e
     nw = nw.max(20.0); nh = nh.max(20.0);
     if shift { nh = nw / orig_asp.max(0.001); }
     (nw, nh)
+}
+
+fn get_sel_text(ed: &DocumentEditor) -> Option<String> {
+    if let Some((from, to)) = ed.norm_sel() {
+        if from.para != to.para || from.byte != to.byte {
+            return Some(ed.collect_sel_text(from, to));
+        }
+    }
+    if let Some((pi, sb, eb)) = ed.last_selection {
+        if sb != eb && pi < ed.paras.len() {
+            let (lo, hi) = (sb.min(eb), sb.max(eb));
+            return Some(ed.paras[pi].text[lo..hi].to_string());
+        }
+    }
+    None
+}
+
+fn do_delete_sel(ed: &mut DocumentEditor, ctx: &egui::Context) {
+    if ed.has_cross_sel() {
+        ed.delete_sel();
+    } else if let Some((pi, sb, eb)) = ed.last_selection {
+        if sb != eb && pi < ed.paras.len() {
+            let (lo, hi) = (sb.min(eb), sb.max(eb));
+            ed.push_undo();
+            let new_text = format!("{}{}", &ed.paras[pi].text[..lo], &ed.paras[pi].text[hi..]);
+            rebuild_spans(&mut ed.paras[pi], new_text, &ed.cur_fmt);
+            ed.para_texts[pi] = ed.paras[pi].text.clone();
+            let ci = ed.paras[pi].text[..lo].chars().count();
+            let id = ed.para_ids[pi];
+            let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(ci))));
+            egui::TextEdit::store_state(ctx, id, state);
+            ed.last_selection = Some((pi, lo, lo));
+            ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true;
+        }
+    }
+}
+
+fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxAction) {
+    match action {
+        CtxAction::Copy => { if let Some(t) = get_sel_text(ed) { ctx.copy_text(t); } }
+        CtxAction::Cut => {
+            if let Some(t) = get_sel_text(ed) { ctx.copy_text(t); }
+            do_delete_sel(ed, ctx);
+        }
+        CtxAction::Paste => {
+            if let Ok(t) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                ctx.input_mut(|i| i.events.push(egui::Event::Paste(t)));
+            }
+        }
+        CtxAction::Delete => do_delete_sel(ed, ctx),
+        CtxAction::Bold => ed.apply_fmt_toggle_bold(),
+        CtxAction::Italic => ed.apply_fmt_toggle_italic(),
+        CtxAction::Underline => ed.apply_fmt_toggle_underline(),
+        CtxAction::Strike => ed.apply_fmt_toggle_strike(),
+        CtxAction::ClearFmt => { ed.apply_fmt_property(|f| { f.bold=false; f.italic=false; f.underline=false; f.strike=false; f.sup=false; f.sub=false; f.size_hp=None; f.font=None; f.color=None; f.highlight=None; f.link=None; }); }
+        CtxAction::TextColor(c) => ed.apply_fmt_color(c),
+        CtxAction::Highlight(c) => ed.apply_fmt_highlight(c),
+        CtxAction::RemoveLink => ed.apply_fmt_link(None),
+        CtxAction::ImgCopy(pi) => {
+            if let Some(data) = ed.paras.get(pi).and_then(|p| p.image.as_ref()).map(|img| img.data.clone()) {
+                if let Ok(img) = image::load_from_memory(&data) {
+                    let (w, h) = (img.width() as usize, img.height() as usize);
+                    let bytes = img.into_rgba8().into_raw();
+                    let _ = arboard::Clipboard::new().map(|mut c| c.set_image(arboard::ImageData { width: w, height: h, bytes: bytes.into() }));
+                }
+            }
+        }
+        CtxAction::ImgCut(pi) => {
+            if let Some(data) = ed.paras.get(pi).and_then(|p| p.image.as_ref()).map(|img| img.data.clone()) {
+                if let Ok(img) = image::load_from_memory(&data) {
+                    let (w, h) = (img.width() as usize, img.height() as usize);
+                    let bytes = img.into_rgba8().into_raw();
+                    let _ = arboard::Clipboard::new().map(|mut c| c.set_image(arboard::ImageData { width: w, height: h, bytes: bytes.into() }));
+                }
+            }
+            if pi < ed.paras.len() {
+                ed.push_undo();
+                if let Some(ref img) = ed.paras[pi].image { ed.image_textures.remove(&img.uid); }
+                ed.paras.remove(pi); ed.selected_image_para = None;
+                ed.focused_para = pi.min(ed.paras.len().saturating_sub(1));
+                ed.sync_texts(); ed.dirty = true; ed.heights_dirty = true;
+            }
+        }
+        CtxAction::ImgDelete(pi) => {
+            if pi < ed.paras.len() {
+                ed.push_undo();
+                if let Some(ref img) = ed.paras[pi].image { ed.image_textures.remove(&img.uid); }
+                ed.paras.remove(pi); ed.selected_image_para = None;
+                ed.focused_para = pi.min(ed.paras.len().saturating_sub(1));
+                ed.sync_texts(); ed.dirty = true; ed.heights_dirty = true;
+            }
+        }
+        CtxAction::ImgOpen(pi) => {
+            if let Some(data) = ed.paras.get(pi).and_then(|p| p.image.as_ref()).map(|img| img.data.clone()) {
+                ed.pending_open_in_image_editor = Some(data);
+            }
+        }
+        CtxAction::ImgReplace(pi) => {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Images", &["jpg","jpeg","png","webp","bmp","tiff","ico"])
+                .pick_file()
+            {
+                if let Ok(img) = image::open(&path) {
+                    let (iw, ih) = (img.width() as f32, img.height() as f32);
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+                    let fmt = match ext.to_lowercase().as_str() { "jpg"|"jpeg" => image::ImageFormat::Jpeg, "webp" => image::ImageFormat::WebP, "bmp" => image::ImageFormat::Bmp, _ => image::ImageFormat::Png };
+                    let mut buf = Vec::new();
+                    img.write_to(&mut std::io::Cursor::new(&mut buf), fmt).ok();
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("image").to_string();
+                    if let Some(p) = ed.paras.get_mut(pi) {
+                        if let Some(ref mut di) = p.image {
+                            ed.image_textures.remove(&di.uid);
+                            di.data = buf; di.display_w = iw; di.display_h = ih; di.name = name;
+                        }
+                    }
+                    ed.heights_dirty = true; ed.dirty = true;
+                }
+            }
+        }
+    }
+}
+
+fn cm_btn(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
+    ui.add_enabled(enabled, egui::Button::new(egui::RichText::new(label).size(12.5)).min_size(egui::vec2(50.0, 26.0))).clicked()
+}
+
+fn cm_sep(ui: &mut egui::Ui) {
+    let c = if ui.visuals().dark_mode { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_200 };
+    ui.add_space(1.0);
+    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 0.0, c);
+    ui.add_space(1.0);
+}
+
+fn ctx_color_palette(ui: &mut egui::Ui, is_dark: bool, on_pick: &mut dyn FnMut(Option<[u8; 3]>)) {
+    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(12.0)).min_size(egui::vec2(140.0, 22.0))).clicked() { on_pick(None); }
+    const P: &[([u8; 3], &str)] = &[([0,0,0],"Black"),([68,68,68],"Dark Gray"),([102,102,102],"Gray"),([153,153,153],"Light Gray"),([204,204,204],"Silver"),([255,255,255],"White"),([220,38,38],"Red"),([234,88,12],"Orange"),([234,179,8],"Yellow"),([22,163,74],"Green"),([20,184,166],"Teal"),([59,130,246],"Blue"),([99,102,241],"Indigo"),([168,85,247],"Purple"),([236,72,153],"Pink"),([120,53,15],"Brown")];
+    let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+    for row in P.chunks(6) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            for &(c, n) in row {
+                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(20.0,20.0)).corner_radius(3.0)).on_hover_text(n).clicked() { on_pick(Some(c)); }
+            }
+        });
+    }
+}
+
+fn ctx_highlight_palette(ui: &mut egui::Ui, is_dark: bool, on_pick: &mut dyn FnMut(Option<[u8; 3]>)) {
+    if ui.add(egui::Button::new(egui::RichText::new("No Highlight").size(12.0)).min_size(egui::vec2(140.0, 22.0))).clicked() { on_pick(None); }
+    const P: &[([u8; 3], &str)] = &[([255,235,59],"Yellow"),([255,204,128],"Peach"),([255,171,145],"Salmon"),([199,210,254],"Lavender"),([167,243,208],"Mint"),([147,197,253],"Sky"),([253,224,71],"Gold"),([250,204,21],"Amber"),([253,186,116],"Apricot"),([190,242,100],"Lime"),([125,211,252],"Cyan"),([196,181,253],"Violet")];
+    let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+    for row in P.chunks(4) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            for &(c, n) in row {
+                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(26.0,22.0)).corner_radius(3.0)).on_hover_text(n).clicked() { on_pick(Some(c)); }
+            }
+        });
+    }
+}
+
+fn text_cm(ui: &mut egui::Ui, has_sel: bool, sel_has_link: bool, is_dark: bool, action: &std::cell::RefCell<Option<CtxAction>>) {
+    ui.set_max_width(120.0);
+    ui.spacing_mut().item_spacing.y = 2.0;
+    let set = |a: CtxAction| { *action.borrow_mut() = Some(a); };
+    if cm_btn(ui, "Copy", has_sel) { set(CtxAction::Copy); }
+    if cm_btn(ui, "Cut", has_sel) { set(CtxAction::Cut); }
+    if cm_btn(ui, "Paste", true) { set(CtxAction::Paste); }
+    if cm_btn(ui, "Delete", has_sel) { set(CtxAction::Delete); }
+    cm_sep(ui);
+    if cm_btn(ui, "Bold", true) { set(CtxAction::Bold); }
+    if cm_btn(ui, "Italic", true) { set(CtxAction::Italic); }
+    if cm_btn(ui, "Underline", true) { set(CtxAction::Underline); }
+    if cm_btn(ui, "Strikethrough", true) { set(CtxAction::Strike); }
+    if cm_btn(ui, "Clear Formatting", has_sel) { set(CtxAction::ClearFmt); }
+    cm_sep(ui);
+    ui.menu_button(egui::RichText::new("Text Color").size(12.5), |ui| {
+        ctx_color_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::TextColor(c)); });
+    });
+    ui.menu_button(egui::RichText::new("Highlight").size(12.5), |ui| {
+        ctx_highlight_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::Highlight(c)); });
+    });
+    if cm_btn(ui, "Remove Link", sel_has_link) { set(CtxAction::RemoveLink); }
+}
+
+fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option<CtxAction>>) {
+    ui.set_max_width(120.0);
+    ui.spacing_mut().item_spacing.y = 2.0;
+    let set = |a: CtxAction| { *action.borrow_mut() = Some(a); };
+    if cm_btn(ui, "Copy", true) { set(CtxAction::ImgCopy(para_idx)); }
+    if cm_btn(ui, "Cut", true) { set(CtxAction::ImgCut(para_idx)); }
+    cm_btn(ui, "Paste", false);
+    if cm_btn(ui, "Delete", true) { set(CtxAction::ImgDelete(para_idx)); }
+    cm_sep(ui);
+    if cm_btn(ui, "Edit in Image Editor", true) { set(CtxAction::ImgOpen(para_idx)); }
+    if cm_btn(ui, "Replace", true) { set(CtxAction::ImgReplace(para_idx)); }
+    cm_btn(ui, "Crop Image", false);
 }
 
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -645,6 +852,24 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             }
         }
     }
+    let has_text_sel = get_sel_text(ed).is_some();
+    let sel_has_link = ed.last_selection.filter(|&(_, s, e)| s != e).map(|(pi, sb, eb)| {
+        if pi >= ed.paras.len() { return false; }
+        let (lo, hi) = (sb.min(eb), sb.max(eb));
+        let mut pos = 0usize;
+        for span in &ed.paras[pi].spans {
+            let end = pos + span.len;
+            if pos < hi && end > lo && span.fmt.link.is_some() { return true; }
+            pos = end;
+        }
+        false
+    }).unwrap_or(false);
+    let ctx_action: std::cell::RefCell<Option<CtxAction>> = Default::default();
+    let ca = &ctx_action;
+    let cm_para: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
+    let cm_img_para: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
+    let cp = &cm_para;
+    let cip = &cm_img_para;
     let ptr = ctx.pointer_hover_pos();
     let canvas_top = ui.available_rect_before_wrap().min.y;
     let press_origin = ctx.input(|i| i.pointer.press_origin());
@@ -830,6 +1055,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 }
                             }
                         }
+                    let img_ctx = ui.interact(img_rect, ui.id().with(("doc_img_cm", i)), egui::Sense::click());
+                    img_ctx.context_menu(|ui| { cip.set(Some(i)); img_cm(ui, i, ca); });
                     }
                     continue;
                 }
@@ -1359,7 +1586,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             } else { edit_rect };
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(effective_rect));
             let output = egui::TextEdit::multiline(text_ref).id(id).desired_width(edit_w).desired_rows(1).frame(false).lock_focus(true).horizontal_align(para.align.egui_align()).layouter(&mut layouter).show(&mut child);
-
+            output.response.context_menu(|ui| { cp.set(Some(i)); text_cm(ui, has_text_sel, sel_has_link, is_dark, ca); });
             if ed.has_cross_sel() {
                 if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
                     if let Some(cr) = state.cursor.char_range() {
@@ -1451,7 +1678,13 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             if (new_h - text_h).abs() > 0.5 { ed.heights_dirty = true; }
         }
     });
-
+    if let Some(fp) = cm_para.get() { ed.focused_para = fp; }
+    if let Some(pi) = cm_img_para.get() {
+        ed.selected_image_para = Some(pi);
+        ed.focused_para = pi;
+        ed.doc_sel = None;
+    }
+    if let Some(action) = ctx_action.borrow_mut().take() { process_ctx_action(ed, ctx, action); }
     if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
         if let Some(drag) = ed.image_drag.take() { let (nw, nh) = image_drag_dims(ed, ctx, drag); img_size_change = Some((drag.0, nw, nh)); }
     }

@@ -632,6 +632,17 @@ impl ImageEditor {
         editor
     }
 
+    pub fn from_image(img: DynamicImage) -> Self {
+        let mut editor = Self::new();
+        editor.resize_w = img.width();
+        editor.resize_h = img.height();
+        editor.image = Some(DynamicImage::ImageRgba8(img.into_rgba8()));
+        editor.texture_dirty = true;
+        editor.composite_dirty = true;
+        editor.fit_on_next_frame = true;
+        editor
+    }
+
     pub fn is_dirty(&self) -> bool { self.dirty }
     pub fn set_file_callback(&mut self, callback: Box<dyn Fn(PathBuf) + Send + Sync>) {
         self.export_callback = Some(callback);

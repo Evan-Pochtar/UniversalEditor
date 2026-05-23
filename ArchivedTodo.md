@@ -338,6 +338,8 @@
 - [x] Images
 - [x] Hovering table cells/checkbox/images should change cursor to show that it is clickable
 - [x] Improve look of find/replace panel
+- [x] Images
+- [x] Text
 
 ### CONVERTER: Img 2 Img
 

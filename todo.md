@@ -63,6 +63,8 @@
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
+- [ ] Can click behind the right click context menu for text and images
+- [ ] Cursor icon doesn't update properly in the right click context menu for text and images
 - [ ] External loading
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -129,9 +131,6 @@
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
 - [ ] Page Breaks
-- [ ] Right click context menu
-  - [ ] Images
-  - [ ] Text
 - [ ] Header and footers
 - [ ] Ability to move images by dragging
 - [ ] Cell colors in tables for dark mode
