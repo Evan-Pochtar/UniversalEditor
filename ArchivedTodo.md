@@ -200,6 +200,11 @@
 - [x] Can't delete tables
 - [x] Highlight doesn't go away when clicking on table cell
 - [x] When Ctrl+clicking multiple table cells, clicking on the text deselects all currently selected cells
+- [x] Paste does not load in the right click context menu
+- [x] Cannot use right click context menu with single line highlights because it deselects the highlight before opening the context menu
+- [x] All newlines should be considered separate lines within the multi-line document
+- [x] Can click behind the right click context menu for text and images
+- [x] Cursor icon doesn't update properly in the right click context menu for text and images
 
 ### Other Bugs
 

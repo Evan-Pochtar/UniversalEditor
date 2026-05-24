@@ -53,6 +53,8 @@ pub struct DocumentEditor {
     pub(super) next_image_uid: u64,
     pub(super) toolbar_has_focus: bool,
     pub pending_open_in_image_editor: Option<Vec<u8>>,
+    pub(super) ctx_sel: Option<(usize, usize, usize)>,
+    pub(super) ctx_link_show: bool,
 }
 
 impl DocumentEditor {
@@ -92,7 +94,7 @@ impl DocumentEditor {
             doc_sel: None, page_settings_draft: None, last_edit_action: 0,
             table_picker_hover: (0, 0), active_table: None, table_sel: None, table_multi_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
-            toolbar_has_focus: false, pending_open_in_image_editor: None,
+            toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, ctx_link_show: false,
         }
     }
 

@@ -325,6 +325,7 @@
 - **DOCUMENT EDITOR**: Added Ctrl + Click on tables to select any of the cells within the table at once
 - **DOCUMENT EDITOR**: Added way to delete tables in the right click context menu
 - **DOCUMENT EDITOR**: Added right click context menus for text and images
+- **DOCUMENT EDITOR**: Remove link changed to "Link" within right click context menu
 
 #### Debugging
 
@@ -351,3 +352,9 @@
 - **DOCUMENT EDITOR**: Formatting within tables now save properly between sessions
 - **DOCUMENT EDITOR**: Highlight and text color no longer deselect table cells before applying
 - **DOCUMENT EDITOR**: Multi-line highlight now disappears when selecting table cells
+- **DOCUMENT EDITOR**: Cursor icon updates properly in right click context menus
+- **DOCUMENT EDITOR**: Paste now works properly in right click context menus
+- **DOCUMENT EDITOR**: Size of highlight and text color options within right click context menu is now the same as the other buttons
+- **DOCUMENT EDITOR**: Can no longer click behind the right click context menu while trying to click buttons
+- **DOCUMENT EDITOR**: All newlines within pasted text are now considered separate lines
+- **DOCUMENT EDITOR**: Single line highlights no longer get deselected when right clicking

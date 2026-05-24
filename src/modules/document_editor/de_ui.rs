@@ -10,7 +10,7 @@ const PAGE_PAD: f32 = 24.0;
 enum CtxAction {
     Copy, Cut, Paste, Delete,
     Bold, Italic, Underline, Strike, ClearFmt,
-    TextColor(Option<[u8; 3]>), Highlight(Option<[u8; 3]>), RemoveLink,
+    TextColor(Option<[u8; 3]>), Highlight(Option<[u8; 3]>), SetLink,
     ImgCopy(usize), ImgCut(usize), ImgDelete(usize),
     ImgOpen(usize), ImgReplace(usize),
 }
@@ -238,6 +238,9 @@ fn do_delete_sel(ed: &mut DocumentEditor, ctx: &egui::Context) {
 }
 
 fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxAction) {
+    if !ed.has_cross_sel() {
+        if let Some(sel) = ed.ctx_sel.filter(|(_, s, e)| s != e) { ed.last_selection = Some(sel); }
+    }
     match action {
         CtxAction::Copy => { if let Some(t) = get_sel_text(ed) { ctx.copy_text(t); } }
         CtxAction::Cut => {
@@ -245,8 +248,64 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
             do_delete_sel(ed, ctx);
         }
         CtxAction::Paste => {
-            if let Ok(t) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                ctx.input_mut(|i| i.events.push(egui::Event::Paste(t)));
+            if let Ok(clip) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                let had_sel = ed.has_cross_sel() || ed.last_selection.map(|(_, s, e)| s != e).unwrap_or(false);
+                if had_sel { do_delete_sel(ed, ctx); } else { ed.push_undo(); }
+                let pi = ed.focused_para.min(ed.paras.len().saturating_sub(1));
+                if pi < ed.paras.len() {
+                    let cur = ed.last_selection.filter(|&(lpi, sb, eb)| lpi == pi && sb == eb)
+                        .map(|(_, s, _)| s.min(ed.paras[pi].text.len())).unwrap_or(0);
+                    let suf = ed.paras[pi].text[cur..].to_string();
+                    let pfx = ed.paras[pi].text[..cur].to_string();
+                    let lines: Vec<&str> = clip.split('\n').collect();
+                    let ns = if ed.paras[pi].style.is_heading() { ParaStyle::Normal } else { ed.paras[pi].style };
+                    let (al, lh, il) = (ed.paras[pi].align, ed.paras[pi].line_height, ed.paras[pi].indent_left);
+                    if lines.len() == 1 {
+                        rebuild_spans(&mut ed.paras[pi], format!("{}{}{}", pfx, lines[0], suf), &ed.cur_fmt);
+                        ed.para_texts[pi] = ed.paras[pi].text.clone();
+                        let nc = pfx.len() + lines[0].len();
+                        let ci = ed.paras[pi].text[..nc].chars().count();
+                        let id = ed.para_ids[pi];
+                        let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                        st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(ci))));
+                        egui::TextEdit::store_state(ctx, id, st);
+                        ed.last_selection = Some((pi, nc, nc)); ed.focused_para = pi; ed.pending_focus = Some(pi);
+                    } else {
+                        rebuild_spans(&mut ed.paras[pi], format!("{}{}", pfx, lines[0]), &ed.cur_fmt);
+                        ed.para_texts[pi] = ed.paras[pi].text.clone();
+                        let mut ins = pi + 1;
+                        for &ln in &lines[1..lines.len()-1] {
+                            let mut np = DocParagraph::with_style(ns);
+                            np.text = ln.to_string(); np.spans = vec![DocSpan { len: ln.len(), fmt: ed.cur_fmt.clone() }];
+                            np.align = al; np.line_height = lh; np.indent_left = il;
+                            ed.paras.insert(ins, np); ins += 1;
+                        }
+                        let ll = lines.last().unwrap_or(&"");
+                        let last_t = format!("{}{}", ll, suf);
+                        let mut lp = DocParagraph::with_style(ns);
+                        lp.text = last_t.clone(); lp.spans = vec![DocSpan { len: last_t.len(), fmt: ed.cur_fmt.clone() }];
+                        lp.align = al; lp.line_height = lh; lp.indent_left = il;
+                        ed.paras.insert(ins, lp);
+                        ed.focused_para = ins; ed.pending_focus = Some(ins);
+                        ed.sync_texts();
+                        let nc = ll.len().min(last_t.len());
+                        let id = ed.para_ids[ins];
+                        let ci = last_t[..nc].chars().count();
+                        let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                        st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(ci))));
+                        egui::TextEdit::store_state(ctx, id, st);
+                        ed.last_selection = Some((ins, nc, nc));
+                    }
+                    ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true;
+                }
+            } else if let Ok(img_data) = arboard::Clipboard::new().and_then(|mut c| c.get_image()) {
+                let (w, h) = (img_data.width as u32, img_data.height as u32);
+                let scale = (ed.layout.content_width() / w.max(1) as f32).min(1.0);
+                if let Some(rgba) = image::RgbaImage::from_raw(w, h, img_data.bytes.into_owned()) {
+                    let mut buf = Vec::new();
+                    image::DynamicImage::ImageRgba8(rgba).write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).ok();
+                    ed.insert_image(buf, w as f32 * scale, h as f32 * scale, "pasted.png".to_string());
+                }
             }
         }
         CtxAction::Delete => do_delete_sel(ed, ctx),
@@ -254,10 +313,17 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
         CtxAction::Italic => ed.apply_fmt_toggle_italic(),
         CtxAction::Underline => ed.apply_fmt_toggle_underline(),
         CtxAction::Strike => ed.apply_fmt_toggle_strike(),
-        CtxAction::ClearFmt => { ed.apply_fmt_property(|f| { f.bold=false; f.italic=false; f.underline=false; f.strike=false; f.sup=false; f.sub=false; f.size_hp=None; f.font=None; f.color=None; f.highlight=None; f.link=None; }); }
+        CtxAction::ClearFmt => { ed.apply_fmt_property(|f| { f.bold=false; f.italic=false; f.underline=false; f.strike=false; f.sup=false; f.sub=false; f.color=None; f.highlight=None; f.link=None; }); }
         CtxAction::TextColor(c) => ed.apply_fmt_color(c),
         CtxAction::Highlight(c) => ed.apply_fmt_highlight(c),
-        CtxAction::RemoveLink => ed.apply_fmt_link(None),
+        CtxAction::SetLink => {
+            let cur_link = ed.last_selection.filter(|(_, s, e)| s != e)
+                .and_then(|(pi, sb, _)| ed.paras.get(pi).map(|p| link_at_byte(p, sb.min(p.text.len()))))
+                .flatten().map(|s| s.to_string()).unwrap_or_default();
+            ed.link_input = cur_link;
+            ed.ctx_link_show = true;
+            return;
+        }
         CtxAction::ImgCopy(pi) => {
             if let Some(data) = ed.paras.get(pi).and_then(|p| p.image.as_ref()).map(|img| img.data.clone()) {
                 if let Ok(img) = image::load_from_memory(&data) {
@@ -320,10 +386,11 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
             }
         }
     }
+    ed.ctx_sel = None;
 }
 
 fn cm_btn(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    ui.add_enabled(enabled, egui::Button::new(egui::RichText::new(label).size(12.5)).min_size(egui::vec2(50.0, 26.0))).clicked()
+    ui.add_enabled(enabled, egui::Button::new(egui::RichText::new(label).size(12.5)).min_size(egui::vec2(50.0, 26.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
 fn cm_sep(ui: &mut egui::Ui) {
@@ -335,40 +402,40 @@ fn cm_sep(ui: &mut egui::Ui) {
 }
 
 fn ctx_color_palette(ui: &mut egui::Ui, is_dark: bool, on_pick: &mut dyn FnMut(Option<[u8; 3]>)) {
-    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(12.0)).min_size(egui::vec2(140.0, 22.0))).clicked() { on_pick(None); }
+    if ui.add(egui::Button::new(egui::RichText::new("Auto (default)").size(12.0)).min_size(egui::vec2(140.0, 22.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { on_pick(None); }
     const P: &[([u8; 3], &str)] = &[([0,0,0],"Black"),([68,68,68],"Dark Gray"),([102,102,102],"Gray"),([153,153,153],"Light Gray"),([204,204,204],"Silver"),([255,255,255],"White"),([220,38,38],"Red"),([234,88,12],"Orange"),([234,179,8],"Yellow"),([22,163,74],"Green"),([20,184,166],"Teal"),([59,130,246],"Blue"),([99,102,241],"Indigo"),([168,85,247],"Purple"),([236,72,153],"Pink"),([120,53,15],"Brown")];
     let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
     for row in P.chunks(6) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
             for &(c, n) in row {
-                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(20.0,20.0)).corner_radius(3.0)).on_hover_text(n).clicked() { on_pick(Some(c)); }
+                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(20.0,20.0)).corner_radius(3.0)).on_hover_text(n).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { on_pick(Some(c)); }
             }
         });
     }
 }
 
 fn ctx_highlight_palette(ui: &mut egui::Ui, is_dark: bool, on_pick: &mut dyn FnMut(Option<[u8; 3]>)) {
-    if ui.add(egui::Button::new(egui::RichText::new("No Highlight").size(12.0)).min_size(egui::vec2(140.0, 22.0))).clicked() { on_pick(None); }
+    if ui.add(egui::Button::new(egui::RichText::new("No Highlight").size(12.0)).min_size(egui::vec2(140.0, 22.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { on_pick(None); }
     const P: &[([u8; 3], &str)] = &[([255,235,59],"Yellow"),([255,204,128],"Peach"),([255,171,145],"Salmon"),([199,210,254],"Lavender"),([167,243,208],"Mint"),([147,197,253],"Sky"),([253,224,71],"Gold"),([250,204,21],"Amber"),([253,186,116],"Apricot"),([190,242,100],"Lime"),([125,211,252],"Cyan"),([196,181,253],"Violet")];
     let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
     for row in P.chunks(4) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
             for &(c, n) in row {
-                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(26.0,22.0)).corner_radius(3.0)).on_hover_text(n).clicked() { on_pick(Some(c)); }
+                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(26.0,22.0)).corner_radius(3.0)).on_hover_text(n).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { on_pick(Some(c)); }
             }
         });
     }
 }
 
-fn text_cm(ui: &mut egui::Ui, has_sel: bool, sel_has_link: bool, is_dark: bool, action: &std::cell::RefCell<Option<CtxAction>>) {
-    ui.set_max_width(120.0);
+fn text_cm(ui: &mut egui::Ui, has_sel: bool, _sel_has_link: bool, is_dark: bool, action: &std::cell::RefCell<Option<CtxAction>>) {
+    ui.set_max_width(160.0);
     ui.spacing_mut().item_spacing.y = 2.0;
     let set = |a: CtxAction| { *action.borrow_mut() = Some(a); };
     if cm_btn(ui, "Copy", has_sel) { set(CtxAction::Copy); }
-    if cm_btn(ui, "Cut", has_sel) { set(CtxAction::Cut); }
     if cm_btn(ui, "Paste", true) { set(CtxAction::Paste); }
+    if cm_btn(ui, "Cut", has_sel) { set(CtxAction::Cut); }
     if cm_btn(ui, "Delete", has_sel) { set(CtxAction::Delete); }
     cm_sep(ui);
     if cm_btn(ui, "Bold", true) { set(CtxAction::Bold); }
@@ -377,13 +444,16 @@ fn text_cm(ui: &mut egui::Ui, has_sel: bool, sel_has_link: bool, is_dark: bool, 
     if cm_btn(ui, "Strikethrough", true) { set(CtxAction::Strike); }
     if cm_btn(ui, "Clear Formatting", has_sel) { set(CtxAction::ClearFmt); }
     cm_sep(ui);
-    ui.menu_button(egui::RichText::new("Text Color").size(12.5), |ui| {
-        ctx_color_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::TextColor(c)); });
+    ui.scope(|ui| {
+        ui.style_mut().spacing.interact_size.y = 26.0;
+        ui.menu_button(egui::RichText::new("Text Color").size(12.5), |ui| {
+            ctx_color_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::TextColor(c)); });
+        });
+        ui.menu_button(egui::RichText::new("Highlight").size(12.5), |ui| {
+            ctx_highlight_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::Highlight(c)); });
+        });
     });
-    ui.menu_button(egui::RichText::new("Highlight").size(12.5), |ui| {
-        ctx_highlight_palette(ui, is_dark, &mut |c| { *action.borrow_mut() = Some(CtxAction::Highlight(c)); });
-    });
-    if cm_btn(ui, "Remove Link", sel_has_link) { set(CtxAction::RemoveLink); }
+    if cm_btn(ui, "Link", true) { set(CtxAction::SetLink); }
 }
 
 fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option<CtxAction>>) {
@@ -417,6 +487,7 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     render_find_bar(ed, ctx, is_dark);
     render_stats_modal(ed, ctx, is_dark);
     render_page_settings(ed, ctx, is_dark);
+    render_ctx_link_modal(ed, ctx, is_dark);
 }
 
 fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
@@ -845,15 +916,17 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
     let mut active_sel = ed.norm_sel().filter(|(f, t)| f.para != t.para);
     if active_sel.is_none() {
-        if let Some((pi, sb, eb)) = ed.last_selection {
+        if let Some((pi, sb, eb)) = ed.ctx_sel.filter(|(_, s, e)| s != e) {
+            active_sel = Some((DocPos { para: pi, byte: sb.min(eb) }, DocPos { para: pi, byte: sb.max(eb) }));
+        } else if let Some((pi, sb, eb)) = ed.last_selection {
             if sb != eb && !ctx.memory(|m| m.has_focus(ed.para_ids[pi])) {
-                let start = sb.min(eb); let end = sb.max(eb);
-                active_sel = Some((DocPos { para: pi, byte: start }, DocPos { para: pi, byte: end }));
+                active_sel = Some((DocPos { para: pi, byte: sb.min(eb) }, DocPos { para: pi, byte: sb.max(eb) }));
             }
         }
     }
-    let has_text_sel = get_sel_text(ed).is_some();
-    let sel_has_link = ed.last_selection.filter(|&(_, s, e)| s != e).map(|(pi, sb, eb)| {
+    let has_text_sel = ed.ctx_sel.map(|(_, s, e)| s != e).unwrap_or(false) || get_sel_text(ed).is_some();
+    let sel_for_link = ed.ctx_sel.filter(|(_, s, e)| s != e).or(ed.last_selection.filter(|(_, s, e)| s != e));
+    let sel_has_link = sel_for_link.map(|(pi, sb, eb)| {
         if pi >= ed.paras.len() { return false; }
         let (lo, hi) = (sb.min(eb), sb.max(eb));
         let mut pos = 0usize;
@@ -876,8 +949,13 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let drag_in_canvas = press_origin.map_or(true, |p| p.y >= canvas_top);
     let on_popup = press_origin.map_or(false, |p| ctx.layer_id_at(p).map_or(false, |l| l.order > egui::Order::Middle));
     let btn_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && drag_in_canvas && !on_popup;
-    let btn_down = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) && drag_in_canvas;
+    let secondary_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary)) && drag_in_canvas && !on_popup;
+    let btn_down = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) && drag_in_canvas && !on_popup;
     let shift = ctx.input(|i| i.modifiers.shift);
+    if secondary_pressed {
+        ed.ctx_sel = if ed.has_cross_sel() { None } else { ed.last_selection.filter(|(_, s, e)| s != e) };
+    }
+    if btn_pressed { ed.ctx_sel = None; }
     let ctrl = ctx.input(|i| i.modifiers.ctrl);
     let mut text_change: Option<(usize, String)> = None;
     let mut merge_up: Option<usize> = None;
@@ -1799,17 +1877,24 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
     if let Some((i, new_text)) = text_change {
         if i < ed.paras.len() {
-            if let Some(nl_pos) = new_text.find('\n') {
+            let lns: Vec<&str> = new_text.split('\n').collect();
+            if lns.len() > 1 {
                 ed.push_undo();
-                let first = new_text[..nl_pos].to_string(); let rest = new_text[nl_pos + 1..].to_string();
-                rebuild_spans(&mut ed.paras[i], first, &cur_fmt);
                 let ns = if ed.paras[i].style.is_heading() { ParaStyle::Normal } else { ed.paras[i].style };
-                let mut np = DocParagraph::with_style(ns);
-                np.text = rest.clone(); np.spans = vec![DocSpan { len: rest.len(), fmt: cur_fmt.clone() }];
-                np.align = ed.paras[i].align; np.line_height = ed.paras[i].line_height; np.indent_left = ed.paras[i].indent_left;
-                ed.paras.insert(i + 1, np); ed.focused_para = i + 1; ed.pending_focus = Some(i + 1); ed.sync_texts();
-                let new_id = ed.para_ids[i + 1]; let mut state = egui::TextEdit::load_state(ctx, new_id).unwrap_or_default();
-                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0)))); egui::TextEdit::store_state(ctx, new_id, state);
+                let (al, lh, il) = (ed.paras[i].align, ed.paras[i].line_height, ed.paras[i].indent_left);
+                rebuild_spans(&mut ed.paras[i], lns[0].to_string(), &cur_fmt);
+                let mut ins = i + 1;
+                for &ln in &lns[1..] {
+                    let mut np = DocParagraph::with_style(ns);
+                    np.text = ln.to_string(); np.spans = vec![DocSpan { len: ln.len(), fmt: cur_fmt.clone() }];
+                    np.align = al; np.line_height = lh; np.indent_left = il;
+                    ed.paras.insert(ins, np); ins += 1;
+                }
+                ed.focused_para = ins - 1; ed.pending_focus = Some(ins - 1);
+                ed.sync_texts();
+                let last_len = lns.last().unwrap_or(&"").chars().count();
+                let new_id = ed.para_ids[ins - 1]; let mut state = egui::TextEdit::load_state(ctx, new_id).unwrap_or_default();
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(last_len)))); egui::TextEdit::store_state(ctx, new_id, state);
             } else {
                 let old_text = &ed.paras[i].text; let diff = new_text.len() as isize - old_text.len() as isize;
                 let mut should_push = false; let new_action: u8;
@@ -1919,6 +2004,41 @@ fn render_stats_modal(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
         });
     if !open { ed.show_stats = false; }
     if let Some(win) = win { let clicked_outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !win.response.rect.contains(p))); if clicked_outside { ed.show_stats = false; } }
+}
+
+fn render_ctx_link_modal(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
+    if !ed.ctx_link_show { return; }
+    crate::style::draw_modal_overlay(ctx, "ctx_link_ov", 120);
+    let (bg, border, tc) = if is_dark { (ColorPalette::ZINC_900, ColorPalette::ZINC_700, ColorPalette::SLATE_200) } else { (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_800) };
+    let muted = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::GRAY_500 };
+    let (mut apply, remove, mut cancel) = (false, false, false);
+    egui::Window::new("##ctx_link_win").title_bar(false).collapsible(false).resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .fixed_size(egui::vec2(280.0, 0.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(8.0).inner_margin(16.0))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new("Link URL").size(13.0).color(tc));
+            ui.add_space(4.0);
+            let r = ui.add(egui::TextEdit::singleline(&mut ed.link_input).desired_width(248.0).hint_text("https://..."));
+            r.request_focus();
+            if r.has_focus() { ctx.input_mut(|i| { if i.consume_key(egui::Modifiers::NONE, egui::Key::Enter) { apply = true; } if i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) { cancel = true; } }); }
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Leave empty to remove the link.").size(11.0).color(muted));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("Apply").clicked() { apply = true; }
+                if ui.button("Cancel").clicked() { cancel = true; }
+            });
+        });
+    if apply {
+        let url = ed.link_input.trim().to_string();
+        ed.apply_fmt_link(if url.is_empty() { None } else { Some(url) });
+        ed.ctx_link_show = false; ed.ctx_sel = None;
+    } else if remove || cancel {
+        if remove { ed.apply_fmt_link(None); }
+        ed.ctx_link_show = false; ed.ctx_sel = None;
+    }
 }
 
 fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
