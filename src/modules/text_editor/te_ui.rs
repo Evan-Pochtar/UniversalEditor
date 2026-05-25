@@ -14,7 +14,7 @@ impl TextEditor {
                     if toolbar_action_btn(ui, egui::RichText::new("U").underline().size(12.0), theme).on_hover_text("Underline (Ctrl+U)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_underline(); }
                     if toolbar_action_btn(ui, egui::RichText::new("S").strikethrough().size(12.0), theme).on_hover_text("Strikethrough (Ctrl+Shift+S)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_strikethrough(); }
                     if toolbar_action_btn(ui, egui::RichText::new("C").monospace().size(12.0), theme).on_hover_text("Code (Ctrl+E)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_code(); }
-                    if toolbar_action_btn(ui, egui::RichText::new("==").size(11.0), theme).on_hover_text("Highlight (Ctrl+Shift+H)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_highlight(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("H").size(11.0), theme).on_hover_text("Highlight (Ctrl+Shift+H)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_highlight(); }
                     ui.separator();
                     if toolbar_action_btn(ui, "H1", theme).on_hover_text("Header 1 (Ctrl+1)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(1); }
                     if toolbar_action_btn(ui, "H2", theme).on_hover_text("Header 2 (Ctrl+2)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(2); }

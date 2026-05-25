@@ -359,8 +359,8 @@ impl UniversalEditor {
     fn render_unsaved_dialog(&mut self, ctx: &egui::Context) {
         if !self.show_unsaved_dialog { return; }
         let is_dark = matches!(self.theme_mode, ThemeMode::Dark);
-        let (bg, border, text) = if is_dark { (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_100) } else { (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_900) };
-        let sub = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::GRAY_600 };
+        let (bg, border, text) = if is_dark { (ColorPalette::ZINC_800, ColorPalette::ZINC_700, ColorPalette::ZINC_100) } else { (egui::Color32::WHITE, ColorPalette::STONE_200, ColorPalette::STONE_900) };
+        let sub = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::STONE_500 };
         style::draw_modal_overlay(ctx, "unsaved_overlay", 200);
         egui::Window::new("Unsaved Changes")
             .collapsible(false).resizable(false)
@@ -574,7 +574,7 @@ impl UniversalEditor {
         let theme = self.theme_mode;
         let (bg, border, text, subtext, btn_bg, btn_hover) = match theme {
             ThemeMode::Dark => (ColorPalette::ZINC_900, ColorPalette::ZINC_700, egui::Color32::WHITE, ColorPalette::ZINC_400, ColorPalette::BLUE_700, ColorPalette::BLUE_600),
-            ThemeMode::Light => (egui::Color32::WHITE, ColorPalette::GRAY_200, ColorPalette::GRAY_900, ColorPalette::GRAY_500, ColorPalette::BLUE_600, ColorPalette::BLUE_500),
+            ThemeMode::Light => (egui::Color32::WHITE, ColorPalette::STONE_200, ColorPalette::STONE_900, ColorPalette::STONE_500, ColorPalette::BLUE_600, ColorPalette::BLUE_500),
         };
         style::draw_modal_overlay(ctx, "rename_overlay", 120);
         let mut open = true;
@@ -605,7 +605,7 @@ impl UniversalEditor {
                     let confirm = ui.scope(|ui| { btn_style(ui, btn_bg, btn_hover); ui.button("Rename") }).inner.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() || confirmed;
                     ui.add_space(8.0);
                     let cancel = ui.scope(|ui| {
-                        let (cb, ch) = match theme { ThemeMode::Dark => (ColorPalette::ZINC_700, ColorPalette::ZINC_600), ThemeMode::Light => (ColorPalette::GRAY_200, ColorPalette::GRAY_300) };
+                        let (cb, ch) = match theme { ThemeMode::Dark => (ColorPalette::ZINC_700, ColorPalette::ZINC_600), ThemeMode::Light => (ColorPalette::STONE_100, ColorPalette::STONE_200) };
                         btn_style(ui, cb, ch); ui.style_mut().visuals.override_text_color = Some(text); ui.button("Cancel")
                     }).inner.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() || cancelled;
                     if confirm && !self.rename_buffer.trim().is_empty() {
@@ -626,7 +626,7 @@ impl UniversalEditor {
         let theme = self.theme_mode;
         let (title_col, sub_col, accent_line, ver_bg, ver_text_col) = match theme {
             ThemeMode::Dark => (egui::Color32::WHITE, ColorPalette::ZINC_400, ColorPalette::ZINC_800, egui::Color32::from_rgb(32, 32, 40), ColorPalette::ZINC_400),
-            ThemeMode::Light => (ColorPalette::GRAY_900, ColorPalette::GRAY_500, ColorPalette::GRAY_200, ColorPalette::GRAY_100, ColorPalette::GRAY_500),
+            ThemeMode::Light => (ColorPalette::STONE_900, ColorPalette::STONE_500, ColorPalette::STONE_200, ColorPalette::STONE_100, ColorPalette::STONE_500),
         };
         let mut action: Option<HomeAction> = None;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -739,7 +739,7 @@ impl UniversalEditor {
         if !self.show_settings { return; }
         let theme = self.theme_mode;
         let is_dark = matches!(theme, ThemeMode::Dark);
-        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::GRAY_400, ColorPalette::GRAY_700) };
+        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::STONE_400, ColorPalette::STONE_800) };
 
         if self.cache_entries.is_none() {
             let mut entries = ie_cache::list_caches();
@@ -762,7 +762,7 @@ impl UniversalEditor {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     for (tab, label) in &[(SettingsTab::General, "General"), (SettingsTab::TextEditor, "Text Editor"), (SettingsTab::Cache, "Image Editor"), (SettingsTab::JsonEditor, "JSON Editor")] {
                         let sel = self.settings_tab == *tab;
-                        let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::GRAY_100 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
+                        let (fill, tc) = if sel { (if is_dark { egui::Color32::from_rgb(40, 40, 50) } else { ColorPalette::STONE_150 }, text) } else { (egui::Color32::TRANSPARENT, muted) };
                         if ui.add(egui::Button::new(egui::RichText::new(*label).size(12.0).color(tc)).fill(fill).corner_radius(6.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.settings_tab = *tab; }
                         ui.add_space(4.0);
                     }
@@ -861,7 +861,7 @@ impl UniversalEditor {
                                     if let Some(ref entries_vec) = self.cache_entries {
                                         for (i, entry) in entries_vec.iter().enumerate() {
                                             let fname = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path);
-                                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 }).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::WHITE }).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.vertical(|ui| {
                                                         ui.label(egui::RichText::new(fname).size(13.0).color(text));
@@ -906,7 +906,7 @@ impl UniversalEditor {
         if !self.show_patch_notes { return; }
         let theme = self.theme_mode;
         let is_dark = matches!(theme, ThemeMode::Dark);
-        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::GRAY_900, ColorPalette::GRAY_700) };
+        let (muted, text) = if is_dark { (ColorPalette::ZINC_500, ColorPalette::SLATE_200) } else { (ColorPalette::STONE_400, ColorPalette::STONE_800) };
         let tag_bg = if is_dark { ColorPalette::MODAL_TAG_BG_DARK } else { ColorPalette::BLUE_50 };
         let total_pages = self.patch_notes.len().max(1);
         if self.patch_notes_page >= total_pages { self.patch_notes_page = total_pages - 1; }
@@ -965,7 +965,7 @@ impl UniversalEditor {
                 });
             });
             let (sep, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-            ui.painter().rect_filled(sep, 0.0, if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_200 });
+            ui.painter().rect_filled(sep, 0.0, if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::STONE_200 });
             egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 10, bottom: 10 }).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.add_enabled(self.patch_notes_page > 0, egui::Button::new("< Prev")).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.patch_notes_page -= 1; }
@@ -984,12 +984,12 @@ impl UniversalEditor {
         if !self.show_about { return; }
         let theme = self.theme_mode;
         let is_dark = matches!(theme, ThemeMode::Dark);
-        let title_col = if is_dark { egui::Color32::WHITE } else { ColorPalette::GRAY_900 };
-        let text_col = if is_dark { ColorPalette::SLATE_300 } else { ColorPalette::GRAY_700 };
-        let muted_col = if is_dark { ColorPalette::ZINC_500 } else { ColorPalette::GRAY_400 };
-        let section_col = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::GRAY_500 };
-        let card_bg = if is_dark { egui::Color32::from_rgb(26, 26, 32) } else { ColorPalette::GRAY_50 };
-        let card_border = if is_dark { egui::Color32::from_rgb(46, 46, 54) } else { ColorPalette::GRAY_200 };
+        let title_col = if is_dark { egui::Color32::WHITE } else { ColorPalette::STONE_900 };
+        let text_col = if is_dark { ColorPalette::SLATE_300 } else { ColorPalette::STONE_700 };
+        let muted_col = if is_dark { ColorPalette::ZINC_500 } else { ColorPalette::STONE_400 };
+        let section_col = if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::STONE_500 };
+        let card_bg = if is_dark { egui::Color32::from_rgb(26, 26, 32) } else { egui::Color32::WHITE };
+        let card_border = if is_dark { egui::Color32::from_rgb(46, 46, 54) } else { ColorPalette::STONE_200 };
         let mut hdr_close = false;
 
         let outside = style::main_menu_modal(ctx, "about_mw", theme, 640.0, |ui| {

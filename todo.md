@@ -133,6 +133,7 @@
 - [ ] Ability to move images by dragging
 - [ ] Cell colors in tables for dark mode
 - [ ] Increase max table size creation from the table button
+- [ ] Copy with formatting
 
 ### CONVERTERS
 
