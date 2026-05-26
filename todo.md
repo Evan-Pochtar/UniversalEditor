@@ -58,17 +58,18 @@
 
 - [ ] Cannot highlight and scroll at the same time
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
-- [ ] ODT Exporting has many major flaws
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] External loading
+- [ ] Copy with formatting doesn't work with multi-line highlights
+- [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
+  - [ ] ODT Exporting has many major flaws
 
 ### Other Bugs
 
@@ -130,10 +131,8 @@
 - [ ] Printing
 - [ ] Page Breaks
 - [ ] Header and footers
-- [ ] Ability to move images by dragging
 - [ ] Cell colors in tables for dark mode
 - [ ] Increase max table size creation from the table button
-- [ ] Copy with formatting
 
 ### CONVERTERS
 

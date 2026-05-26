@@ -345,6 +345,8 @@
 - [x] Improve look of find/replace panel
 - [x] Images
 - [x] Text
+- [x] Copy with formatting
+- [x] Ability to move images by dragging
 
 ### CONVERTER: Img 2 Img
 

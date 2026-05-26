@@ -326,6 +326,8 @@
 - **DOCUMENT EDITOR**: Added way to delete tables in the right click context menu
 - **DOCUMENT EDITOR**: Added right click context menus for text and images
 - **DOCUMENT EDITOR**: Remove link changed to "Link" within right click context menu
+- **DOCUMENT EDITOR**: Can now move images by dragging
+- **DOCUMENT EDITOR**: Added copy and paste with formatting to right click context menu
 
 #### Debugging
 

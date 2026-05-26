@@ -3,12 +3,40 @@ use crate::style::{ColorPalette, ThemeMode, toolbar_action_btn, toolbar_toggle_b
 use super::de_main::{DocumentEditor, DocPos};
 use crate::modules::EditorModule;
 use super::de_tools::*;
+use std::cell::RefCell;
 
+thread_local! { static RICH_CLIP: RefCell<Option<(String, Vec<DocSpan>)>> = RefCell::new(None); }
 const PAGE_GAP: f32 = 28.0;
 const PAGE_PAD: f32 = 24.0;
 
+fn extract_sel_spans(para: &DocParagraph, start: usize, end: usize) -> Vec<DocSpan> {
+    let mut out = Vec::new(); let mut pos = 0usize;
+    for span in &para.spans {
+        let se = pos + span.len;
+        if se > start && pos < end { let cs = start.max(pos); let ce = end.min(se); if ce > cs { out.push(DocSpan { len: ce - cs, fmt: span.fmt.clone() }); } }
+        pos = se;
+    }
+    out
+}
+
+fn compute_drop_idx(ed: &DocumentEditor, pl: &ComputedPageLayout, omy: f32, cy: f32) -> usize {
+    let n = ed.paras.len();
+    let gy = |i: usize| -> f32 {
+        if i < n { omy + pl.page_tops.get(pl.para_page[i]).copied().unwrap_or(0.0) + pl.para_content_y[i] * ed.zoom }
+        else { let j = n.saturating_sub(1); omy + pl.page_tops.get(pl.para_page[j]).copied().unwrap_or(0.0) + (pl.para_content_y[j] + ed.para_heights.get(j).copied().unwrap_or(0.0)) * ed.zoom }
+    };
+    (0..=n).min_by(|&a, &b| (cy - gy(a)).abs().partial_cmp(&(cy - gy(b)).abs()).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(0)
+}
+
+fn drop_line_y(ed: &DocumentEditor, pl: &ComputedPageLayout, omy: f32, idx: usize) -> f32 {
+    let n = ed.paras.len();
+    if idx < n { omy + pl.page_tops.get(pl.para_page[idx]).copied().unwrap_or(0.0) + pl.para_content_y[idx] * ed.zoom }
+    else { let j = n.saturating_sub(1); omy + pl.page_tops.get(pl.para_page[j]).copied().unwrap_or(0.0) + (pl.para_content_y[j] + ed.para_heights.get(j).copied().unwrap_or(0.0)) * ed.zoom }
+}
+
 enum CtxAction {
     Copy, Cut, Paste, Delete,
+    CopyWithFmt, PasteWithFmt,
     Bold, Italic, Underline, Strike, ClearFmt,
     TextColor(Option<[u8; 3]>), Highlight(Option<[u8; 3]>), SetLink,
     ImgCopy(usize), ImgCut(usize), ImgDelete(usize),
@@ -187,6 +215,7 @@ fn image_handle_cursor(handle: u8) -> egui::CursorIcon {
 
 fn image_drag_dims(ed: &DocumentEditor, ctx: &egui::Context, drag: (usize, u8, egui::Pos2, f32, f32, f32)) -> (f32, f32) {
     let (_, handle, drag_start, orig_w, orig_h, orig_asp) = drag;
+    if handle == 255 { return (orig_w, orig_h); }
     let cur = ctx.input(|inp| inp.pointer.latest_pos()).unwrap_or(drag_start);
     let delta = (cur - drag_start) / ed.zoom;
     let shift = ctx.input(|inp| inp.modifiers.shift);
@@ -309,6 +338,47 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
             }
         }
         CtxAction::Delete => do_delete_sel(ed, ctx),
+        CtxAction::CopyWithFmt => {
+            let sel = ed.ctx_sel.filter(|(_, s, e)| s != e).or(ed.last_selection.filter(|(_, s, e)| s != e));
+            if let Some((pi, sb, eb)) = sel {
+                if pi < ed.paras.len() {
+                    let (lo, hi) = (sb.min(eb), sb.max(eb).min(ed.paras[pi].text.len()));
+                    let text = ed.paras[pi].text[lo..hi].to_string();
+                    ctx.copy_text(text.clone());
+                    let spans = extract_sel_spans(&ed.paras[pi], lo, hi);
+                    RICH_CLIP.with(|c| *c.borrow_mut() = Some((text, spans)));
+                }
+            }
+        }
+        CtxAction::PasteWithFmt => {
+            let rich = RICH_CLIP.with(|c| c.borrow().as_ref().cloned());
+            if let Some((text, rich_spans)) = rich {
+                let had_sel = ed.has_cross_sel() || ed.last_selection.map(|(_, s, e)| s != e).unwrap_or(false);
+                if had_sel { do_delete_sel(ed, ctx); } else { ed.push_undo(); }
+                let pi = ed.focused_para.min(ed.paras.len().saturating_sub(1));
+                if pi < ed.paras.len() {
+                    let cur = ed.last_selection.filter(|(lpi, sb, eb)| *lpi == pi && sb == eb)
+                        .map(|(_, s, _)| s.min(ed.paras[pi].text.len())).unwrap_or(0);
+                    ensure_boundary(&mut ed.paras[pi], cur);
+                    let ins_len = text.len();
+                    ed.paras[pi].text.insert_str(cur, &text);
+                    let mut acc = 0usize;
+                    let split = ed.paras[pi].spans.iter().position(|s| { if acc >= cur { true } else { acc += s.len; false } }).unwrap_or(ed.paras[pi].spans.len());
+                    let tail = ed.paras[pi].spans.split_off(split);
+                    for s in rich_spans { ed.paras[pi].spans.push(DocSpan { len: s.len, fmt: s.fmt }); }
+                    ed.paras[pi].spans.extend(tail);
+                    merge_adjacent(&mut ed.paras[pi]);
+                    ed.para_texts[pi] = ed.paras[pi].text.clone();
+                    let nc = ed.paras[pi].text[..cur + ins_len].chars().count();
+                    let id = ed.para_ids[pi];
+                    let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(nc))));
+                    egui::TextEdit::store_state(ctx, id, st);
+                    ed.last_selection = Some((pi, cur + ins_len, cur + ins_len));
+                    ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true;
+                }
+            }
+        }
         CtxAction::Bold => ed.apply_fmt_toggle_bold(),
         CtxAction::Italic => ed.apply_fmt_toggle_italic(),
         CtxAction::Underline => ed.apply_fmt_toggle_underline(),
@@ -454,6 +524,10 @@ fn text_cm(ui: &mut egui::Ui, has_sel: bool, _sel_has_link: bool, is_dark: bool,
         });
     });
     if cm_btn(ui, "Link", true) { set(CtxAction::SetLink); }
+    cm_sep(ui);
+    if cm_btn(ui, "Copy with Formatting", has_sel) { set(CtxAction::CopyWithFmt); }
+    let has_rich = RICH_CLIP.with(|c| c.borrow().is_some());
+    if cm_btn(ui, "Paste with Formatting", has_rich) { set(CtxAction::PasteWithFmt); }
 }
 
 fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option<CtxAction>>) {
@@ -984,6 +1058,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let tbl_cell_bg_op = std::cell::Cell::new(None::<(usize, usize, usize, Option<[u8; 3]>)>);
     let tbl_border_op = std::cell::Cell::new(None::<(usize, [u8; 3], f32)>);
     let mut img_size_change: Option<(usize, f32, f32)> = None;
+    let drop_idx_cell: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
 
     scroll_area.show_viewport(ui, |ui, vp| {
         let page_x = ((avail_w - page_w) / 2.0).max(16.0);
@@ -1117,7 +1192,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             if let Some((pi, ri, ci)) = ed.active_table.take() { table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone())); }
                             ed.table_multi_sel = None;
                         }
-                        painter.with_clip_rect(page_rect).image(tid, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                        let img_tint = if ed.image_drag.as_ref().map(|(di, h, _, _, _, _)| *di == i && *h == 255).unwrap_or(false) { egui::Color32::from_rgba_unmultiplied(255, 255, 255, 100) } else { egui::Color32::WHITE };
+                        painter.with_clip_rect(page_rect).image(tid, img_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), img_tint);
                         let show_handles = ed.selected_image_para == Some(i) || ed.image_drag.as_ref().map(|(di, _, _, _, _, _)| *di == i).unwrap_or(false);
                         if show_handles {
                             painter.rect_stroke(preview_rect, 0.0, egui::Stroke::new(2.0, ColorPalette::BLUE_500), egui::StrokeKind::Outside);
@@ -1127,12 +1203,22 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 let h_resp = ui.interact(hr.expand(4.0), ui.id().with(("img_h", i, hi)), egui::Sense::click_and_drag());
                                 if h_resp.hovered() || h_resp.dragged() { ctx.set_cursor_icon(image_handle_cursor(hi as u8)); }
                                 if h_resp.drag_started() {
-                                    ed.selected_image_para = Some(i); ed.focused_para = i; ed.doc_sel = None;
-                                    if let Some((pi, ri, ci)) = ed.active_table.take() { table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone())); }
-                                    ed.image_drag = Some((i, hi as u8, h_resp.interact_pointer_pos().unwrap_or(*hp), img.display_w, img.display_h, img.display_w / img.display_h.max(0.001)));
-                                }
+                                ed.selected_image_para = Some(i); ed.focused_para = i; ed.doc_sel = None;
+                                if let Some((pi, ri, ci)) = ed.active_table.take() { table_cell_change = Some((pi, ri, ci, ed.cell_edit_buf.clone())); }
+                                ed.image_drag = Some((i, hi as u8, h_resp.interact_pointer_pos().unwrap_or(*hp), img.display_w, img.display_h, img.display_w / img.display_h.max(0.001)));
                             }
                         }
+                        let any_handle_hov = ptr.map_or(false, |p| image_handle_positions(preview_rect).iter().any(|hp| egui::Rect::from_center_size(*hp, egui::vec2(14.0, 14.0)).contains(p)));
+                        let no_resize_drag = ed.image_drag.as_ref().map_or(true, |(di, h, _, _, _, _)| *di != i || *h == 255);
+                        if !any_handle_hov && no_resize_drag {
+                            let body = ui.interact(img_rect, ui.id().with(("img_move", i)), egui::Sense::drag());
+                            if body.hovered() { ctx.set_cursor_icon(egui::CursorIcon::Grab); }
+                            if body.dragged() && ed.image_drag.as_ref().map(|(di, h, _, _, _, _)| *di == i && *h == 255).unwrap_or(false) { ctx.set_cursor_icon(egui::CursorIcon::Grabbing); }
+                            if body.drag_started() {
+                                ed.image_drag = Some((i, 255u8, body.interact_pointer_pos().unwrap_or(img_rect.center()), img.display_w, img.display_h, img.display_w / img.display_h.max(0.001)));
+                            }
+                        }
+                    }
                     let img_ctx = ui.interact(img_rect, ui.id().with(("doc_img_cm", i)), egui::Sense::click());
                     img_ctx.context_menu(|ui| { cip.set(Some(i)); img_cm(ui, i, ca); });
                     }
@@ -1755,6 +1841,18 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
             let new_h = output.galley.size().y;
             if (new_h - text_h).abs() > 0.5 { ed.heights_dirty = true; }
         }
+
+        if let Some((_, 255, _, _, _, _)) = ed.image_drag {
+            if let Some(pp) = ptr.filter(|p| p.y >= canvas_top) {
+                let di = compute_drop_idx(ed, &pl, outer.min.y, pp.y);
+                drop_idx_cell.set(Some(di));
+                let gy = drop_line_y(ed, &pl, outer.min.y, di);
+                let lx = outer.min.x + page_x;
+                painter.hline(lx..=(lx + page_w), gy, egui::Stroke::new(2.5, ColorPalette::BLUE_400));
+                painter.circle_filled(egui::pos2(lx, gy), 5.0, ColorPalette::BLUE_400);
+                painter.circle_filled(egui::pos2(lx + page_w, gy), 5.0, ColorPalette::BLUE_400);
+            }
+        }
     });
     if let Some(fp) = cm_para.get() { ed.focused_para = fp; }
     if let Some(pi) = cm_img_para.get() {
@@ -1764,7 +1862,25 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     }
     if let Some(action) = ctx_action.borrow_mut().take() { process_ctx_action(ed, ctx, action); }
     if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
-        if let Some(drag) = ed.image_drag.take() { let (nw, nh) = image_drag_dims(ed, ctx, drag); img_size_change = Some((drag.0, nw, nh)); }
+        if let Some(drag) = ed.image_drag.take() {
+            if drag.1 == 255 {
+                if let Some(di) = drop_idx_cell.get() {
+                    let from = drag.0;
+                    let insert_at = (if di <= from { di } else { di.saturating_sub(1) }).min(ed.paras.len());
+                    if from != insert_at {
+                        ed.push_undo();
+                        let para = ed.paras.remove(from);
+                        ed.paras.insert(insert_at.min(ed.paras.len()), para);
+                        let new_idx = insert_at.min(ed.paras.len().saturating_sub(1));
+                        ed.selected_image_para = Some(new_idx); ed.focused_para = new_idx;
+                        ed.sync_texts(); ed.dirty = true; ed.heights_dirty = true;
+                    }
+                }
+            } else {
+                let (nw, nh) = image_drag_dims(ed, ctx, drag);
+                img_size_change = Some((drag.0, nw, nh));
+            }
+        }
     }
 
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); }
