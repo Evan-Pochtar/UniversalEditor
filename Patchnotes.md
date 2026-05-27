@@ -331,6 +331,7 @@
 
 #### Debugging
 
+- **TEXT EDITOR**: Can now scroll while highlighting
 - **IMAGE EDITOR**: No longer saves image edit data in cache when not actually saved
 - **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentences and paragraphs
 - **DOCUMENT EDITOR**: Now removes list elements when backspacing twice without going to the line above it
@@ -360,3 +361,5 @@
 - **DOCUMENT EDITOR**: Can no longer click behind the right click context menu while trying to click buttons
 - **DOCUMENT EDITOR**: All newlines within pasted text are now considered separate lines
 - **DOCUMENT EDITOR**: Single line highlights no longer get deselected when right clicking
+- **DOCUMENT EDITOR**: Can now scroll while highlighting
+- **DOCUMENT EDITOR**: Can now scroll while moving an image

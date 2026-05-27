@@ -41,8 +41,8 @@
 
 ### Text Editor Bugs
 
-- [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Undoing all changes does not remove "modified" file information status
+- [ ] Highlighting multiple markdown items (especially tables) shows both the plaintext and the markdown rendering at the same time
 
 ### Image Editor Bugs
 
@@ -56,7 +56,6 @@
 
 ### Document Editor Bugs
 
-- [ ] Cannot highlight and scroll at the same time
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] Sometimes cuts off last line of text below loaded image

@@ -186,12 +186,26 @@ impl TextEditor {
         match self.view_mode {
             ViewMode::Markdown => self.markdown_editable(ui, ctx),
             ViewMode::Plain => {
-                egui::ScrollArea::vertical().show(ui, |ui: &mut egui::Ui| {
+                let avail_rect = ui.available_rect_before_wrap();
+                if ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
+                    if let Some(p) = ctx.pointer_hover_pos() {
+                        let (e, s) = (50.0f32, 6.0f32);
+                        if p.y < avail_rect.min.y + e {
+                            self.scroll_offset = (self.scroll_offset - s * (1.0 - (p.y - avail_rect.min.y).max(0.0) / e)).max(0.0);
+                            ctx.request_repaint();
+                        } else if p.y > avail_rect.max.y - e {
+                            self.scroll_offset += s * (p.y - (avail_rect.max.y - e)).max(0.0) / e;
+                            ctx.request_repaint();
+                        }
+                    }
+                    let sw = ctx.input(|i| i.smooth_scroll_delta.y);
+                    if sw != 0.0 { self.scroll_offset = (self.scroll_offset - sw).max(0.0); ctx.request_repaint(); }
+                }
+                let sa_out = egui::ScrollArea::vertical().vertical_scroll_offset(self.scroll_offset).show(ui, |ui: &mut egui::Ui| {
                     let font_id: egui::FontId = egui::FontId::new(self.font_size, self.font_family.clone());
                     let text_edit: egui::TextEdit<'_> = egui::TextEdit::multiline(&mut self.content)
                         .font(font_id).lock_focus(true).frame(false);
                     let response: egui::Response = ui.add_sized(ui.available_size(), text_edit);
-
                     if let Some(new_pos) = self.pending_cursor_pos.take() {
                         if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
                             let ccursor: egui::text::CCursor = egui::text::CCursor::new(new_pos);
@@ -204,6 +218,7 @@ impl TextEditor {
                     }
                     if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
                 });
+                self.scroll_offset = sa_out.state.offset.y;
             }
         }
 
@@ -271,11 +286,26 @@ impl TextEditor {
 
     pub(super) fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         use egui::{pos2, vec2, Rect, Sense};
-
-        egui::ScrollArea::vertical().show(ui, |ui: &mut egui::Ui| {
+        let avail_rect = ui.available_rect_before_wrap();
+        if ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
+            if let Some(p) = ctx.pointer_hover_pos() {
+                let (e, s) = (50.0f32, 6.0f32);
+                if p.y < avail_rect.min.y + e {
+                    self.scroll_offset = (self.scroll_offset - s * (1.0 - (p.y - avail_rect.min.y).max(0.0) / e)).max(0.0);
+                    ctx.request_repaint();
+                } else if p.y > avail_rect.max.y - e {
+                    self.scroll_offset += s * (p.y - (avail_rect.max.y - e)).max(0.0) / e;
+                    ctx.request_repaint();
+                }
+            }
+            let sw = ctx.input(|i| i.smooth_scroll_delta.y);
+            if sw != 0.0 { self.scroll_offset = (self.scroll_offset - sw).max(0.0); ctx.request_repaint(); }
+        }
+        let sa_out = egui::ScrollArea::vertical().vertical_scroll_offset(self.scroll_offset).show(ui, |ui: &mut egui::Ui| {
             let font_size: f32 = self.font_size;
             let font_family: egui::FontFamily = self.font_family.clone();
             let cursor_pos: Option<usize> = self.last_cursor_range.map(|r| r.primary.index);
+            let has_selection: bool = self.last_cursor_range.map(|r| r.primary.index != r.secondary.index).unwrap_or(false);
             let is_dark_mode: bool = ui.visuals().dark_mode;
             let available_width: f32 = ui.available_width();
             let top_padding: f32 = 2.0_f32;
@@ -334,7 +364,7 @@ impl TextEditor {
                                     .filter(|l| !Self::is_separator_row(l))
                                     .map(|l| Self::parse_table_cells(l).len())
                                     .max().unwrap_or(1);
-                                let cursor_in = cursor_line_idx.map_or(false, |cl| cl >= start && cl <= end);
+                                let cursor_in = !has_selection && cursor_line_idx.map_or(false, |cl| cl >= start && cl <= end);
                                 table_groups.push((start, sep, end, col_count, cursor_in));
                             } else {
                                 for j in start..=end { table_line_flags[j] = false; }
@@ -638,6 +668,7 @@ impl TextEditor {
             }
             if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
         });
+        self.scroll_offset = sa_out.state.offset.y;
     }
 
     fn is_table_row(line: &str) -> bool {

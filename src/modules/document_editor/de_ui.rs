@@ -1050,8 +1050,15 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let focused = ed.focused_para;
     let find_hl: Option<(usize, usize, usize)> = if ed.find_cursor < ed.find_results.len() { Some(ed.find_results[ed.find_cursor]) } else { None };
     let cur_fmt = ed.cur_fmt.clone();
-    let mut scroll_area = egui::ScrollArea::vertical().id_salt("de_canvas_scroll").auto_shrink([false, false]);
-    if let Some(off) = scroll_target_y { scroll_area = scroll_area.vertical_scroll_offset(off.max(0.0)); }
+    let has_scroll_target = scroll_target_y.is_some();
+    if let Some(off) = scroll_target_y { ed.doc_scroll_y = off.max(0.0); }
+    let is_drag_active = ed.image_drag.is_some() || btn_down;
+    if is_drag_active {
+        let sw = ctx.input(|i| i.smooth_scroll_delta.y);
+        if sw != 0.0 { ed.doc_scroll_y = (ed.doc_scroll_y - sw).clamp(0.0, (total_scroll_h - ui.available_height()).max(0.0)); ctx.request_repaint(); }
+    }
+    let mut scroll_area = egui::ScrollArea::vertical().id_salt("de_canvas_scroll").auto_shrink([false, false]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible);
+    if is_drag_active || has_scroll_target { scroll_area = scroll_area.vertical_scroll_offset(ed.doc_scroll_y); }
     let mut table_cell_change: Option<(usize, usize, usize, String)> = None;
     let mut table_col_resize: Option<(usize, usize, f32)> = None;
     let tbl_struct_op = std::cell::Cell::new(None::<(u8, usize, usize, usize)>);
@@ -1060,7 +1067,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
     let mut img_size_change: Option<(usize, f32, f32)> = None;
     let drop_idx_cell: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
 
-    scroll_area.show_viewport(ui, |ui, vp| {
+    let scroll_out = scroll_area.show_viewport(ui, |ui, vp| {
         let page_x = ((avail_w - page_w) / 2.0).max(16.0);
         let (outer, _) = ui.allocate_exact_size(egui::vec2(avail_w, total_scroll_h), egui::Sense::hover());
         let painter = ui.painter_at(outer);
@@ -1883,6 +1890,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
         }
     }
 
+    if !is_drag_active { ed.doc_scroll_y = scroll_out.state.offset.y; }
     if let Some(f) = pending_focus_next { ed.focused_para = f.min(ed.paras.len().saturating_sub(1)); }
     if let Some(sel) = new_selection { ed.last_selection = Some(sel); }
     if let Some((pi, nw, nh)) = img_size_change { if let Some(ref mut img) = ed.paras[pi].image { img.display_w = nw; img.display_h = nh; } ed.heights_dirty = true; ed.dirty = true; }

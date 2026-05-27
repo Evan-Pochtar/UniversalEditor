@@ -56,6 +56,7 @@
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 - [x] Changing fonts sometimes causes code blocks to desync
 - [x] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
+- [x] Cannot highlight and scroll at the same time
 
 ### Image Editor Bugs
 
@@ -205,6 +206,7 @@
 - [x] All newlines should be considered separate lines within the multi-line document
 - [x] Can click behind the right click context menu for text and images
 - [x] Cursor icon doesn't update properly in the right click context menu for text and images
+- [x] Cannot highlight and scroll at the same time
 
 ### Other Bugs
 
