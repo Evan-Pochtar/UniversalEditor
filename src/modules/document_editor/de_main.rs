@@ -56,6 +56,9 @@ pub struct DocumentEditor {
     pub(super) ctx_sel: Option<(usize, usize, usize)>,
     pub(super) doc_scroll_y: f32,
     pub(super) ctx_link_show: bool,
+    pub(super) spell_errors: Vec<Vec<(usize, usize)>>,
+    pub(super) spell_version: u64,
+    pub(super) spell_dirty: bool,
 }
 
 impl DocumentEditor {
@@ -96,6 +99,7 @@ impl DocumentEditor {
             table_picker_hover: (0, 0), active_table: None, table_sel: None, table_multi_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, doc_scroll_y: 0.0, ctx_link_show: false,
+            spell_errors: Vec::new(), spell_version: 0, spell_dirty: true,
         }
     }
 
@@ -108,7 +112,7 @@ impl DocumentEditor {
             self.para_texts[i] = self.paras[i].text.clone();
             self.para_ids[i] = egui::Id::new(("de_para", i as u64));
         }
-        self.heights_dirty = true;
+        self.heights_dirty = true; self.spell_dirty = true;
     }
 
     pub(super) fn push_undo(&mut self) {

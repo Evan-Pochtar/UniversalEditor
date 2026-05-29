@@ -207,6 +207,7 @@
 - [x] Can click behind the right click context menu for text and images
 - [x] Cursor icon doesn't update properly in the right click context menu for text and images
 - [x] Cannot highlight and scroll at the same time
+- [x] Copy with formatting doesn't work with multi-line highlights
 
 ### Other Bugs
 

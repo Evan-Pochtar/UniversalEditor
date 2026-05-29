@@ -61,7 +61,7 @@
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] Copy with formatting doesn't work with multi-line highlights
+- [ ] Spell check should not run while currently typing a word
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -105,6 +105,7 @@
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
+- [ ] Saving image imported from document gives options to "Return to Document", "Save Image", or "Undo" instead of usual saving
 
 ### Json Editor
 
@@ -117,6 +118,9 @@
 ### Document Editor
 
 - [ ] Spell check
+  - [ ] User dictionary and document only dictionary for spell check
+  - [ ] Ignore words for spell check, for the user and the document as a whole
+  - [ ] Option to turn spell check off an on
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments

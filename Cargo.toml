@@ -1,6 +1,6 @@
 [package]
 name = "universal_editor"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 build = "build.rs"
 
@@ -34,3 +34,4 @@ tar = "0.4"
 flate2 = "1"
 bzip2 = "0.4"
 sevenz-rust = "0.6"
+ahash = "0.8"

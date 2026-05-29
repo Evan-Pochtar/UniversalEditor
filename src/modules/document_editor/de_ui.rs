@@ -19,6 +19,27 @@ fn extract_sel_spans(para: &DocParagraph, start: usize, end: usize) -> Vec<DocSp
     out
 }
 
+fn draw_squiggle(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    let y = rect.max.y + 1.0;
+    let x0 = rect.min.x;
+    let x1 = rect.max.x;
+    let w = (x1 - x0).max(0.0);
+    if w < 2.0 { return; }
+    let amp = 1.5_f32;
+    let period = 4.0_f32;
+    let steps = ((w / period) * 4.0).ceil() as usize + 1;
+    let stroke = egui::Stroke::new(1.0, color);
+    let mut prev: Option<egui::Pos2> = None;
+    for s in 0..=steps {
+        let t = x0 + (s as f32 / steps as f32) * w;
+        let phase = (t - x0) / period * std::f32::consts::TAU;
+        let ys = y + phase.sin() * amp;
+        let cur = egui::pos2(t, ys);
+        if let Some(p) = prev { painter.line_segment([p, cur], stroke); }
+        prev = Some(cur);
+    }
+}
+
 fn compute_drop_idx(ed: &DocumentEditor, pl: &ComputedPageLayout, omy: f32, cy: f32) -> usize {
     let n = ed.paras.len();
     let gy = |i: usize| -> f32 {
@@ -339,6 +360,22 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
         }
         CtxAction::Delete => do_delete_sel(ed, ctx),
         CtxAction::CopyWithFmt => {
+            if let Some((from, to)) = ed.norm_sel() {
+                if from.para != to.para || from.byte != to.byte {
+                    let text = ed.collect_sel_text(from, to);
+                    ctx.copy_text(text.clone());
+                    let mut combined_spans: Vec<DocSpan> = Vec::new();
+                    for pi in from.para..=to.para {
+                        if pi >= ed.paras.len() { break; }
+                        let start = if pi == from.para { from.byte } else { 0 };
+                        let end = if pi == to.para { to.byte } else { ed.paras[pi].text.len() };
+                        if pi > from.para { combined_spans.push(DocSpan { len: 1, fmt: SpanFmt::default() }); }
+                        combined_spans.extend(extract_sel_spans(&ed.paras[pi], start, end));
+                    }
+                    RICH_CLIP.with(|c| *c.borrow_mut() = Some((text, combined_spans)));
+                    return;
+                }
+            }
             let sel = ed.ctx_sel.filter(|(_, s, e)| s != e).or(ed.last_selection.filter(|(_, s, e)| s != e));
             if let Some((pi, sb, eb)) = sel {
                 if pi < ed.paras.len() {
@@ -544,11 +581,28 @@ fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option
     cm_btn(ui, "Crop Image", false);
 }
 
+fn run_spell_check(ed: &mut DocumentEditor) {
+    if !ed.spell_dirty { return; }
+    let n = ed.paras.len();
+    ed.spell_errors.resize(n, Vec::new());
+    for i in 0..n {
+        let p = &ed.paras[i];
+        if matches!(p.style, ParaStyle::Table | ParaStyle::Image | ParaStyle::HRule) {
+            ed.spell_errors[i] = Vec::new();
+        } else {
+            ed.spell_errors[i] = crate::spell::check_para(&p.text);
+        }
+    }
+    ed.spell_dirty = false;
+    ed.spell_version = ed.spell_version.wrapping_add(1);
+}
+
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     let is_dark = ui.visuals().dark_mode;
     let theme = if is_dark { ThemeMode::Dark } else { ThemeMode::Light };
     handle_keyboard(ed, ctx);
     ed.run_find();
+    run_spell_check(ed);
     render_toolbar(ed, ui, theme, is_dark);
     ui.separator();
     egui::SidePanel::left("de_outline_panel").resizable(true).default_width(200.0).min_width(140.0).max_width(320.0)
@@ -1611,6 +1665,24 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     galley_cache = Some(g.clone()); g
                 };
 
+                if let Some(errors) = ed.spell_errors.get(i) {
+                    if !errors.is_empty() && near_view {
+                        let galley = get_galley();
+                        let align_offset = match para.align {
+                            Align::Center => ((edit_w - galley.rect.width() - 8.0) / 2.0).max(0.0),
+                            Align::Right => (edit_w - galley.rect.width() - 8.0).max(0.0),
+                            _ => 0.0,
+                        };
+                        let squig_col = egui::Color32::from_rgb(220, 38, 38);
+                        for &(sb, se) in errors {
+                            for rect in multiline_highlight(&galley, &para.text, sb, se) {
+                                let tr = rect.translate(egui::vec2(edit_x + align_offset, text_y));
+                                draw_squiggle(&painter, tr, squig_col);
+                            }
+                        }
+                    }
+                }
+
                 if let Some((fi, fs, fe)) = find_hl {
                     if fi == i {
                         let galley = get_galley();
@@ -1820,7 +1892,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
 
                     if !changed { ed.undo_stack.pop_back(); }
-                    else { ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; }
+                    else { ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true; }
                 }
 
                 if let Some(state) = egui::TextEdit::load_state(ctx, id) {
@@ -2035,7 +2107,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 rebuild_spans(&mut ed.paras[i], new_text, &cur_fmt);
                 ed.para_texts[i] = ed.paras[i].text.clone();
             }
-            ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true;
+            ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true;
         }
     }
 }

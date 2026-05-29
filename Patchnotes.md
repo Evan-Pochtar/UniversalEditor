@@ -363,3 +363,13 @@
 - **DOCUMENT EDITOR**: Single line highlights no longer get deselected when right clicking
 - **DOCUMENT EDITOR**: Can now scroll while highlighting
 - **DOCUMENT EDITOR**: Can now scroll while moving an image
+
+## V0.1.1
+
+#### Features
+
+- **DOCUMENT EDITOR**: Added rudimentary spell check
+
+#### Debugging
+
+- **DOCUMENT EDITOR**: Copy with formatting now works with multi-line highlights
