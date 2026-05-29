@@ -308,3 +308,58 @@
 - **DOCUMENT EDITOR**: Now loads horizontal lines properly from docx files
 - **DOCUMENT EDITOR**: Now loads checklists properly from docx files
 - **DOCUMENT EDITOR**: Now properly reflects cursor position after clicking tab to indent
+
+## V0.1.0
+
+#### Features
+
+- **TEXT EDITOR**: Adding Highlight ("==") to markdown mode
+- **DOCUMENT EDITOR**: Added ability to create custom page sizes
+- **DOCUMENT EDITOR**: Added unsaved/saved indicator on the right of the toolbar
+- **DOCUMENT EDITOR**: Removed the "default font" and "default font size" fields, will later be moved to app settings on the main menu
+- **DOCUMENT EDITOR**: Added right click context menu on tables for cell coloring, border thickness, and border color
+- **DOCUMENT EDITOR**: Added shift + click on table cells to select multiple at once
+- **DOCUMENT EDITOR**: Added the ability to import, load, and save images
+- **DOCUMENT EDITOR**: Improved find/search bar (ctrl+f)
+- **DOCUMENT EDITOR**: Hovering checkboxes, tables, and images now properly show with the cursor when it's clickable
+- **DOCUMENT EDITOR**: Added Ctrl + Click on tables to select any of the cells within the table at once
+- **DOCUMENT EDITOR**: Added way to delete tables in the right click context menu
+- **DOCUMENT EDITOR**: Added right click context menus for text and images
+- **DOCUMENT EDITOR**: Remove link changed to "Link" within right click context menu
+- **DOCUMENT EDITOR**: Can now move images by dragging
+- **DOCUMENT EDITOR**: Added copy and paste with formatting to right click context menu
+
+#### Debugging
+
+- **TEXT EDITOR**: Can now scroll while highlighting
+- **IMAGE EDITOR**: No longer saves image edit data in cache when not actually saved
+- **DOCUMENT EDITOR**: Tabbing is now always the same size for both single line sentences and paragraphs
+- **DOCUMENT EDITOR**: Now removes list elements when backspacing twice without going to the line above it
+- **DOCUMENT EDITOR**: Bulleted lists, numbered lists, headers, titles, fonts, font sizes, highlights, links, and tables all now export correctly to docx
+- **DOCUMENT EDITOR**: Checklists now export correctly to docx
+- **DOCUMENT EDITOR**: Font size and line height now properly apply to all lines highlighted rather than just where the cursor is
+- **DOCUMENT EDITOR**: Font size and line height inputs now take priority focus over the document
+- **DOCUMENT EDITOR**: Multi-line highlights now properly disappear when clicking checkbox's or table cells
+- **DOCUMENT EDITOR**: Fixed not being able to change/save the font size/font type on empty spaces
+- **DOCUMENT EDITOR**: Text and formatting no longer "jitters" when removing new lines or changing zoom
+- **DOCUMENT EDITOR**: Zoom no longer changes size of text and formatting on the page
+- **DOCUMENT EDITOR**: Fixing spacing after lists and horizontal lines
+- **DOCUMENT EDITOR**: Images no longer cut off text above it
+- **DOCUMENT EDITOR**: Blue highlight and drag handles no longer disappear on large images
+- **DOCUMENT EDITOR**: Text no longer highlights while attempting to resize images
+- **DOCUMENT EDITOR**: Docx no longer randomly loads with different text formatting or horizontal lines
+- **DOCUMENT EDITOR**: Clicking on an image no longer creates random highlights
+- **DOCUMENT EDITOR**: Highlight now follows the cursor when using arrow keys to navigate within table cells
+- **DOCUMENT EDITOR**: Can now properly apply formatting to table cell text
+- **DOCUMENT EDITOR**: Much easier to select text within a text cell
+- **DOCUMENT EDITOR**: Formatting within tables now save properly between sessions
+- **DOCUMENT EDITOR**: Highlight and text color no longer deselect table cells before applying
+- **DOCUMENT EDITOR**: Multi-line highlight now disappears when selecting table cells
+- **DOCUMENT EDITOR**: Cursor icon updates properly in right click context menus
+- **DOCUMENT EDITOR**: Paste now works properly in right click context menus
+- **DOCUMENT EDITOR**: Size of highlight and text color options within right click context menu is now the same as the other buttons
+- **DOCUMENT EDITOR**: Can no longer click behind the right click context menu while trying to click buttons
+- **DOCUMENT EDITOR**: All newlines within pasted text are now considered separate lines
+- **DOCUMENT EDITOR**: Single line highlights no longer get deselected when right clicking
+- **DOCUMENT EDITOR**: Can now scroll while highlighting
+- **DOCUMENT EDITOR**: Can now scroll while moving an image

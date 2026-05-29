@@ -56,6 +56,7 @@
 - [x] Change in font size (E.g Bold & Headers) make code block background out of position
 - [x] Changing fonts sometimes causes code blocks to desync
 - [x] Last letter of text when highlighting appears white, while the rest of the text is black while in dark mode
+- [x] Cannot highlight and scroll at the same time
 
 ### Image Editor Bugs
 
@@ -171,6 +172,41 @@
 - [x] Clicking tab does not move the cursor at the start of paragraphs, only shows cursor moving after typing text afterwards
 - [x] Doesn't load horizontal lines properly (.docx)
 - [x] Doesn't load checklists properly (.docx)
+- [x] Tabbing isn't always the same size
+- [x] Fonts do not export correctly
+- [x] Font sizes export 1 lower than they are supposed to
+- [x] Highlights do not export correctly
+- [x] Links do not export correctly
+- [x] Bulleted and numbered lists do not export correctly
+- [x] Links do not export correctly
+- [x] Headers, title, subtitle, etc doesn't export correctly.
+- [x] Tables do not export correctly.
+- [x] Checklists do not export correctly
+- [x] Mass changing font size only changes font size of normal text, not empty spaces or headers
+- [x] Multi-line highlighting, then clicking a checkbox or a table cell does not deselect the highlight
+- [x] Deleting newlines sometimes causes a "jitter" and text flashing
+- [x] Zooming in and zooming out sometimes causes text to "jitter" or switch position
+- [x] Can't see image handles when image is too big for the document
+- [x] Image is slightly too high, cuts off letters from the line above
+- [x] While dragging and resizing images, sometimes highlights text in the background
+- [x] When clicking on an image, highlights everywhere between where the cursor was and the image
+- [x] When using arrow keys to navigate within a table, the highlight does not follow where the cursor is
+- [x] When using ctrl+f search, words do not highlight properly
+- [x] Ctrl+f replace all doesn't work
+- [x] Ctrl+f should automatically move focus to the search bar
+- [x] Cannot change formatting of text with multiple table cells selected
+- [x] Hard to select text within a table cell because it keeps selecting the cell itself
+- [x] Table formatting doesn't save
+- [x] Have to click on the side of highlight and text color options when trying to change formatting for table cell text
+- [x] Can't delete tables
+- [x] Highlight doesn't go away when clicking on table cell
+- [x] When Ctrl+clicking multiple table cells, clicking on the text deselects all currently selected cells
+- [x] Paste does not load in the right click context menu
+- [x] Cannot use right click context menu with single line highlights because it deselects the highlight before opening the context menu
+- [x] All newlines should be considered separate lines within the multi-line document
+- [x] Can click behind the right click context menu for text and images
+- [x] Cursor icon doesn't update properly in the right click context menu for text and images
+- [x] Cannot highlight and scroll at the same time
 
 ### Other Bugs
 
@@ -210,6 +246,7 @@
 - [x] Add way to convert file from txt to md and vice versa
 - [x] Ability to load tables in markdown mode
 - [x] Redo file information toolbar, move word count and character count to separate window to prevent constant recalculations
+- [x] Highlighting
 
 ### Image Editor
 
@@ -302,6 +339,16 @@
 - [x] Clean up toolbar
 - [x] Add measurements to page sizes in the page settings panel
 - [x] Tables
+- [x] Custom page sizes
+- [x] Be able to see saved/unsaved
+- [x] Further Table options (border color, border thickness, fill color)
+- [x] Images
+- [x] Hovering table cells/checkbox/images should change cursor to show that it is clickable
+- [x] Improve look of find/replace panel
+- [x] Images
+- [x] Text
+- [x] Copy with formatting
+- [x] Ability to move images by dragging
 
 ### CONVERTER: Img 2 Img
 

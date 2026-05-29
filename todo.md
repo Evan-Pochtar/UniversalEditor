@@ -41,8 +41,8 @@
 
 ### Text Editor Bugs
 
-- [ ] Cannot highlight and scroll at the same time? - Hard
 - [ ] Undoing all changes does not remove "modified" file information status
+- [ ] Highlighting multiple markdown items (especially tables) shows both the plaintext and the markdown rendering at the same time
 
 ### Image Editor Bugs
 
@@ -56,22 +56,19 @@
 
 ### Document Editor Bugs
 
-- [ ] Zooming in and zooming out sometimes causes text to "jitter" or switch position
-- [ ] Cannot highlight and scroll at the same time
-- [ ] Deleting newlines sometimes causes a "jitter" and text flashing
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
-- [ ] Tabbing isn't always the same size
-- [ ] External loading
+- [ ] Cursor gets stuck when making text larger than 1 page with font size changes
+- [ ] Sometimes cuts off last line of text below loaded image
+- [ ] When increasing font size in table cell text, it does not expand the size of the cell
+- [ ] Can't right click to open context menu while editing text in table cell
+- [ ] Copy with formatting doesn't work with multi-line highlights
+- [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
   - [ ] Superscript and subscript dont load (.odt)
   - [ ] Double indents sometimes disappear on load (.odt)
   - [ ] Empty spaces (newlines) are deleted on load (.odt)
-- [ ] Exporting
-  - [ ] Fonts do not export correctly
-  - [ ] Highlights do not export correctly
-  - [ ] Links do not export correctly
-  - [ ] Lists do not export correctly
+  - [ ] ODT Exporting has many major flaws
 
 ### Other Bugs
 
@@ -84,6 +81,10 @@
 - [ ] Latex?
 - [ ] Spell Check
 - [ ] Grammar Check
+- [ ] Images
+- [ ] Footnotes
+- [ ] Definition list
+- [ ] Emojis
 - [ ] Hovering over links with ctrl pressed should change the cursor to a pointer
 - [ ] Hovering over a checklist item should change cursor to a pointer
 
@@ -125,13 +126,12 @@
   - [ ] rtf
   - [ ] epub
   - [ ] html
-- [ ] Images
 - [ ] Ability to change look of headers/normal text
 - [ ] Printing
+- [ ] Page Breaks
 - [ ] Header and footers
-- [ ] Improve look of find/replace panel
-- [ ] Further Table options (border color, border thickness, fill color)
-- [ ] Custom page sizes
+- [ ] Cell colors in tables for dark mode
+- [ ] Increase max table size creation from the table button
 
 ### CONVERTERS
 

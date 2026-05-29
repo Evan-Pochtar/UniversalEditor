@@ -39,6 +39,7 @@ pub struct TextEditor {
     pub(super) rename_ext: Option<String>,
     pub(super) path_replace_tx: Option<std::sync::mpsc::SyncSender<(PathBuf, PathBuf)>>,
     pub(super) table_picker_hover: (usize, usize),
+    pub(super) scroll_offset: f32,
 }
 
 impl TextEditor {
@@ -65,6 +66,7 @@ impl TextEditor {
             rename_ext: None,
             path_replace_tx: None,
             table_picker_hover: (0, 0),
+            scroll_offset: 0.0,
         }
     }
 
@@ -98,6 +100,7 @@ impl TextEditor {
             rename_ext: None,
             path_replace_tx: None,
             table_picker_hover: (0, 0),
+            scroll_offset: 0.0,
         }
     }
 

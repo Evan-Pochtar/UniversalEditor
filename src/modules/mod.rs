@@ -45,4 +45,5 @@ pub trait EditorModule {
     fn get_menu_contributions(&self) -> MenuContribution { MenuContribution::default() }
     fn handle_menu_action(&mut self, action: MenuAction) -> bool { let _ = action; false }
     fn take_converter_path(&mut self) -> Option<std::path::PathBuf> { None }
+    fn take_open_in_image_editor(&mut self) -> Option<Vec<u8>> { None }
 }

@@ -14,6 +14,7 @@ impl TextEditor {
                     if toolbar_action_btn(ui, egui::RichText::new("U").underline().size(12.0), theme).on_hover_text("Underline (Ctrl+U)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_underline(); }
                     if toolbar_action_btn(ui, egui::RichText::new("S").strikethrough().size(12.0), theme).on_hover_text("Strikethrough (Ctrl+Shift+S)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_strikethrough(); }
                     if toolbar_action_btn(ui, egui::RichText::new("C").monospace().size(12.0), theme).on_hover_text("Code (Ctrl+E)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_code(); }
+                    if toolbar_action_btn(ui, egui::RichText::new("H").size(11.0), theme).on_hover_text("Highlight (Ctrl+Shift+H)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_highlight(); }
                     ui.separator();
                     if toolbar_action_btn(ui, "H1", theme).on_hover_text("Header 1 (Ctrl+1)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(1); }
                     if toolbar_action_btn(ui, "H2", theme).on_hover_text("Header 2 (Ctrl+2)").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.format_heading(2); }
@@ -113,25 +114,16 @@ impl TextEditor {
                         ui.close();
                     }
                     if ui.button("Rename File").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        let current_ext = self.file_path.as_ref()
-                            .and_then(|p| p.extension())
-                            .and_then(|e| e.to_str())
-                            .map(|e| e.to_lowercase())
-                            .unwrap_or_else(|| "txt".to_string());
-                        self.rename_buffer = self.file_path.as_ref()
-                            .and_then(|p| p.file_stem())
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("untitled")
-                            .to_string();
+                        let current_ext = self.file_path.as_ref().and_then(|p| p.extension()).and_then(|e| e.to_str())
+                            .map(|e| e.to_lowercase()).unwrap_or_else(|| "txt".to_string());
+                        self.rename_buffer = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str())
+                            .unwrap_or("untitled").to_string();
                         self.rename_ext = Some(if current_ext == "md" { "md".to_string() } else { "txt".to_string() });
                         self.rename_modal_open = true;
                         ui.close();
                     }
-                    let convert_label = match self.file_path.as_ref()
-                        .and_then(|p| p.extension())
-                        .and_then(|e| e.to_str())
-                        .map(|e| e.to_lowercase())
-                        .as_deref()
+                    let convert_label = match self.file_path.as_ref().and_then(|p| p.extension()).and_then(|e| e.to_str())
+                        .map(|e| e.to_lowercase()).as_deref()
                     {
                         Some("md") | Some("markdown") => Some("Convert to .txt"),
                         Some("txt") => Some("Convert to .md"),
@@ -194,12 +186,26 @@ impl TextEditor {
         match self.view_mode {
             ViewMode::Markdown => self.markdown_editable(ui, ctx),
             ViewMode::Plain => {
-                egui::ScrollArea::vertical().show(ui, |ui: &mut egui::Ui| {
+                let avail_rect = ui.available_rect_before_wrap();
+                if ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
+                    if let Some(p) = ctx.pointer_hover_pos() {
+                        let (e, s) = (50.0f32, 6.0f32);
+                        if p.y < avail_rect.min.y + e {
+                            self.scroll_offset = (self.scroll_offset - s * (1.0 - (p.y - avail_rect.min.y).max(0.0) / e)).max(0.0);
+                            ctx.request_repaint();
+                        } else if p.y > avail_rect.max.y - e {
+                            self.scroll_offset += s * (p.y - (avail_rect.max.y - e)).max(0.0) / e;
+                            ctx.request_repaint();
+                        }
+                    }
+                    let sw = ctx.input(|i| i.smooth_scroll_delta.y);
+                    if sw != 0.0 { self.scroll_offset = (self.scroll_offset - sw).max(0.0); ctx.request_repaint(); }
+                }
+                let sa_out = egui::ScrollArea::vertical().vertical_scroll_offset(self.scroll_offset).show(ui, |ui: &mut egui::Ui| {
                     let font_id: egui::FontId = egui::FontId::new(self.font_size, self.font_family.clone());
                     let text_edit: egui::TextEdit<'_> = egui::TextEdit::multiline(&mut self.content)
                         .font(font_id).lock_focus(true).frame(false);
                     let response: egui::Response = ui.add_sized(ui.available_size(), text_edit);
-
                     if let Some(new_pos) = self.pending_cursor_pos.take() {
                         if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
                             let ccursor: egui::text::CCursor = egui::text::CCursor::new(new_pos);
@@ -212,6 +218,7 @@ impl TextEditor {
                     }
                     if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
                 });
+                self.scroll_offset = sa_out.state.offset.y;
             }
         }
 
@@ -223,6 +230,7 @@ impl TextEditor {
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::I) { self.format_italic(); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::U) { self.format_underline(); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::E) { self.format_code(); }
+            if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::H) { self.format_highlight(); }
             if i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::A) { let _ = self.save_as(); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num1) { self.format_heading(1); }
             if i.consume_key(egui::Modifiers::CTRL, egui::Key::Num2) { self.format_heading(2); }
@@ -278,11 +286,26 @@ impl TextEditor {
 
     pub(super) fn markdown_editable(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         use egui::{pos2, vec2, Rect, Sense};
-
-        egui::ScrollArea::vertical().show(ui, |ui: &mut egui::Ui| {
+        let avail_rect = ui.available_rect_before_wrap();
+        if ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary)) {
+            if let Some(p) = ctx.pointer_hover_pos() {
+                let (e, s) = (50.0f32, 6.0f32);
+                if p.y < avail_rect.min.y + e {
+                    self.scroll_offset = (self.scroll_offset - s * (1.0 - (p.y - avail_rect.min.y).max(0.0) / e)).max(0.0);
+                    ctx.request_repaint();
+                } else if p.y > avail_rect.max.y - e {
+                    self.scroll_offset += s * (p.y - (avail_rect.max.y - e)).max(0.0) / e;
+                    ctx.request_repaint();
+                }
+            }
+            let sw = ctx.input(|i| i.smooth_scroll_delta.y);
+            if sw != 0.0 { self.scroll_offset = (self.scroll_offset - sw).max(0.0); ctx.request_repaint(); }
+        }
+        let sa_out = egui::ScrollArea::vertical().vertical_scroll_offset(self.scroll_offset).show(ui, |ui: &mut egui::Ui| {
             let font_size: f32 = self.font_size;
             let font_family: egui::FontFamily = self.font_family.clone();
             let cursor_pos: Option<usize> = self.last_cursor_range.map(|r| r.primary.index);
+            let has_selection: bool = self.last_cursor_range.map(|r| r.primary.index != r.secondary.index).unwrap_or(false);
             let is_dark_mode: bool = ui.visuals().dark_mode;
             let available_width: f32 = ui.available_width();
             let top_padding: f32 = 2.0_f32;
@@ -341,7 +364,7 @@ impl TextEditor {
                                     .filter(|l| !Self::is_separator_row(l))
                                     .map(|l| Self::parse_table_cells(l).len())
                                     .max().unwrap_or(1);
-                                let cursor_in = cursor_line_idx.map_or(false, |cl| cl >= start && cl <= end);
+                                let cursor_in = !has_selection && cursor_line_idx.map_or(false, |cl| cl >= start && cl <= end);
                                 table_groups.push((start, sep, end, col_count, cursor_in));
                             } else {
                                 for j in start..=end { table_line_flags[j] = false; }
@@ -645,6 +668,7 @@ impl TextEditor {
             }
             if response.changed() { self.dirty = true; self.content_version = self.content_version.wrapping_add(1); }
         });
+        self.scroll_offset = sa_out.state.offset.y;
     }
 
     fn is_table_row(line: &str) -> bool {
@@ -808,41 +832,17 @@ impl TextEditor {
         Self::parse_inline_formatting_static(line, job, font_size, font_family, cursor_pos, line_start_offset, is_dark_mode);
     }
 
-    fn append_checkbox_marker(
-        job: &mut egui::text::LayoutJob,
-        checked: bool,
-        font_size: f32,
-        font_family: &egui::FontFamily,
-        is_dark_mode: bool,
-    ) {
+    fn append_checkbox_marker(job: &mut egui::text::LayoutJob, checked: bool, font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) {
         let fmt: egui::TextFormat = Self::checkbox_format_static(checked, font_size, font_family, is_dark_mode);
         let marker: &str = if checked { "[x] " } else { "[ ] " };
         job.append(marker, 0.0, fmt);
     }
 
-    pub(super) fn parse_inline_formatting_static(
-        text: &str,
-        job: &mut egui::text::LayoutJob,
-        font_size: f32,
-        font_family: &egui::FontFamily,
-        cursor_pos: Option<usize>,
-        text_start_offset: usize,
-        is_dark_mode: bool,
-    ) {
+    pub(super) fn parse_inline_formatting_static(text: &str, job: &mut egui::text::LayoutJob, font_size: f32, font_family: &egui::FontFamily, cursor_pos: Option<usize>, text_start_offset: usize, is_dark_mode: bool) {
         Self::parse_inline_with_context(text, job, font_size, font_family, cursor_pos, text_start_offset, is_dark_mode, false, false);
     }
 
-    fn parse_inline_with_context(
-        text: &str,
-        job: &mut egui::text::LayoutJob,
-        font_size: f32,
-        font_family: &egui::FontFamily,
-        cursor_pos: Option<usize>,
-        text_start_offset: usize,
-        is_dark_mode: bool,
-        is_bold: bool,
-        is_italic: bool,
-    ) {
+    fn parse_inline_with_context(text: &str, job: &mut egui::text::LayoutJob, font_size: f32, font_family: &egui::FontFamily, cursor_pos: Option<usize>, text_start_offset: usize, is_dark_mode: bool, is_bold: bool, is_italic: bool) {
         let chars: Vec<char> = text.chars().collect();
         let mut i: usize = 0;
         let mut current_text: String = String::new();
@@ -887,6 +887,25 @@ impl TextEditor {
                             let content: String = chars[i + 2..end].iter().collect();
                             job.append(&content, 0.0, Self::strikethrough_format_static(font_size, font_family, is_dark_mode));
                             job.append("~~", 0.0, Self::invisible_format_static());
+                        }
+                        i = end_pos; continue;
+                    }
+                }
+            }
+            
+            if i + 1 < chars.len() && chars[i] == '=' && chars[i + 1] == '=' {
+                if let Some(end) = Self::find_closing_marker(&chars, i + 2, "==") {
+                    if end > i + 2 {
+                        let end_pos = end + 2;
+                        flush(&mut current_text, job);
+                        if cursor_in(current_pos, end_pos) {
+                            let r: String = chars[i..end_pos].iter().collect();
+                            job.append(&r, 0.0, Self::markdown_syntax_format_static(font_size, font_family));
+                        } else {
+                            job.append("==", 0.0, Self::invisible_format_static());
+                            let content: String = chars[i + 2..end].iter().collect();
+                            job.append(&content, 0.0, Self::highlight_format_static(font_size, font_family, is_dark_mode));
+                            job.append("==", 0.0, Self::invisible_format_static());
                         }
                         i = end_pos; continue;
                     }
@@ -1215,6 +1234,15 @@ impl TextEditor {
             color,
             ..Default::default()
         }
+    }
+
+    pub(super) fn highlight_format_static(font_size: f32, font_family: &egui::FontFamily, is_dark_mode: bool) -> egui::TextFormat {
+        let (bg, color) = if is_dark_mode {
+            (egui::Color32::from_rgb(91, 70, 8), ColorPalette::AMBER_50)
+        } else {
+            (ColorPalette::AMBER_200, egui::Color32::from_rgb(60, 45, 5))
+        };
+        egui::TextFormat { font_id: egui::FontId::new(font_size, font_family.clone()), background: bg, color, ..Default::default() }
     }
 
     pub(super) fn link_format_static(font_size: f32, font_family: &egui::FontFamily) -> egui::TextFormat {

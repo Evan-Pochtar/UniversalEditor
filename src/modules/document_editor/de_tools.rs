@@ -2,6 +2,12 @@ use eframe::egui;
 use std::{io::{Read, Write}, path::PathBuf};
 use crate::style::ColorPalette;
 
+const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="webp" ContentType="image/webp"/><Default Extension="bmp" ContentType="image/bmp"/><Default Extension="gif" ContentType="image/gif"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
+const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
+pub const DEFAULT_BASE_SIZE: u32 = 11;
+pub const DEFAULT_BASE_FONT: FontChoice = FontChoice::Ubuntu;
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontChoice { #[default] Ubuntu, Roboto, GoogleSans, OpenSans }
 impl FontChoice {
@@ -24,7 +30,7 @@ impl FontChoice {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ParaStyle {
     #[default] Normal, H1, H2, H3, H4, H5, H6,
-    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule, Table,
+    Title, Subtitle, BlockQuote, Code, ListBullet, ListOrdered, ListCheck, HRule, Table, Image,
 }
 impl ParaStyle {
     pub fn label(self) -> &'static str {
@@ -34,7 +40,7 @@ impl ParaStyle {
             Self::H6 => "Heading 6", Self::Title => "Title", Self::Subtitle => "Subtitle",
             Self::BlockQuote => "Block Quote", Self::Code => "Code Block",
             Self::ListBullet => "Bullet List", Self::ListOrdered => "Numbered List", Self::ListCheck => "Checklist",
-            Self::HRule => "Horizontal Rule", Self::Table => "Table",
+            Self::HRule => "Horizontal Rule", Self::Table => "Table", Self::Image => "Image",
         }
     }
     pub fn all() -> &'static [ParaStyle] {
@@ -42,26 +48,17 @@ impl ParaStyle {
           Self::Title, Self::Subtitle, Self::BlockQuote, Self::Code, Self::ListBullet, Self::ListOrdered, Self::ListCheck]
     }
     pub fn is_heading(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title|Self::Subtitle) }
-    pub fn size_scale(self) -> f32 {
-        match self {
-            Self::Title => 26.0 / 11.0,
-            Self::H1 => 20.0 / 11.0,
-            Self::H2 => 16.0 / 11.0,
-            Self::H3 => 14.0 / 11.0,
-            Self::H4 => 13.0 / 11.0,
-            Self::H5 => 12.0 / 11.0,
-            Self::H6 => 1.0,
-            Self::Subtitle => 15.0 / 11.0,
-            Self::Code => 1.0,
-            _ => 1.0,
-        }
-    }
     pub fn is_bold(self) -> bool { matches!(self, Self::H1|Self::H2|Self::H3|Self::H4|Self::H5|Self::H6|Self::Title) }
     pub fn is_italic(self) -> bool { matches!(self, Self::Subtitle|Self::BlockQuote) }
-    pub fn default_font_size_pt(self, base_size: u32) -> u32 { (base_size as f32 * self.size_scale()).round() as u32 }
-    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title|Self::HRule => 8.0, _ => 0.0 } }
-    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 | Self::HRule => 8.0, Self::Normal | Self::Table => 0.0, _ => 6.0, } }
+    pub fn space_before(self) -> f32 { match self { Self::H1|Self::H2 => 16.0, Self::H3|Self::H4 => 12.0, Self::H5|Self::H6|Self::Title => 8.0, _ => 0.0 } }
+    pub fn space_after(self) -> f32 { match self { Self::H1 | Self::H2 => 8.0, Self::H3 | Self::H4 => 8.0, Self::Normal | Self::Table | Self::Image | Self::ListBullet | Self::ListOrdered | Self::ListCheck | Self::HRule => 0.0, _ => 6.0, } }
     pub fn default_indent(self) -> f32 { match self { Self::ListBullet|Self::ListOrdered|Self::ListCheck => 36.0, Self::BlockQuote => 36.0, _ => 0.0 } }
+    pub fn default_font_size_pt(self) -> u32 {
+        match self {
+            Self::Title => 26, Self::H1 => 20, Self::H2 => 16, Self::H3 => 14,
+            Self::H4 => 13, Self::H5 => 12, Self::Subtitle => 15, _ => DEFAULT_BASE_SIZE,
+        }
+    }
     pub fn outline_depth(self) -> Option<u8> {
         match self { Self::Title|Self::Subtitle => Some(0), Self::H1 => Some(1), Self::H2 => Some(2), Self::H3 => Some(3), Self::H4 => Some(4), Self::H5 => Some(5), Self::H6 => Some(6), _ => None }
     }
@@ -70,7 +67,7 @@ impl ParaStyle {
             Self::H4 => "Heading4", Self::H5 => "Heading5", Self::H6 => "Heading6",
             Self::Title => "Title", Self::Subtitle => "Subtitle", Self::BlockQuote => "Quote",
             Self::Code => "CodeBlock", Self::ListBullet => "ListBullet", Self::ListOrdered => "ListNumber", Self::ListCheck => "ListCheck",
-            Self::HRule => "HRule", Self::Table => "Table", }
+            Self::HRule => "HRule", Self::Table => "Table", Self::Image => "Image" }
     }
     pub fn from_docx_id(s: &str) -> Self {
         match s {
@@ -109,21 +106,24 @@ pub struct SpanFmt {
 pub struct DocSpan { pub len: usize, pub fmt: SpanFmt }
 
 #[derive(Debug, Clone, Default)]
-pub struct TableCell { pub text: String, pub spans: Vec<DocSpan> }
+pub struct TableCell { pub text: String, pub spans: Vec<DocSpan>, pub bg_color: Option<[u8; 3]> }
 #[derive(Debug, Clone)]
-pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32> }
+pub struct TableData { pub rows: Vec<Vec<TableCell>>, pub col_widths: Vec<f32>, pub border_color: [u8; 3], pub border_width: f32 }
+
+#[derive(Debug, Clone, Default)]
+pub struct DocImage { pub data: Vec<u8>, pub display_w: f32, pub display_h: f32, pub name: String, pub uid: u64, }
 
 #[derive(Debug, Clone)]
 pub struct DocParagraph {
     pub text: String, pub spans: Vec<DocSpan>, pub style: ParaStyle, pub align: Align,
     pub indent_left: f32, pub indent_first: f32, pub space_before: f32, pub space_after: f32,
-    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool, pub table: Option<Box<TableData>>,
+    pub line_height: f32, pub list_num: Option<u32>, pub checked: bool, pub is_split: bool, pub table: Option<Box<TableData>>, pub image: Option<DocImage>,
 }
 impl DocParagraph {
     pub fn new() -> Self {
         Self { text: String::new(), spans: vec![DocSpan { len: 0, fmt: SpanFmt::default() }],
             style: ParaStyle::Normal, align: Align::Left, indent_left: 0.0, indent_first: 0.0,
-            space_before: 0.0, space_after: 0.0, line_height: 1.15, list_num: None, checked: false, is_split: false, table: None, }
+            space_before: 0.0, space_after: 0.0, line_height: 1.15, list_num: None, checked: false, is_split: false, table: None, image: None, }
     }
     pub fn with_style(s: ParaStyle) -> Self {
         let mut p = Self::new();
@@ -140,12 +140,10 @@ impl Default for PageLayout {
 }
 impl PageLayout {
     pub const PTS_PER_INCH: f32 = 72.0;
+    pub const CUSTOM: usize = 9;
     pub fn content_width(&self) -> f32 { self.width - self.margin_left - self.margin_right }
     pub fn content_height(&self) -> f32 { self.height - self.margin_top - self.margin_bot }
-    fn inch(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Self {
-        let p = Self::PTS_PER_INCH;
-        Self { width: w * p, height: h * p, margin_top: mt * p, margin_bot: mb * p, margin_left: ml * p, margin_right: mr * p }
-    }
+    fn inch(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Self { let p = Self::PTS_PER_INCH; Self { width: w * p, height: h * p, margin_top: mt * p, margin_bot: mb * p, margin_left: ml * p, margin_right: mr * p } }
     pub fn letter() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.0, 1.0) }
     pub fn letter_word() -> Self { Self::inch(8.5, 11.0, 1.0, 1.0, 1.25, 1.25) }
     pub fn a4() -> Self { Self::inch(8.2677, 11.6929, 1.0, 1.0, 1.0, 1.0) }
@@ -155,32 +153,19 @@ impl PageLayout {
     pub fn executive() -> Self { Self::inch(7.25, 10.5, 1.0, 1.0, 1.0, 1.0) }
     pub fn tabloid() -> Self { Self::inch(11.0, 17.0, 1.0, 1.0, 1.0, 1.0) }
     pub fn b5() -> Self { Self::inch(6.9291, 9.8425, 1.0, 1.0, 1.0, 1.0) }
-    pub fn presets() -> &'static [(&'static str, &'static str)] {
-        &[
-            ("Letter", "8.5 x 11 in  — Google Docs default"),
-            ("Letter (Word)", "8.5 x 11 in  — Word default (1.25\" sides)"),
-            ("A4", "210 x 297 mm  — International standard"),
-            ("Legal", "8.5 x 14 in  — US legal"),
-            ("A3", "297 x 420 mm"),
-            ("A5", "148 x 210 mm"),
-            ("Executive", "7.25 x 10.5 in"),
-            ("Tabloid", "11 x 17 in"),
-            ("B5", "176 x 250 mm"),
-        ]
+    pub fn presets() -> &'static [(&'static str, &'static str)] { &[("Letter", "8.5 x 11 in  — Google Docs default"), ("Letter (Word)", "8.5 x 11 in  — Word default (1.25\" sides)"), ("A4", "210 x 297 mm  — International standard"), ("Legal", "8.5 x 14 in  — US legal"), ("A3", "297 x 420 mm"), ("A5", "148 x 210 mm"), ("Executive", "7.25 x 10.5 in"), ("Tabloid", "11 x 17 in"), ("B5", "176 x 250 mm"), ("Custom", "Enter your own page size")] }
+    pub fn from_preset(i: usize) -> Self { match i { 0 => Self::letter(), 1 => Self::letter_word(), 2 => Self::a4(), 3 => Self::legal(), 4 => Self::a3(), 5 => Self::a5(), 6 => Self::executive(), 7 => Self::tabloid(), 8 => Self::b5(), _ => Self::default() } }
+    pub fn custom_in(w: f32, h: f32, mt: f32, mb: f32, ml: f32, mr: f32) -> Result<Self, &'static str> {
+        if [w, h, mt, mb, ml, mr].iter().any(|v| !v.is_finite()) { return Err("Values must be numbers."); }
+        if w <= 0.0 || h <= 0.0 { return Err("Page size must be greater than zero."); }
+        if w > 200.0 || h > 200.0 { return Err("Page size is too large."); }
+        if [mt, mb, ml, mr].iter().any(|v| *v < 0.0) { return Err("Margins cannot be negative."); }
+        if ml + mr >= w || mt + mb >= h { return Err("Margins must fit inside the page."); }
+        Ok(Self::inch(w, h, mt, mb, ml, mr))
     }
-    pub fn from_preset(i: usize) -> Self {
-        match i {
-            0 => Self::letter(),
-            1 => Self::letter_word(),
-            2 => Self::a4(),
-            3 => Self::legal(),
-            4 => Self::a3(),
-            5 => Self::a5(),
-            6 => Self::executive(),
-            7 => Self::tabloid(),
-            8 => Self::b5(),
-            _ => Self::letter(),
-        }
+    pub fn preset_idx(&self) -> usize {
+        let p = Self::PTS_PER_INCH; let e = |a: f32, b: f32| (a - b).abs() < 0.05;
+        [(8.5, 11.0, 1.0, 1.0, 1.0, 1.0), (8.5, 11.0, 1.0, 1.0, 1.25, 1.25), (8.2677, 11.6929, 1.0, 1.0, 1.0, 1.0), (8.5, 14.0, 1.0, 1.0, 1.0, 1.0), (11.6929, 16.5354, 1.0, 1.0, 1.0, 1.0), (5.8268, 8.2677, 1.0, 1.0, 1.0, 1.0), (7.25, 10.5, 1.0, 1.0, 1.0, 1.0), (11.0, 17.0, 1.0, 1.0, 1.0, 1.0), (6.9291, 9.8425, 1.0, 1.0, 1.0, 1.0)].iter().position(|&(w, h, mt, mb, ml, mr)| e(self.width / p, w) && e(self.height / p, h) && e(self.margin_top / p, mt) && e(self.margin_bot / p, mb) && e(self.margin_left / p, ml) && e(self.margin_right / p, mr)).unwrap_or(Self::CUSTOM)
     }
 }
 
@@ -188,95 +173,118 @@ pub fn highlight_color32(rgb: [u8; 3]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], (0.40 * 255.0_f32).round() as u8)
 }
 
+fn ensure_non_empty_spans(spans: &mut Vec<DocSpan>) { if spans.is_empty() { spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }}
+fn append_span(spans: &mut Vec<DocSpan>, span: DocSpan) {
+    if span.len == 0 { return; }
+    if let Some(last) = spans.last_mut() {
+        if last.fmt == span.fmt { last.len += span.len; return; }
+    }
+    spans.push(span);
+}
+
 pub fn ensure_boundary(para: &mut DocParagraph, byte: usize) {
     if byte == 0 || byte >= para.text.len() { return; }
-    let mut pos = 0;
-    for i in 0..para.spans.len() {
-        pos += para.spans[i].len;
-        if pos == byte { return; }
-        if pos > byte {
-            let over = pos - byte; para.spans[i].len -= over;
-            let rhs = DocSpan { len: over, fmt: para.spans[i].fmt.clone() };
-            para.spans.insert(i + 1, rhs); return;
+    let mut consumed = 0usize;
+    for index in 0..para.spans.len() {
+        let span_len = para.spans[index].len;
+        let next = consumed + span_len;
+        if next == byte { return; }
+        if next > byte {
+            let right_len = next - byte;
+            para.spans[index].len -= right_len;
+            let right = DocSpan { len: right_len, fmt: para.spans[index].fmt.clone() };
+            para.spans.insert(index + 1, right);
+            return;
         }
+        consumed = next;
     }
 }
 
 pub fn merge_adjacent(para: &mut DocParagraph) {
-    let mut i = 0;
-    while i + 1 < para.spans.len() {
-        if para.spans[i].fmt == para.spans[i+1].fmt { para.spans[i].len += para.spans[i+1].len; para.spans.remove(i+1); }
-        else { i += 1; }
+    let mut merged: Vec<DocSpan> = Vec::with_capacity(para.spans.len());
+    for span in para.spans.drain(..) {
+        append_span(&mut merged, span);
     }
-    if para.spans.is_empty() { para.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+    ensure_non_empty_spans(&mut merged);
+    para.spans = merged;
 }
 
 pub fn apply_fmt_range(para: &mut DocParagraph, start: usize, end: usize, op: impl Fn(&mut SpanFmt)) {
     if start >= end { return; }
     ensure_boundary(para, start); ensure_boundary(para, end);
-    let mut p = 0;
+    let mut pos = 0usize;
     for span in &mut para.spans {
-        let e = p + span.len;
-        if p >= end { break; }
-        if e > start && p >= start { op(&mut span.fmt); }
-        p = e;
+        let span_end = pos + span.len;
+        if pos >= end { break; }
+        if span_end > start && pos < end { op(&mut span.fmt); }
+        pos = span_end;
     }
     merge_adjacent(para);
 }
 
 pub fn all_set_range(para: &DocParagraph, start: usize, end: usize, get: impl Fn(&SpanFmt) -> bool) -> bool {
-    let mut p = 0; let mut any = false; let mut all = true;
-    for s in &para.spans {
-        let e = p + s.len;
-        if p < end && e > start { any = true; if !get(&s.fmt) { all = false; break; } }
-        p = e;
+    let mut pos = 0usize; let mut any = false;
+    for span in &para.spans {
+        let span_end = pos + span.len;
+        let overlaps = pos < end && span_end > start;
+        if overlaps {
+            any = true;
+            if !get(&span.fmt) { return false; }
+        }
+        pos = span_end;
     }
-    any && all
-}
-
-pub fn toggle_fmt(para: &mut DocParagraph, start: usize, end: usize, get: impl Fn(&SpanFmt) -> bool, set: impl Fn(&mut SpanFmt, bool)) {
-    let v = !all_set_range(para, start, end, &get);
-    apply_fmt_range(para, start, end, |fmt| set(fmt, v));
+    any
 }
 
 pub fn char_to_byte(text: &str, ci: usize) -> usize { text.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(text.len()) }
-
 pub fn merge_paragraphs(paras: &mut Vec<DocParagraph>, idx: usize) {
     if idx + 1 >= paras.len() { return; }
     let next = paras.remove(idx + 1);
-    if paras[idx].spans.last().map(|s| s.len == 0).unwrap_or(false) { paras[idx].spans.pop(); }
-    paras[idx].text.push_str(&next.text);
-    for s in next.spans {
-        if s.len == 0 { continue; }
-        if paras[idx].spans.last().map(|l| l.fmt == s.fmt).unwrap_or(false) { paras[idx].spans.last_mut().unwrap().len += s.len; }
-        else { paras[idx].spans.push(s); }
+    let next_has_text = next.spans.iter().any(|s| s.len > 0);
+    if next_has_text {
+        if paras[idx].spans.last().map(|span| span.len == 0).unwrap_or(false) {  
+            paras[idx].spans.pop(); 
+        }
     }
-    if paras[idx].spans.is_empty() { paras[idx].spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
+    paras[idx].text.push_str(&next.text);
+    for span in next.spans { append_span(&mut paras[idx].spans, span); }
+    ensure_non_empty_spans(&mut paras[idx].spans);
 }
 
 fn is_checkbox_marker(text: &str) -> Option<bool> {
-    let mut decoded = String::from(text);
+    const UNCHECKED_MARKERS: &[char] = &['☐', '□', '\u{F0A8}', '\u{E000}', '\u{F0B1}'];
+    const CHECKED_MARKERS: &[char] = &['☑', '☒', '\u{F0FE}', '✓', '✔', '\u{E001}'];
+    let mut decoded = text.to_owned();
     if text.len() == 4 {
-        if let Ok(c) = u32::from_str_radix(text, 16) {
-            if let Some(ch) = std::char::from_u32(c) {
+        if let Ok(code_point) = u32::from_str_radix(text, 16) {
+            if let Some(ch) = std::char::from_u32(code_point) {
                 decoded.push(ch);
             }
         }
     }
-    if decoded.contains('☐') || decoded.contains('□') || decoded.contains('\u{F0A8}') || decoded.contains('\u{E000}') || decoded.contains('\u{F0B1}') { Some(false) }
-    else if decoded.contains('☑') || decoded.contains('☒') || decoded.contains('\u{F0FE}') || decoded.contains('✓') || decoded.contains('✔') || decoded.contains('\u{E001}') { Some(true) }
-    else { None }
+    if decoded.chars().any(|ch| UNCHECKED_MARKERS.contains(&ch)) {
+        Some(false)
+    } else if decoded.chars().any(|ch| CHECKED_MARKERS.contains(&ch)) {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 pub fn para_fmt_at(para: &DocParagraph, byte: usize) -> SpanFmt {
-    let mut p = 0;
-    for s in &para.spans {
-        let e = p + s.len;
-        if byte >= p && byte < e { return s.fmt.clone(); }
-        if byte == 0 && e == 0 { return s.fmt.clone(); }
-        p = e;
+    let mut pos = 0usize;
+    for span in &para.spans {
+        let span_end = pos + span.len;
+        if byte >= pos && byte < span_end {
+            return span.fmt.clone();
+        }
+        if byte == 0 && span_end == 0 {
+            return span.fmt.clone();
+        }
+        pos = span_end;
     }
-    let mut fmt = para.spans.last().map(|s| s.fmt.clone()).unwrap_or_default();
+
+    let mut fmt = para.spans.last().map(|span| span.fmt.clone()).unwrap_or_default();
     fmt.link = None;
     fmt
 }
@@ -323,154 +331,127 @@ pub fn rebuild_spans(para: &mut DocParagraph, new_text: String, cur_fmt: &SpanFm
     merge_adjacent(para);
 }
 
-pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, base_font: FontChoice, base_size: u32, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
+pub fn build_layout_job(spans: &[DocSpan], text: &str, para: &DocParagraph, wrap_w: f32, is_dark: bool, zoom: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_w;
     job.halign = egui::Align::LEFT;
     job.justify = false;
 
-    let ss = para.style.default_font_size_pt(base_size) as f32 * zoom;
-    let (sb, si) = (para.style.is_bold(), para.style.is_italic());
-    let code_bg = if is_dark {
-        egui::Color32::from_rgb(28, 28, 34)
-    } else {
-        egui::Color32::from_rgb(244, 244, 248)
+    let default_size = para.style.default_font_size_pt() as f32 * zoom;
+    let (style_bold, style_italic) = (para.style.is_bold(), para.style.is_italic());
+    let code_background = if is_dark { egui::Color32::from_rgb(28, 28, 34) } else { egui::Color32::from_rgb(244, 244, 248) };
+    let base_color = match para.style {
+        ParaStyle::H1 | ParaStyle::H2 => if is_dark { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 },
+        ParaStyle::H3 | ParaStyle::H4 => if is_dark { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 },
+        ParaStyle::Subtitle | ParaStyle::BlockQuote => if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 },
+        _ => if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22, 22, 22) },
     };
 
-    let base_col = match para.style {
-        ParaStyle::H1 | ParaStyle::H2 => {
-            if is_dark { ColorPalette::ZINC_100 } else { ColorPalette::ZINC_900 }
-        }
-        ParaStyle::H3 | ParaStyle::H4 => {
-            if is_dark { ColorPalette::ZINC_200 } else { ColorPalette::ZINC_800 }
-        }
-        ParaStyle::Subtitle | ParaStyle::BlockQuote => {
-            if is_dark { ColorPalette::ZINC_400 } else { ColorPalette::ZINC_600 }
-        }
-        _ => {
-            if is_dark { ColorPalette::ZINC_200 } else { egui::Color32::from_rgb(22, 22, 22) }
-        }
-    };
-
-    let mut pos = 0;
+    let mut pos = 0usize;
     for span in spans {
-        if pos >= text.len() {
-            break;
-        }
-        if span.len == 0 {
-            continue;
-        }
+        if span.len == 0 || pos >= text.len() { continue; }
         let end = (pos + span.len).min(text.len());
-        let seg = &text[pos..end];
-        let is_first = pos == 0;
+        let segment = &text[pos..end];
+        let first_segment = pos == 0;
         pos = end;
-        if seg.is_empty() {
-            continue;
-        }
-            let eff = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(ss);
-        let sz = if span.fmt.sub || span.fmt.sup { eff * 0.68 } else { eff };
-        let fc = span.fmt.font.unwrap_or(base_font);
-        let mut col = span.fmt.color.map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(base_col);
+        if segment.is_empty() { continue; }
+
+        let effective_size = span.fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(default_size);
+        let font_size = if span.fmt.sub || span.fmt.sup { effective_size * 0.68 } else { effective_size };
+        let font_choice = span.fmt.font.unwrap_or(DEFAULT_BASE_FONT);
+        let mut color = span.fmt.color.map(|rgb| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])).unwrap_or(base_color);
         if span.fmt.link.is_some() && span.fmt.color.is_none() {
-            col = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
+            color = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
         }
-        let bg = span.fmt.highlight.map(highlight_color32)
-            .unwrap_or_else(|| if para.style == ParaStyle::Code { code_bg } else { egui::Color32::TRANSPARENT });
+        let background = span.fmt.highlight.map(highlight_color32).unwrap_or_else(|| {
+            if para.style == ParaStyle::Code { code_background } else { egui::Color32::TRANSPARENT }
+        });
+        let stroke_width = (effective_size * 0.07).max(1.0);
 
         job.append(
-            seg,
-            if is_first { para.indent_first * zoom } else { 0.0 },
+            segment,
+            if first_segment { para.indent_first * zoom } else { 0.0 },
             egui::TextFormat {
-                font_id: egui::FontId::new(sz, fc.egui_family(sb || span.fmt.bold, si || span.fmt.italic)),
-                color: col,
-                background: bg,
-                underline: if span.fmt.underline || span.fmt.link.is_some() {
-                    egui::Stroke::new((eff * 0.07).max(1.0), col)
-                } else {
-                    egui::Stroke::NONE
-                },
-                strikethrough: if span.fmt.strike {
-                    egui::Stroke::new((eff * 0.07).max(1.0), col)
-                } else {
-                    egui::Stroke::NONE
-                },
-                valign: if span.fmt.sup {
-                    egui::Align::TOP
-                } else if span.fmt.sub {
-                    egui::Align::BOTTOM
-                } else {
-                    egui::Align::Center
-                },
-                line_height: if span.fmt.sup || span.fmt.sub { None } else { Some(eff * para.line_height) },
+                font_id: egui::FontId::new(font_size, font_choice.egui_family(style_bold || span.fmt.bold, style_italic || span.fmt.italic)),
+                color, background,
+                underline: if span.fmt.underline || span.fmt.link.is_some() { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                strikethrough: if span.fmt.strike { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                valign: if span.fmt.sup { egui::Align::TOP } else if span.fmt.sub { egui::Align::BOTTOM } else { egui::Align::Center },
+                line_height: if span.fmt.sup || span.fmt.sub { None } else { Some(effective_size * para.line_height) },
                 ..Default::default()
             },
         );
     }
 
     if job.sections.is_empty() {
+        let first_fmt = para.spans.first().map(|s| &s.fmt).cloned().unwrap_or_default();
+        let effective_size = first_fmt.size_hp.map(|hp| hp as f32 / 2.0 * zoom).unwrap_or(default_size);
+        let font_size = if first_fmt.sub || first_fmt.sup { effective_size * 0.68 } else { effective_size };
+        let font_choice = first_fmt.font.unwrap_or(DEFAULT_BASE_FONT);
+        let mut color = first_fmt.color.map(|rgb| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])).unwrap_or(base_color);
+        if first_fmt.link.is_some() && first_fmt.color.is_none() {
+            color = if is_dark { egui::Color32::from_rgb(96, 165, 250) } else { egui::Color32::from_rgb(37, 99, 235) };
+        }
+        let background = first_fmt.highlight.map(highlight_color32).unwrap_or_else(|| {
+            if para.style == ParaStyle::Code { code_background } else { egui::Color32::TRANSPARENT }
+        });
+        let stroke_width = (effective_size * 0.07).max(1.0);
         job.append(
             "",
             para.indent_first * zoom,
             egui::TextFormat {
-                font_id: egui::FontId::new(ss, base_font.egui_family(sb, si)),
-                color: base_col,
-                line_height: Some(ss * para.line_height),
+                font_id: egui::FontId::new(font_size, font_choice.egui_family(style_bold || first_fmt.bold, style_italic || first_fmt.italic)),
+                color,
+                background,
+                underline: if first_fmt.underline || first_fmt.link.is_some() { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                strikethrough: if first_fmt.strike { egui::Stroke::new(stroke_width, color) } else { egui::Stroke::NONE },
+                valign: if first_fmt.sup { egui::Align::TOP } else if first_fmt.sub { egui::Align::BOTTOM } else { egui::Align::Center },
+                line_height: if first_fmt.sup || first_fmt.sub { None } else { Some(effective_size * para.line_height) },
                 ..Default::default()
             },
         );
     }
-
     job
 }
 
 pub fn convert_leading_tabs_to_indent(paras: &mut Vec<DocParagraph>) {
-    for p in paras {
-        let mut tabs_to_remove = 0;
-        for ch in p.text.chars() {
-            if ch == '\t' { tabs_to_remove += 1; } else { break; }
+    for para in paras {
+        let tab_count = para.text.bytes().take_while(|byte| *byte == b'\t').count();
+        if tab_count == 0 { continue; }
+        para.indent_first += 36.0 * tab_count as f32;
+        para.text = para.text[tab_count..].to_string();
+        let mut remaining = tab_count;
+        for span in &mut para.spans {
+            if remaining == 0 { break; }
+            let trimmed = span.len.min(remaining);
+            span.len -= trimmed;
+            remaining -= trimmed;
         }
-        if tabs_to_remove > 0 {
-            p.indent_first += 36.0 * (tabs_to_remove as f32);
-            p.text = p.text[tabs_to_remove..].to_string();
-            let mut remaining = tabs_to_remove;
-            for s in &mut p.spans {
-                if remaining == 0 { break; }
-                let take = s.len.min(remaining);
-                s.len -= take;
-                remaining -= take;
-            }
-            p.spans.retain(|s| s.len > 0);
-            if p.spans.is_empty() { p.spans.push(DocSpan { len: 0, fmt: SpanFmt::default() }); }
-        }
+        para.spans.retain(|span| span.len > 0);
+        ensure_non_empty_spans(&mut para.spans);
     }
 }
 
+fn table_text_count<F>(table: &TableData, count: F) -> usize where F: Fn(&str) -> usize + Copy, {
+    table.rows.iter().flat_map(|row| row.iter()).map(|cell| count(&cell.text)).sum()
+}
 pub fn word_count(paras: &[DocParagraph]) -> usize {
-    paras.iter().map(|p| {
-        p.text.split_whitespace().count()
-            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.split_whitespace().count()).sum::<usize>()).unwrap_or(0)
-    }).sum()
+    paras.iter().map(|para| {
+            para.text.split_whitespace().count()
+                + para.table.as_ref().map_or(0, |table| table_text_count(table, |text| text.split_whitespace().count()))
+        }).sum()
 }
 pub fn char_count(paras: &[DocParagraph]) -> usize {
-    paras.iter().map(|p| {
-        p.text.chars().count()
-            + p.table.as_ref().map(|t| t.rows.iter().flat_map(|r| r.iter()).map(|c| c.text.chars().count()).sum::<usize>()).unwrap_or(0)
-    }).sum()
+    paras.iter().map(|para| {
+            para.text.chars().count() + para.table.as_ref().map_or(0, |table| table_text_count(table, |text| text.chars().count()))
+        }).sum()
 }
-
-const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#;
-const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
-const WORD_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
 
 fn style_size_hp(style: ParaStyle) -> Option<u32> {
     match style {
         ParaStyle::Title => Some(52),
-        ParaStyle::H1 => Some(40),
-        ParaStyle::H2 => Some(32),
-        ParaStyle::H3 => Some(28),
-        ParaStyle::H4 => Some(26),
-        ParaStyle::H5 => Some(24),
-        ParaStyle::H6 => Some(22),
+        ParaStyle::H1 => Some(40), ParaStyle::H2 => Some(32), ParaStyle::H3 => Some(28),
+        ParaStyle::H4 => Some(26), ParaStyle::H5 => Some(24), ParaStyle::H6 => Some(22),
         ParaStyle::Subtitle => Some(30),
         ParaStyle::Code => Some(22),
         _ => None,
@@ -481,6 +462,7 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
     let (style_id, display_name, based_on, outline, spacing_before, spacing_after, indent_left, size_hp, bold, italic, font_name) = match style {
         ParaStyle::Normal => return String::new(),
         ParaStyle::Table => return String::new(),
+        ParaStyle::Image => return String::new(),
         ParaStyle::H1 => ("Heading1", "Heading 1", Some("Normal"), Some(0), 320, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H2 => ("Heading2", "Heading 2", Some("Normal"), Some(1), 240, 80, None, style_size_hp(style), true, false, None),
         ParaStyle::H3 => ("Heading3", "Heading 3", Some("Normal"), Some(2), 200, 60, None, style_size_hp(style), true, false, None),
@@ -491,9 +473,9 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
         ParaStyle::Subtitle => ("Subtitle", "Subtitle", Some("Normal"), Some(0), 0, 120, None, style_size_hp(style), false, true, None),
         ParaStyle::BlockQuote => ("Quote", "Quote", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, true, None),
         ParaStyle::Code => ("CodeBlock", "Code Block", Some("Normal"), None, 80, 80, Some(480), style_size_hp(style), false, false, Some("Consolas")),
-        ParaStyle::ListBullet => ("ListBullet", "List Bullet", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
-        ParaStyle::ListOrdered => ("ListNumber", "List Number", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
-        ParaStyle::ListCheck => ("ListCheck", "List Check", Some("Normal"), None, 0, 40, Some(360), Some(22), false, false, None),
+        ParaStyle::ListBullet => ("ListBullet", "List Bullet", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
+        ParaStyle::ListOrdered => ("ListNumber", "List Number", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
+        ParaStyle::ListCheck => ("ListCheck", "List Check", Some("Normal"), None, 0, 0, Some(360), Some(22), false, false, None),
         ParaStyle::HRule => return String::new(),
     };
 
@@ -513,6 +495,51 @@ fn docx_pstyle_block(style: ParaStyle) -> String {
     out
 }
 
+fn build_word_rels(hyperlinks: &[(String, String)], image_names: &[String]) -> String {
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>");
+    for (id, url) in hyperlinks { out.push_str(&format!("<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", id, xml_esc(url))); }
+    for (idx, name) in image_names.iter().enumerate() { out.push_str(&format!("<Relationship Id=\"rId{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/{}\"/>", idx + 1003, name)); }
+    out.push_str("</Relationships>");
+    out
+}
+
+fn build_numbering_xml() -> String {
+    format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"2\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId=\"3\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"{}\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Wingdings\" w:hAnsi=\"Wingdings\" w:cs=\"Wingdings\"/><w:sz w:val=\"22\"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num><w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num><w:num w:numId=\"4\"><w:abstractNumId w:val=\"3\"/></w:num></w:numbering>", "\u{2022}", "\u{F0A8}", "\u{F0FE}")
+}
+
+fn run_rpr(span: &DocSpan, base_font: FontChoice) -> String {
+    let fname = match span.fmt.font.unwrap_or(base_font) {
+        FontChoice::Ubuntu => "Ubuntu", FontChoice::Roboto => "Roboto",
+        FontChoice::GoogleSans => "Google Sans", FontChoice::OpenSans => "Open Sans",
+    };
+    let mut r = format!("<w:rPr><w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\" w:cs=\"{}\"/>", fname, fname, fname);
+    if let Some(sz) = span.fmt.size_hp { r.push_str(&format!("<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>", sz, sz)); }
+    if span.fmt.bold { r.push_str("<w:b/>"); }
+    if span.fmt.italic { r.push_str("<w:i/>"); }
+    if span.fmt.underline || span.fmt.link.is_some() { r.push_str("<w:u w:val=\"single\"/>"); }
+    if span.fmt.strike { r.push_str("<w:strike/>"); }
+    if span.fmt.sub { r.push_str("<w:vertAlign w:val=\"subscript\"/>"); }
+    if span.fmt.sup { r.push_str("<w:vertAlign w:val=\"superscript\"/>"); }
+    if let Some(c) = span.fmt.color { r.push_str(&format!("<w:color w:val=\"{:02X}{:02X}{:02X}\"/>", c[0], c[1], c[2])); }
+    else if span.fmt.link.is_some() { r.push_str("<w:color w:val=\"1155CC\"/>"); }
+    if let Some(h) = span.fmt.highlight { r.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{:02X}{:02X}{:02X}\" w:color=\"auto\"/>", h[0], h[1], h[2])); }
+    r.push_str("</w:rPr>");
+    r
+}
+
+fn write_run(out: &mut String, txt: &str, rpr: &str) {
+    out.push_str("<w:r>");
+    out.push_str(rpr);
+    for (i, part) in txt.split('\t').enumerate() {
+        if i > 0 { out.push_str("<w:tab/>"); }
+        if !part.is_empty() {
+            let sp = if part.starts_with(' ') || part.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
+            out.push_str(&format!("<w:t{}>{}</w:t>", sp, xml_esc(part)));
+        }
+    }
+    out.push_str("</w:r>\n");
+}
+
 fn build_docx_styles_xml() -> String {
     let mut out = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
     out.push_str(r#"<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults>"#);
@@ -525,23 +552,33 @@ fn build_docx_styles_xml() -> String {
 }
 
 fn xml_esc(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;") }
-fn build_table_xml(tbl: &TableData) -> String {
+fn build_table_xml(tbl: &TableData, content_w_twips: u32) -> String {
     let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
-    let cw = 5000 / ncols;
-    let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"4\" w:color=\"auto\"/>", s);
-    let mut out = format!(
-        "<w:tbl><w:tblPr><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
-        b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV")
-    );
-    for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", cw * 120)); }
+    let col_tw = content_w_twips / ncols as u32;
+    let bc = format!("{:02X}{:02X}{:02X}", tbl.border_color[0], tbl.border_color[1], tbl.border_color[2]);
+    let bsz = ((tbl.border_width * 8.0).round() as u32).max(2);
+    let b = |s: &str| format!("<w:{0} w:val=\"single\" w:sz=\"{1}\" w:color=\"{2}\"/>", s, bsz, bc);
+    let mut out = format!("<w:tbl><w:tblPr><w:tblW w:w=\"{}\" w:type=\"dxa\"/><w:tblBorders>{}{}{}{}{}{}</w:tblBorders></w:tblPr><w:tblGrid>",
+        content_w_twips, b("top"), b("left"), b("bottom"), b("right"), b("insideH"), b("insideV"));
+    for _ in 0..ncols { out.push_str(&format!("<w:gridCol w:w=\"{}\"/>", col_tw)); }
     out.push_str("</w:tblGrid>");
     for row in &tbl.rows {
         out.push_str("<w:tr>");
         for cell in row {
-            out.push_str(&format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"pct\"/></w:tcPr><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
-                cw, xml_esc(&cell.text)
-            ));
+            let shd = cell.bg_color.map(|c| format!("<w:shd w:val=\"clear\" w:fill=\"{:02X}{:02X}{:02X}\" w:color=\"auto\"/>", c[0], c[1], c[2])).unwrap_or_default();
+            out.push_str(&format!("<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{}</w:tcPr><w:p>", col_tw, shd));
+            let mut pos = 0usize; let mut wrote = false;
+            for span in &cell.spans {
+                if span.len == 0 || pos >= cell.text.len() { continue; }
+                let end = (pos + span.len).min(cell.text.len()); let seg = &cell.text[pos..end]; pos = end;
+                if seg.is_empty() { continue; }
+                write_run(&mut out, seg, &run_rpr(span, DEFAULT_BASE_FONT)); wrote = true;
+            }
+            if !wrote {
+                let fmt = cell.spans.first().map(|s| s.fmt.clone()).unwrap_or_default();
+                out.push_str(&format!("<w:r>{}<w:t/></w:r>", run_rpr(&DocSpan { len: 0, fmt }, DEFAULT_BASE_FONT)));
+            }
+            out.push_str("</w:p></w:tc>");
         }
         out.push_str("</w:tr>");
     }
@@ -549,15 +586,37 @@ fn build_table_xml(tbl: &TableData) -> String {
     out
 }
 
-fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
-    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:body>\n");
+fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> (String, Vec<String>, Vec<(String, Vec<u8>)>) {
+    let content_w_twips = ((layout.width - layout.margin_left - layout.margin_right) * 20.0).round() as u32;
+    let mut hyperlinks: Vec<String> = Vec::new();
+    let mut images: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut img_idx = 0usize;
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\n<w:body>\n");
     for para in paras {
         if para.style == ParaStyle::Table {
-            if let Some(ref t) = para.table { out.push_str(&build_table_xml(t)); }
+            if let Some(ref t) = para.table { out.push_str(&build_table_xml(t, content_w_twips)); }
             continue;
         }
         if para.style == ParaStyle::HRule {
             out.push_str("<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"auto\"/></w:pBdr></w:pPr></w:p>\n");
+            continue;
+        }
+        if para.style == ParaStyle::Image {
+            if let Some(ref img) = para.image {
+                if !img.data.is_empty() {
+                    let ext = img.name.rsplit('.').next().unwrap_or("png");
+                    let media_name = format!("image{}.{}", img_idx + 1, ext);
+                    let rid = format!("rId{}", img_idx + 1003);
+                    let cx = (img.display_w * 12700.0) as u64;
+                    let cy = (img.display_h * 12700.0) as u64;
+                    out.push_str("<w:p><w:pPr>");
+                    if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>", para.align.docx_val())); }
+                    out.push_str(&format!("</w:pPr><w:r><w:drawing><wp:inline><wp:extent cx=\"{}\" cy=\"{}\"/><wp:docPr id=\"{}\" name=\"{}\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"{}\"/><pic:cNvPicPr preferRelativeResize=\"0\"/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"{}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>\n",
+                        cx, cy, img_idx + 1, xml_esc(&media_name), xml_esc(&media_name), rid, cx, cy));
+                    images.push((media_name, img.data.clone()));
+                    img_idx += 1;
+                }
+            }
             continue;
         }
         out.push_str("<w:p>\n<w:pPr>\n");
@@ -565,70 +624,75 @@ fn build_document_xml(paras: &[DocParagraph], layout: &PageLayout) -> String {
         if para.align != Align::Left { out.push_str(&format!("<w:jc w:val=\"{}\"/>\n", para.align.docx_val())); }
         out.push_str(&format!("<w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"auto\"/>\n",
             (para.space_before * 20.0) as u32, (para.space_after * 20.0) as u32, (para.line_height * 240.0) as u32));
-        if para.indent_left != 0.0 || para.indent_first != 0.0 {
-            out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32));
+        match para.style {
+            ParaStyle::ListBullet => { out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32))); out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>\n"); }
+            ParaStyle::ListOrdered => { out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n", 720u32.max((para.indent_left * 20.0) as u32))); out.push_str("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr>\n"); }
+            ParaStyle::ListCheck => { let num_id = if para.checked { 4u32 } else { 3u32 }; out.push_str(&format!("<w:ind w:left=\"{}\" w:hanging=\"360\"/>\n<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"{}\"/></w:numPr>\n", 720u32.max((para.indent_left * 20.0) as u32), num_id)); }
+            _ if para.indent_left != 0.0 || para.indent_first != 0.0 => { out.push_str(&format!("<w:ind w:left=\"{}\" w:firstLine=\"{}\"/>\n", (para.indent_left * 20.0) as u32, (para.indent_first * 20.0) as u32)); }
+            _ => {}
         }
         out.push_str("</w:pPr>\n");
-        if para.style == ParaStyle::ListCheck {
-            out.push_str(&format!("<w:r><w:t xml:space=\"preserve\">{}</w:t></w:r>\n", if para.checked { "☑ " } else { "☐ " }));
-        }
         let mut pos = 0;
+        let mut has_run = false;
         for span in &para.spans {
             if span.len == 0 { pos += span.len; continue; }
             if pos >= para.text.len() { break; }
-            let end = (pos + span.len).min(para.text.len()); let txt = &para.text[pos..end]; pos = end;
-            if txt.is_empty() { continue; }
-            out.push_str("<w:r>\n");
-            let hf = span.fmt.bold||span.fmt.italic||span.fmt.underline||span.fmt.strike||span.fmt.sub||span.fmt.sup||span.fmt.size_hp.is_some()||span.fmt.color.is_some()||span.fmt.highlight.is_some();
-            if hf {
-                out.push_str("<w:rPr>\n");
-                if span.fmt.bold { out.push_str("<w:b/>\n"); }
-                if span.fmt.italic { out.push_str("<w:i/>\n"); }
-                if span.fmt.underline { out.push_str("<w:u w:val=\"single\"/>\n"); }
-                if span.fmt.strike { out.push_str("<w:strike/>\n"); }
-                if span.fmt.sub { out.push_str("<w:vertAlign w:val=\"subscript\"/>\n"); }
-                if span.fmt.sup { out.push_str("<w:vertAlign w:val=\"superscript\"/>\n"); }
-                if let Some(sz) = span.fmt.size_hp { out.push_str(&format!("<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>\n", sz, sz)); }
-                if let Some(c) = span.fmt.color { out.push_str(&format!("<w:color w:val=\"{:02X}{:02X}{:02X}\"/>\n", c[0], c[1], c[2])); }
-                out.push_str("</w:rPr>\n");
+            let end = (pos + span.len).min(para.text.len());
+            let seg = &para.text[pos..end];
+            pos = end;
+            if seg.is_empty() { continue; }
+            let rpr = run_rpr(span, DEFAULT_BASE_FONT);
+            if let Some(ref url) = span.fmt.link {
+                let idx = hyperlinks.iter().position(|u| u == url).unwrap_or_else(|| { hyperlinks.push(url.clone()); hyperlinks.len() - 1 });
+                out.push_str(&format!("<w:hyperlink r:id=\"rId{}\">", idx + 3));
+                write_run(&mut out, seg, &rpr);
+                out.push_str("</w:hyperlink>\n");
+            } else {
+                write_run(&mut out, seg, &rpr);
+                has_run = true;
             }
-            let parts: Vec<&str> = txt.split('\t').collect();
-            for (i, part) in parts.iter().enumerate() {
-                if !part.is_empty() {
-                    let ps = if part.starts_with(' ') || part.ends_with(' ') { " xml:space=\"preserve\"" } else { "" };
-                    out.push_str(&format!("<w:t{}>{}</w:t>\n", ps, xml_esc(part)));
-                }
-                if i < parts.len() - 1 {
-                    out.push_str("<w:tab/>\n");
-                }
-            }
+        }
+        if !has_run && para.text.is_empty() && !para.spans.is_empty() {
+            let span = &para.spans[0];
+            let rpr = run_rpr(span, DEFAULT_BASE_FONT);
+            out.push_str("<w:r>");
+            out.push_str(&rpr);
+            out.push_str("<w:t/>");
             out.push_str("</w:r>\n");
         }
         out.push_str("</w:p>\n");
     }
     let (w, h, mt, mb, ml, mr) = ((layout.width*20.0) as u32, (layout.height*20.0) as u32, (layout.margin_top*20.0) as u32, (layout.margin_bot*20.0) as u32, (layout.margin_left*20.0) as u32, (layout.margin_right*20.0) as u32);
     out.push_str(&format!("<w:sectPr><w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\"/></w:sectPr>\n</w:body>\n</w:document>", w, h, mt, mr, mb, ml));
-    out
+    (out, hyperlinks, images)
 }
 
 pub fn save_docx(path: &PathBuf, paras: &[DocParagraph], layout: &PageLayout) -> Result<(), String> {
+    let (doc, hyperlinks, images) = build_document_xml(paras, layout);
+    let hl_pairs: Vec<(String, String)> = hyperlinks.iter().enumerate().map(|(i, url)| (format!("rId{}", i + 3), url.clone())).collect();
+    let image_names: Vec<String> = images.iter().map(|(n, _)| n.clone()).collect();
+    let rels = build_word_rels(&hl_pairs, &image_names);
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default();
-    for (name, data) in [
-        ("[Content_Types].xml", CONTENT_TYPES.as_bytes()),
-        ("_rels/.rels", ROOT_RELS.as_bytes()),
-        ("word/_rels/document.xml.rels", WORD_RELS.as_bytes()),
-    ] {
+    for (name, data) in [("[Content_Types].xml", CONTENT_TYPES.as_bytes()), ("_rels/.rels", ROOT_RELS.as_bytes())] {
         zip.start_file(name, opts).map_err(|e| e.to_string())?;
         zip.write_all(data).map_err(|e| e.to_string())?;
     }
-    let doc = build_document_xml(paras, layout);
+    zip.start_file("word/_rels/document.xml.rels", opts).map_err(|e| e.to_string())?;
+    zip.write_all(rels.as_bytes()).map_err(|e| e.to_string())?;
     zip.start_file("word/document.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(doc.as_bytes()).map_err(|e| e.to_string())?;
+    for (name, bytes) in &images {
+        zip.start_file(format!("word/media/{}", name), opts).map_err(|e| e.to_string())?;
+        zip.write_all(bytes).map_err(|e| e.to_string())?;
+    }
     let styles = build_docx_styles_xml();
     zip.start_file("word/styles.xml", opts).map_err(|e| e.to_string())?;
     zip.write_all(styles.as_bytes()).map_err(|e| e.to_string())?;
+    let numbering = build_numbering_xml();
+    zip.start_file("word/numbering.xml", opts).map_err(|e| e.to_string())?;
+    zip.write_all(numbering.as_bytes()).map_err(|e| e.to_string())?;
     zip.finish().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -642,8 +706,8 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut arch = zip::ZipArchive::new(file).map_err(|_| "Not a valid DOCX".to_string())?;
     let num_map = parse_docx_numbering(&mut arch);
-    
     let mut rels_map: std::collections::HashMap<String, String> = Default::default();
+    let mut image_rels: std::collections::HashMap<String, String> = Default::default();
     if let Ok(mut e) = arch.by_name("word/_rels/document.xml.rels") {
         let mut s = String::new();
         if e.read_to_string(&mut s).is_ok() {
@@ -654,6 +718,7 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
                         if ev.local_name().as_ref() == b"Relationship" {
                             if let (Some(id), Some(target), Some(typ)) = (get_attr(ev, b"Id"), get_attr(ev, b"Target"), get_attr(ev, b"Type")) {
                                 if typ.ends_with("/hyperlink") { rels_map.insert(id, target); }
+                                else if typ.ends_with("/image") { image_rels.insert(id, target); }
                             }
                         }
                     }
@@ -663,9 +728,27 @@ pub fn load_docx(path: &PathBuf) -> Result<(Vec<DocParagraph>, PageLayout), Stri
             }
         }
     }
-
     let xml = { let mut e = arch.by_name("word/document.xml").map_err(|_| "Missing document.xml".to_string())?; let mut s = String::new(); e.read_to_string(&mut s).map_err(|e| e.to_string())?; s };
-    parse_docx_xml(&xml, &num_map, &rels_map)
+    let (mut paras, layout) = parse_docx_xml(&xml, &num_map, &rels_map)?;
+    let mut uid = 0u64;
+    for p in &mut paras {
+        if p.style == ParaStyle::Image {
+            if let Some(ref mut img) = p.image {
+                if let Some(media_path) = image_rels.get(&img.name) {
+                    let zip_path = format!("word/{}", media_path);
+                    if let Ok(mut entry) = arch.by_name(&zip_path) {
+                        let mut data = Vec::new();
+                        let _ = entry.read_to_end(&mut data);
+                        img.data = data;
+                    }
+                    img.name = media_path.rsplit('/').next().unwrap_or("image.png").to_string();
+                }
+                img.uid = uid;
+                uid += 1;
+            }
+        }
+    }
+    Ok((paras, layout))
 }
 
 fn parse_docx_numbering(arch: &mut zip::ZipArchive<std::fs::File>) -> std::collections::HashMap<u32, (ParaStyle, Option<bool>)> {
@@ -743,11 +826,15 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
     let mut cur_fmt = SpanFmt::default();
     let mut cur_run_text = String::new();
     let mut in_run = false; let mut in_rpr = false; let mut in_ppr = false; let mut in_t = false;
+    let (mut in_drawing, mut para_has_drawing, mut drawing_rid, mut drawing_cx, mut drawing_cy) = (false, false, String::new(), 0u64, 0u64);
     let mut in_pbdr = false; let mut has_hborder = false; let mut in_pict = false;
     let mut in_numpr = false; let mut pending_num_id: Option<u32> = None;
     let mut cur_para_numid: Option<u32> = None;
     let mut cur_link_url: Option<String> = None;
     let (mut in_tbl, mut in_tc) = (false, false);
+    let mut cur_tc_spans: Vec<DocSpan> = Vec::new();
+    let (mut in_tbl_pr, mut in_tbl_borders, mut in_tc_pr) = (false, false, false);
+    let (mut cur_tbl_bc, mut cur_tbl_bw, mut cur_tc_bg) = ([100u8, 100, 110], 1.0f32, None::<[u8; 3]>);
     let mut cur_tbl_rows: Vec<Vec<TableCell>> = Vec::new();
     let mut cur_tbl_row: Vec<TableCell> = Vec::new();
     let mut cur_tc_text = String::new();
@@ -761,7 +848,19 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => if in_ppr { in_pbdr = true; },
                     b"numPr" => if in_ppr { in_numpr = true; },
                     b"pict" => in_pict = true,
-                    b"bottom" | b"top" => if in_pbdr { has_hborder = true; },
+                    b"bottom" | b"top" | b"left" | b"right" | b"insideH" | b"insideV" => {
+                        if in_pbdr {
+                            let val = get_attr(e, b"val");
+                            if val.as_deref() != Some("nil") && val.as_deref() != Some("none") { has_hborder = true; }
+                        }
+                        if in_tbl_borders {
+                            if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
+                                let h = c.trim_start_matches('#');
+                                if h.len() == 6 { if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&h[0..2],16),u8::from_str_radix(&h[2..4],16),u8::from_str_radix(&h[4..6],16)) { cur_tbl_bc = [r,g,bv]; } }
+                            }
+                            if let Some(sz) = get_attr(e, b"sz").and_then(|v| v.parse::<f32>().ok()) { cur_tbl_bw = (sz/8.0).max(0.5); }
+                        }
+                    }
                     b"pStyle" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"val") { p.style = ParaStyle::from_docx_id(&v); p.space_before = p.style.space_before(); p.space_after = p.style.space_after(); p.indent_left = p.style.default_indent(); } } } }
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
@@ -772,13 +871,22 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"t" => { in_t = true; }
                     b"tab" => { if in_run { cur_run_text.push('\t'); } }
                     b"br" => { if in_run { cur_run_text.push('\n'); } }
-                    b"b" => { if in_rpr { cur_fmt.bold = true; } }
-                    b"i" => { if in_rpr { cur_fmt.italic = true; } }
-                    b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
-                    b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"b" => { if in_rpr { cur_fmt.bold = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"i" => { if in_rpr { cur_fmt.italic = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"u" => { if in_rpr { cur_fmt.underline = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"strike" => { if in_rpr { cur_fmt.strike = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
                     b"tbl" => { in_tbl = true; cur_tbl_rows.clear(); }
+                    b"tblPr" if in_tbl => in_tbl_pr = true,
+                    b"tblBorders" if in_tbl_pr => in_tbl_borders = true,
+                    b"tcPr" if in_tbl => { in_tc_pr = true; cur_tc_bg = None; }
                     b"tr" if in_tbl => { cur_tbl_row.clear(); }
-                    b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); }
+                    b"tc" if in_tbl => { in_tc = true; cur_tc_text.clear(); cur_tc_spans.clear(); }
+                    b"drawing" => { in_drawing = true; }
+                    b"extent" if in_drawing => {
+                        if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
+                        if let Some(v) = get_attr(e, b"cy") { drawing_cy = v.parse().unwrap_or(0); }
+                    }
+                    b"blip" if in_drawing => { if let Some(v) = get_attr(e, b"embed") { drawing_rid = v; } }
                     b"vertAlign" => {
                         if in_rpr { if let Some(v) = get_attr(e, b"val") {
                             if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
@@ -813,11 +921,13 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         } }
                     }
                     b"shd" => {
-                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
-                            if v != "auto" && v.len() == 6 {
-                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
+                        if let Some(v) = get_attr(e, b"fill") {
+                            if in_rpr && v != "auto" && v.len() == 6 {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r,g,bv]); }
+                            } else if in_tc_pr && !in_rpr && v.len() == 6 && v != "auto" {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_tc_bg = Some([r,g,bv]); }
                             }
-                        } }
+                        }
                     }
                     b"rFonts" => {
                         if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
@@ -840,7 +950,19 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"jc" => { if in_ppr { if let Some(ref mut p) = cur_para { p.align = match get_attr(e, b"val").as_deref() { Some("center") => Align::Center, Some("right") => Align::Right, Some("both") => Align::Justify, _ => Align::Left }; } } }
                     b"spacing" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"before") { p.space_before = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"after") { p.space_after = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"line") { p.line_height = v.parse::<f32>().unwrap_or(240.0)/240.0; } } } }
                     b"ind" => { if in_ppr { if let Some(ref mut p) = cur_para { if let Some(v) = get_attr(e, b"left") { p.indent_left = v.parse::<f32>().unwrap_or(0.0)/20.0; } if let Some(v) = get_attr(e, b"firstLine") { p.indent_first = v.parse::<f32>().unwrap_or(0.0)/20.0; } } } }
-                    b"bottom" | b"top" => { if in_pbdr && in_ppr { has_hborder = true; } }
+                    b"bottom" | b"top" | b"left" | b"right" | b"insideH" | b"insideV" => {
+                        if in_pbdr && in_ppr {
+                            let val = get_attr(e, b"val");
+                            if val.as_deref() != Some("nil") && val.as_deref() != Some("none") { has_hborder = true; }
+                        }
+                        if in_tbl_borders {
+                            if let Some(c) = get_attr(e, b"color").filter(|v| v != "auto") {
+                                let h = c.trim_start_matches('#');
+                                if h.len() == 6 { if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&h[0..2],16),u8::from_str_radix(&h[2..4],16),u8::from_str_radix(&h[4..6],16)) { cur_tbl_bc = [r,g,bv]; } }
+                            }
+                            if let Some(sz) = get_attr(e, b"sz").and_then(|v| v.parse::<f32>().ok()) { cur_tbl_bw = (sz/8.0).max(0.5); }
+                        }
+                    }
                     b"numId" => {
                         if in_numpr {
                             let nid = get_attr(e, b"val").and_then(|v| v.parse().ok());
@@ -850,10 +972,15 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     }
                     b"tab" => { if in_run { cur_run_text.push('\t'); } }
                     b"br" => { if in_run { cur_run_text.push('\n'); } }
-                    b"b" => { if in_rpr { cur_fmt.bold = true; } }
-                    b"i" => { if in_rpr { cur_fmt.italic = true; } }
-                    b"u" => { if in_rpr && get_attr(e, b"val").as_deref() != Some("none") { cur_fmt.underline = true; } }
-                    b"strike" => { if in_rpr { cur_fmt.strike = true; } }
+                    b"b" => { if in_rpr { cur_fmt.bold = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"i" => { if in_rpr { cur_fmt.italic = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"u" => { if in_rpr { cur_fmt.underline = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"strike" => { if in_rpr { cur_fmt.strike = get_attr(e, b"val").map_or(true, |v| v != "0" && v != "false" && v != "none"); } }
+                    b"extent" if in_drawing => {
+                        if let Some(v) = get_attr(e, b"cx") { drawing_cx = v.parse().unwrap_or(0); }
+                        if let Some(v) = get_attr(e, b"cy") { drawing_cy = v.parse().unwrap_or(0); }
+                    }
+                    b"blip" if in_drawing => { if let Some(v) = get_attr(e, b"embed") { drawing_rid = v; } }
                     b"vertAlign" => {
                         if in_rpr { if let Some(v) = get_attr(e, b"val") {
                             if v.eq_ignore_ascii_case("subscript") { cur_fmt.sub = true; cur_fmt.sup = false; }
@@ -888,11 +1015,13 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                         } }
                     }
                     b"shd" => {
-                        if in_rpr { if let Some(v) = get_attr(e, b"fill") {
-                            if v != "auto" && v.len() == 6 {
-                                if let (Ok(r), Ok(g), Ok(b)) = (u8::from_str_radix(&v[0..2],16), u8::from_str_radix(&v[2..4],16), u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r, g, b]); }
+                        if let Some(v) = get_attr(e, b"fill") {
+                            if in_rpr && v != "auto" && v.len() == 6 {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_fmt.highlight = Some([r,g,bv]); }
+                            } else if in_tc_pr && !in_rpr && v.len() == 6 && v != "auto" {
+                                if let (Ok(r),Ok(g),Ok(bv)) = (u8::from_str_radix(&v[0..2],16),u8::from_str_radix(&v[2..4],16),u8::from_str_radix(&v[4..6],16)) { cur_tc_bg = Some([r,g,bv]); }
                             }
-                        } }
+                        }
                     }
                     b"rFonts" => {
                         if in_rpr { if let Some(font_name) = get_attr(e, b"ascii").or_else(|| get_attr(e, b"hAnsi")) {
@@ -911,24 +1040,37 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
             Event::End(ref e) => {
                 match e.local_name().as_ref() {
                     b"pict" => in_pict = false,
-                    b"tbl" => {
-                        in_tbl = false; in_tc = false;
+                    b"tbl" if in_tbl => {
+                        in_tbl = false; in_tc = false; in_tbl_pr = false; in_tbl_borders = false; in_tc_pr = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new(), border_color: cur_tbl_bc, border_width: cur_tbl_bw.max(0.5) }));
                         paras.push(p);
                         para_numids.push(None);
-                    }
+                        cur_tbl_bc = [100, 100, 110]; cur_tbl_bw = 1.0;
+                    },
+                    b"tblPr" => in_tbl_pr = false,
+                    b"tblBorders" => in_tbl_borders = false,
+                    b"tcPr" => in_tc_pr = false,
                     b"tr" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
                     b"tc" if in_tbl => {
                         let text = std::mem::take(&mut cur_tc_text);
-                        let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
-                            else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
-                        cur_tbl_row.push(TableCell { text, spans });
-                        in_tc = false;
-                    }
+                        let mut spans = std::mem::take(&mut cur_tc_spans);
+                        if spans.is_empty() { spans.push(DocSpan { len: text.len(), fmt: SpanFmt::default() }); }
+                        ensure_non_empty_spans(&mut spans);
+                        cur_tbl_row.push(TableCell { text, spans, bg_color: cur_tc_bg.take() });
+                        in_tc = false; in_tc_pr = false;
+                    },
+                    b"drawing" => { if in_drawing { para_has_drawing = true; } in_drawing = false; }
                     b"p" => {
                         if !in_tbl {
-                            if let Some(mut p) = cur_para.take() {
+                            if para_has_drawing && !drawing_rid.is_empty() {
+                                let mut imgp = DocParagraph::with_style(ParaStyle::Image);
+                                imgp.align = cur_para.as_ref().map(|p| p.align).unwrap_or(Align::Left);
+                                imgp.image = Some(DocImage { data: vec![], display_w: drawing_cx as f32 / 12700.0, display_h: drawing_cy as f32 / 12700.0, name: drawing_rid.clone(), uid: 0 });
+                                paras.push(imgp);
+                                para_numids.push(None);
+                                cur_para = None;
+                            } else if let Some(mut p) = cur_para.take() {
                                 if has_hborder {
                                     if p.text.trim().is_empty() {
                                         p.style = ParaStyle::HRule;
@@ -946,6 +1088,10 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                                 }
                             }
                             has_hborder = false;
+                            para_has_drawing = false;
+                            drawing_rid.clear();
+                            drawing_cx = 0;
+                            drawing_cy = 0;
                         }
                     }
                     b"pPr" => {
@@ -965,7 +1111,18 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"pBdr" => in_pbdr = false,
                     b"r" => {
                         in_run = false;
-                        if in_tbl && in_tc { cur_tc_text.push_str(&cur_run_text); }
+                        if in_tbl && in_tc {
+                            let blen = cur_run_text.len();
+                            cur_tc_text.push_str(&cur_run_text);
+                            if blen > 0 {
+                                if cur_tc_spans.last().map(|s: &DocSpan| s.fmt == cur_fmt).unwrap_or(false) {
+                                    cur_tc_spans.last_mut().unwrap().len += blen;
+                                } else {
+                                    if cur_tc_spans.last().map(|s| s.len == 0).unwrap_or(false) { cur_tc_spans.pop(); }
+                                    cur_tc_spans.push(DocSpan { len: blen, fmt: cur_fmt.clone() });
+                                }
+                            }
+                        }
                         else if let Some(ref mut para) = cur_para {
                             let blen = cur_run_text.len();
                             para.text.push_str(&cur_run_text);
@@ -1027,7 +1184,6 @@ pub fn load_txt_as_doc(path: &PathBuf) -> Result<Vec<DocParagraph>, String> {
     Ok(paras)
 }
 
-const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/><manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
 #[derive(Clone, Default)]
 struct OdtStyle { bold:bool, italic:bool, underline:bool, strike:bool, size_hp:Option<u32>, color:Option<[u8;3]>, highlight:Option<[u8;3]>, align:Align, h_border:bool, parent:String }
 
@@ -1115,7 +1271,7 @@ fn para_to_odt_style(s: ParaStyle) -> &'static str {
         ParaStyle::H6=>"Heading_20_6", ParaStyle::Title=>"Title", ParaStyle::Subtitle=>"Subtitle",
         ParaStyle::BlockQuote=>"Quotations", ParaStyle::Code=>"Preformatted_20_Text",
         ParaStyle::ListBullet=>"List_20_Bullet", ParaStyle::ListOrdered=>"List_20_Number", ParaStyle::ListCheck=>"List_20_Check",
-        ParaStyle::HRule=>"Standard", ParaStyle::Table => "Standard",
+        ParaStyle::HRule=>"Standard", ParaStyle::Table => "Standard", ParaStyle::Image => "Standard",
     }
 }
 
@@ -1145,9 +1301,9 @@ fn build_odt_styles(layout: &PageLayout) -> String {
         ("Heading_20_6", "Standard", Some(11.0), true, false, 8.0, 4.0, 0.0, Some(6)),
         ("Quotations", "Standard", Some(12.0), false, true, 6.0, 6.0, 24.0, None),
         ("Preformatted_20_Text", "Standard", Some(11.0), false, false, 6.0, 6.0, 24.0, None),
-        ("List_20_Bullet", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
-        ("List_20_Number", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
-        ("List_20_Check", "Standard", Some(11.0), false, false, 0.0, 4.0, 18.0, None),
+        ("List_20_Bullet", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
+        ("List_20_Number", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
+        ("List_20_Check", "Standard", Some(11.0), false, false, 0.0, 0.0, 18.0, None),
     ] {
         out.push_str("<style:style style:name=\"");
         out.push_str(name);
@@ -1181,6 +1337,9 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     let mut span_styles: std::collections::BTreeMap<String, SpanFmt> = Default::default();
     for p in paras {
         for s in &p.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } }
+        if let Some(ref tbl) = p.table {
+            for row in &tbl.rows { for cell in row { for s in &cell.spans { if s.len > 0 && s.fmt != SpanFmt::default() { span_styles.entry(fmt_to_odt_id(&s.fmt)).or_insert_with(|| s.fmt.clone()); } } } }
+        }
     }
     let ns = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"";    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content {}><office:automatic-styles>", ns);
     for (id, fmt) in &span_styles {
@@ -1197,6 +1356,7 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
     }
     out.push_str("</office:automatic-styles><office:body><office:text>");
     for para in paras {
+        if para.style == ParaStyle::Image { continue; }
         if para.style == ParaStyle::Table {
             if let Some(ref tbl) = para.table {
                 let ncols = tbl.rows.iter().map(|r| r.len()).max().unwrap_or(1);
@@ -1205,7 +1365,17 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
                 for row in &tbl.rows {
                     out.push_str("<table:table-row>");
                     for cell in row {
-                        out.push_str(&format!("<table:table-cell><text:p>{}</text:p></table:table-cell>", xml_esc(&cell.text)));
+                        out.push_str("<table:table-cell><text:p>");
+                        let mut pos = 0usize;
+                        for span in &cell.spans {
+                            if span.len == 0 || pos >= cell.text.len() { continue; }
+                            let end = (pos + span.len).min(cell.text.len()); let seg = &cell.text[pos..end]; pos = end;
+                            if seg.is_empty() { continue; }
+                            let esc = xml_esc(seg);
+                            if span.fmt == SpanFmt::default() { out.push_str(&esc); }
+                            else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+                        }
+                        out.push_str("</text:p></table:table-cell>");
                     }
                     out.push_str("</table:table-row>");
                 }
@@ -1227,15 +1397,24 @@ fn build_odt_content(paras: &[DocParagraph]) -> String {
         }
         if para.style == ParaStyle::ListCheck { out.push_str(if para.checked { "☑ " } else { "☐ " }); }
         let mut pos = 0;
-        for span in &para.spans {
-            if span.len == 0 { pos += span.len; continue; }
-            if pos >= para.text.len() { break; }
-            let end = (pos + span.len).min(para.text.len());
-            let txt = &para.text[pos..end]; pos = end;
-            if txt.is_empty() { continue; }
-            let esc = xml_esc(txt);
-            if span.fmt == SpanFmt::default() { out.push_str(&esc); }
-            else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+        if para.text.is_empty() {
+            if let Some(span) = para.spans.first() {
+                if span.fmt != SpanFmt::default() {
+                    let style_id = fmt_to_odt_id(&span.fmt);
+                    out.push_str(&format!("<text:span text:style-name=\"{}\"/>", style_id));
+                }
+            }
+        } else {
+            for span in &para.spans {
+                if span.len == 0 { pos += span.len; continue; }
+                if pos >= para.text.len() { break; }
+                let end = (pos + span.len).min(para.text.len());
+                let txt = &para.text[pos..end]; pos = end;
+                if txt.is_empty() { continue; }
+                let esc = xml_esc(txt);
+                if span.fmt == SpanFmt::default() { out.push_str(&esc); }
+                else { out.push_str(&format!("<text:span text:style-name=\"{}\">{}</text:span>", fmt_to_odt_id(&span.fmt), esc)); }
+            }
         }
         if is_h { out.push_str("</text:h>"); } else { out.push_str("</text:p>"); }
     }
@@ -1371,7 +1550,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                     "table" if in_tbl => {
                         in_tbl = false; in_tc_odt = false;
                         let mut p = DocParagraph::with_style(ParaStyle::Table);
-                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new() }));
+                        p.table = Some(Box::new(TableData { rows: std::mem::take(&mut cur_tbl_rows), col_widths: Vec::new(), border_color: [100, 100, 110], border_width: 1.0 }));
                         paras.push(p);
                     }
                     "table-row" if in_tbl => { cur_tbl_rows.push(std::mem::take(&mut cur_tbl_row)); }
@@ -1379,7 +1558,7 @@ fn parse_odt_xml(xml: &str) -> Result<(Vec<DocParagraph>, PageLayout), String> {
                         let text = std::mem::take(&mut cur_tc_text);
                         let spans = if text.is_empty() { vec![DocSpan { len: 0, fmt: SpanFmt::default() }] }
                             else { vec![DocSpan { len: text.len(), fmt: SpanFmt::default() }] };
-                        cur_tbl_row.push(TableCell { text, spans });
+                        cur_tbl_row.push(TableCell { text, spans, bg_color: None });
                         in_tc_odt = false;
                     }
                     "p" | "h" if in_body && !in_tbl => {
