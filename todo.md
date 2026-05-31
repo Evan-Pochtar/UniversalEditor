@@ -61,8 +61,6 @@
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] Spell check should not run while currently typing a word
-- [ ] Spell check does not work properly with apostrophes 
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -121,7 +119,8 @@
 - [ ] Spell check
   - [ ] User dictionary and document only dictionary for spell check
   - [ ] Ignore words for spell check, for the user and the document as a whole
-  - [ ] Option to turn spell check off an on
+  - [ ] Option to turn spell check off and on
+  - [ ] Improve performance
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments

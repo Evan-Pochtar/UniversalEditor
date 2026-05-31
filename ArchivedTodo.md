@@ -208,6 +208,8 @@
 - [x] Cursor icon doesn't update properly in the right click context menu for text and images
 - [x] Cannot highlight and scroll at the same time
 - [x] Copy with formatting doesn't work with multi-line highlights
+- [x] Spell check should not run while currently typing a word
+- [x] Spell check does not work properly with apostrophes 
 
 ### Other Bugs
 

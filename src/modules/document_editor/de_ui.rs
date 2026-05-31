@@ -65,8 +65,12 @@ enum CtxAction {
 }
 
 fn multiline_highlight(galley: &egui::text::Galley, text: &str, start_byte: usize, end_byte: usize) -> Vec<egui::Rect> {
-    let start_byte = start_byte.min(text.len()); let end_byte = end_byte.min(text.len());
-    let start_char = text[..start_byte].chars().count(); let end_char = text[..end_byte].chars().count();
+    let mut sb = start_byte.min(text.len());
+    let mut eb = end_byte.min(text.len());
+    while sb > 0 && !text.is_char_boundary(sb) { sb -= 1; }
+    while eb > 0 && !text.is_char_boundary(eb) { eb -= 1; }
+    if sb >= eb { return Vec::new(); }
+    let start_char = text[..sb].chars().count(); let end_char = text[..eb].chars().count();
     let start_adjust = 4.0; let end_adjust = 4.0;
     let mut rects = Vec::new();
     let mut char_pos = 0usize;
@@ -99,7 +103,7 @@ fn multiline_highlight(galley: &egui::text::Galley, text: &str, start_byte: usiz
         if row.ends_with_newline { char_pos += 1; }
     }
 
-    if rects.is_empty() && start_byte == 0 && end_byte >= text.len() {
+    if rects.is_empty() && sb == 0 && eb >= text.len() {
         if let Some(row) = galley.rows.first() {
             rects.push(egui::Rect::from_min_max(
                 egui::pos2(row.rect().min.x + start_adjust, row.rect().min.y),
@@ -985,7 +989,7 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
     ed.para_texts.resize(n, String::new()); ed.para_ids.resize_with(n, || egui::Id::new(egui::Id::NULL)); ed.para_heights.resize(n, 0.0);
     for k in 0..n { ed.para_texts[k] = ed.paras[k].text.clone(); ed.para_ids[k] = egui::Id::new(("de_para", k as u64)); }
     if structure_changed {
-        ed.doc_sel = None;
+        ed.doc_sel = None; ed.spell_dirty = true;
         if focus_p < n && ed.paras[focus_p].style != ParaStyle::Table && ed.paras[focus_p].style != ParaStyle::HRule {
             ed.focused_para = focus_p;
             if !ed.toolbar_has_focus {
@@ -1682,6 +1686,12 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
 
                 if let Some(errors) = ed.spell_errors.get(i) {
                     if !errors.is_empty() && near_view {
+                        let cursor_byte: usize = if i == focused {
+                            egui::TextEdit::load_state(ctx, ed.para_ids[i])
+                                .and_then(|s| s.cursor.char_range())
+                                .map(|cr| char_to_byte(&para.text, cr.primary.index))
+                                .unwrap_or(usize::MAX)
+                        } else { usize::MAX };
                         let galley = get_galley();
                         let align_offset = match para.align {
                             Align::Center => ((edit_w - galley.rect.width() - 8.0) / 2.0).max(0.0),
@@ -1690,6 +1700,8 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                         };
                         let squig_col = egui::Color32::from_rgb(220, 38, 38);
                         for &(sb, se) in errors {
+                            let popup_here = ed.spell_popup.as_ref().map_or(false, |p| p.0 == i && p.1 == sb && p.2 == se);
+                            if !popup_here && cursor_byte >= sb && cursor_byte <= se { continue; }
                             for rect in multiline_highlight(&galley, &para.text, sb, se) {
                                 let tr = rect.translate(egui::vec2(edit_x + align_offset, text_y));
                                 draw_squiggle(&painter, tr, squig_col);

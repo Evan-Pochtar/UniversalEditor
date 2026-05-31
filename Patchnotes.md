@@ -374,3 +374,6 @@
 #### Debugging
 
 - **DOCUMENT EDITOR**: Copy with formatting now works with multi-line highlights
+- **DOCUMENT EDITOR**: Spell check now works with long documents (100+ pages)
+- **DOCUMENT EDITOR**: Spell check no longer crashes the app when interacting with weird unicode characters
+- **DOCUMENT EDITOR**: Spell check does not run when currently typing, only after the word is finished (clicked space)
