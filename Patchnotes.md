@@ -369,6 +369,7 @@
 #### Features
 
 - **DOCUMENT EDITOR**: Added rudimentary spell check
+- **DOCUMENT EDITOR**: Adding spell check suggestions
 
 #### Debugging
 

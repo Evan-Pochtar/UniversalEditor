@@ -62,6 +62,7 @@
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
 - [ ] Spell check should not run while currently typing a word
+- [ ] Spell check does not work properly with apostrophes 
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

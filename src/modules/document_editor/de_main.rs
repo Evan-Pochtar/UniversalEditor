@@ -59,6 +59,8 @@ pub struct DocumentEditor {
     pub(super) spell_errors: Vec<Vec<(usize, usize)>>,
     pub(super) spell_version: u64,
     pub(super) spell_dirty: bool,
+    pub(super) spell_popup: Option<(usize, usize, usize, egui::Pos2, Vec<String>)>,
+    pub(super) spell_popup_fresh: bool,
 }
 
 impl DocumentEditor {
@@ -100,6 +102,7 @@ impl DocumentEditor {
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, doc_scroll_y: 0.0, ctx_link_show: false,
             spell_errors: Vec::new(), spell_version: 0, spell_dirty: true,
+            spell_popup: None, spell_popup_fresh: false,
         }
     }
 

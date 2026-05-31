@@ -51,3 +51,37 @@ pub fn check_para(text: &str) -> Vec<(usize, usize)> {
     }
     errors
 }
+
+fn levenshtein(a: &[u8], b: &[u8]) -> usize {
+    let (m, n) = (a.len(), b.len());
+    let mut dp: Vec<usize> = (0..=n).collect();
+    for i in 1..=m {
+        let mut prev = dp[0];
+        dp[0] = i;
+        for j in 1..=n {
+            let tmp = dp[j];
+            dp[j] = if a[i-1] == b[j-1] { prev } else { 1 + prev.min(dp[j]).min(dp[j-1]) };
+            prev = tmp;
+        }
+    }
+    dp[n]
+}
+
+pub fn suggestions(word: &str, max: usize) -> Vec<String> {
+    let dict = match DICT.get() { Some(d) => d, None => return Vec::new() };
+    let clean: String = word.to_lowercase().chars().filter(|c| c.is_alphabetic()).collect();
+    if clean.len() < 2 { return Vec::new(); }
+    let len = clean.len();
+    let max_dist = if len <= 4 { 1 } else if len <= 8 { 2 } else { 3 };
+    let cb = clean.as_bytes();
+    let mut candidates: Vec<(usize, String)> = dict.iter()
+        .filter(|w| w.len().abs_diff(len) <= max_dist)
+        .filter_map(|w| {
+            let d = levenshtein(cb, w.as_bytes());
+            if d > 0 && d <= max_dist { Some((d, w.clone())) } else { None }
+        })
+        .collect();
+    candidates.sort_unstable_by_key(|(d, _)| *d);
+    candidates.truncate(max);
+    candidates.into_iter().map(|(_, w)| w).collect()
+}
