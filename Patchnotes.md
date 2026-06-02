@@ -370,6 +370,7 @@
 
 - **DOCUMENT EDITOR**: Added rudimentary spell check
 - **DOCUMENT EDITOR**: Adding spell check suggestions
+- **DOCUMENT EDITOR**: Added option to turn spell check off and on
 
 #### Debugging
 
@@ -377,3 +378,4 @@
 - **DOCUMENT EDITOR**: Spell check now works with long documents (100+ pages)
 - **DOCUMENT EDITOR**: Spell check no longer crashes the app when interacting with weird unicode characters
 - **DOCUMENT EDITOR**: Spell check does not run when currently typing, only after the word is finished (clicked space)
+- **DOCUMENT EDITOR**: Spell check now works with subscript and superscript

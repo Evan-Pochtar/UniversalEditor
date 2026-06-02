@@ -586,7 +586,7 @@ fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option
 }
 
 fn run_spell_check(ed: &mut DocumentEditor) {
-    if !ed.spell_dirty { return; }
+    if !ed.spell_dirty || !ed.spell_enabled { return; }
     let n = ed.paras.len();
     ed.spell_errors.resize(n, Vec::new());
     for i in 0..n {
@@ -594,7 +594,16 @@ fn run_spell_check(ed: &mut DocumentEditor) {
         if matches!(p.style, ParaStyle::Table | ParaStyle::Image | ParaStyle::HRule) {
             ed.spell_errors[i] = Vec::new();
         } else {
-            ed.spell_errors[i] = crate::spell::check_para(&p.text);
+            let excluded: Vec<(usize, usize)> = {
+                let mut v = Vec::new(); let mut pos = 0usize;
+                for span in &p.spans {
+                    let end = pos + span.len;
+                    if span.fmt.sub || span.fmt.sup { v.push((pos, end)); }
+                    pos = end;
+                }
+                v
+            };
+            ed.spell_errors[i] = crate::spell::check_para(&p.text, &excluded);
         }
     }
     ed.spell_dirty = false;
@@ -1228,8 +1237,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                                 ed.spell_popup = None;
                             } else {
                                 let hit = ed.spell_errors.get(i)
-                                    .and_then(|errs| errs.iter().find(|&&(sb, eb)| byte >= sb && byte < eb))
-                                    .copied();
+                                    .and_then(|errs| errs.iter().find(|&&(sb, eb)| byte >= sb && byte <= eb)).copied();
                                 if let Some((sb, eb)) = hit {
                                     let word = ed.paras[i].text[sb..eb].to_string();
                                     ed.spell_popup = Some((i, sb, eb, pp, crate::spell::suggestions(&word, 5)));

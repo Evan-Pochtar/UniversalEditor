@@ -210,6 +210,7 @@
 - [x] Copy with formatting doesn't work with multi-line highlights
 - [x] Spell check should not run while currently typing a word
 - [x] Spell check does not work properly with apostrophes 
+- [x] Spell check does not work properly with subscript or superscript
 
 ### Other Bugs
 
@@ -352,6 +353,8 @@
 - [x] Text
 - [x] Copy with formatting
 - [x] Ability to move images by dragging
+- [x] Only load en_words.txt when in document editor
+- [x] Option to turn spell check off and on
 
 ### CONVERTER: Img 2 Img
 

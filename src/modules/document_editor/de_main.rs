@@ -59,6 +59,7 @@ pub struct DocumentEditor {
     pub(super) spell_errors: Vec<Vec<(usize, usize)>>,
     pub(super) spell_version: u64,
     pub(super) spell_dirty: bool,
+    pub spell_enabled: bool,
     pub(super) spell_popup: Option<(usize, usize, usize, egui::Pos2, Vec<String>)>,
     pub(super) spell_popup_fresh: bool,
 }
@@ -102,7 +103,7 @@ impl DocumentEditor {
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, doc_scroll_y: 0.0, ctx_link_show: false,
             spell_errors: Vec::new(), spell_version: 0, spell_dirty: true,
-            spell_popup: None, spell_popup_fresh: false,
+            spell_enabled: true, spell_popup: None, spell_popup_fresh: false,
         }
     }
 
@@ -832,7 +833,9 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Redo".into(), shortcut: Some("Ctrl+Y".into()), enabled: !self.redo_stack.is_empty() }, MenuAction::Redo),
             ],
             view_items: vec![
+                (MenuItem { label: if self.spell_enabled { "Turn Spell Check Off".into() } else { "Turn Spell Check On".into() }, shortcut: None, enabled: true }, MenuAction::Custom("ToggleSpellCheck".into())),
                 (MenuItem { label: if self.show_outline { "Hide Outline".into() } else { "Show Outline".into() }, shortcut: None, enabled: true }, MenuAction::Custom("ToggleOutline".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
                 (MenuItem { label: "Zoom In".into(), shortcut: Some("Ctrl++".into()), enabled: true }, MenuAction::Custom("ZoomIn".into())),
                 (MenuItem { label: "Zoom Out".into(), shortcut: Some("Ctrl+-".into()), enabled: true }, MenuAction::Custom("ZoomOut".into())),
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
@@ -878,6 +881,7 @@ impl EditorModule for DocumentEditor {
                 "ToggleSubscript" => { self.apply_fmt_toggle_sub(); true }
                 "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
                 "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
+                "ToggleSpellCheck" => { self.spell_enabled = !self.spell_enabled; self.spell_dirty = true; if !self.spell_enabled { self.spell_errors.iter_mut().for_each(|v| v.clear()); self.spell_popup = None; } true }
                 "InsertImage" => {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "ico"]).pick_file() {
                         if let Ok(img) = image::open(&path) {
