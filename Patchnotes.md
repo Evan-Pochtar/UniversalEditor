@@ -381,3 +381,4 @@
 - **DOCUMENT EDITOR**: Spell check does not run when currently typing, only after the word is finished (clicked space)
 - **DOCUMENT EDITOR**: Spell check now works with subscript and superscript
 - **DOCUMENT EDITOR**: Spell check popup doesn't show up one space to early anymore
+- **DOCUMENT EDITOR**: Line after images no longer gets cut off when importing docx files

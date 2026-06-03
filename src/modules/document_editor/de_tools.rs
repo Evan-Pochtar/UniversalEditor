@@ -1063,14 +1063,25 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                     b"drawing" => { if in_drawing { para_has_drawing = true; } in_drawing = false; }
                     b"p" => {
                         if !in_tbl {
+                            let mut img_p = None;
                             if para_has_drawing && !drawing_rid.is_empty() {
                                 let mut imgp = DocParagraph::with_style(ParaStyle::Image);
                                 imgp.align = cur_para.as_ref().map(|p| p.align).unwrap_or(Align::Left);
-                                imgp.image = Some(DocImage { data: vec![], display_w: drawing_cx as f32 / 12700.0, display_h: drawing_cy as f32 / 12700.0, name: drawing_rid.clone(), uid: 0 });
-                                paras.push(imgp);
+                                imgp.image = Some(DocImage { 
+                                    data: vec![], 
+                                    display_w: drawing_cx as f32 / 12700.0, 
+                                    display_h: drawing_cy as f32 / 12700.0, 
+                                    name: drawing_rid.clone(), 
+                                    uid: 0 
+                                });
+                                img_p = Some(imgp);
+                            }
+                            let p_opt = cur_para.take();
+                            if let Some(img) = img_p {
+                                paras.push(img);
                                 para_numids.push(None);
-                                cur_para = None;
-                            } else if let Some(mut p) = cur_para.take() {
+                            }
+                            if let Some(mut p) = p_opt {
                                 if has_hborder {
                                     if p.text.trim().is_empty() {
                                         p.style = ParaStyle::HRule;
@@ -1083,15 +1094,15 @@ fn parse_docx_xml(xml: &str, num_map: &std::collections::HashMap<u32, (ParaStyle
                                         para_numids.push(None);
                                     }
                                 } else {
-                                    paras.push(p);
-                                    para_numids.push(cur_para_numid);
+                                    if !p.text.is_empty() || !para_has_drawing {
+                                        paras.push(p);
+                                        para_numids.push(cur_para_numid);
+                                    }
                                 }
                             }
-                            has_hborder = false;
-                            para_has_drawing = false;
+                            has_hborder = false; para_has_drawing = false;
                             drawing_rid.clear();
-                            drawing_cx = 0;
-                            drawing_cy = 0;
+                            drawing_cx = 0; drawing_cy = 0;
                         }
                     }
                     b"pPr" => {

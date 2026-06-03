@@ -58,7 +58,6 @@
 
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
-- [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
 - [ ] ODT Issues
@@ -121,9 +120,6 @@
   - [ ] Ignore words for spell check, for the user and the document as a whole
   - [ ] Improve performance
   - [ ] Change dictionary to one thats more encompassing
-- [ ] Grammar Check
-- [ ] Document Templates
-- [ ] Add way to create comments
 - [ ] Export
   - [ ] PDF
   - [ ] MD
@@ -136,6 +132,10 @@
 - [ ] Header and footers
 - [ ] Cell colors in tables for dark mode
 - [ ] Increase max table size creation from the table button
+- [ ] Grammar Check
+- [ ] Document Templates
+- [ ] Add way to create comments
+- [ ] Auto recognize links
 
 ### CONVERTERS
 
