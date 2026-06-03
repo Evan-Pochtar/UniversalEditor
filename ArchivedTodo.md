@@ -211,6 +211,7 @@
 - [x] Spell check should not run while currently typing a word
 - [x] Spell check does not work properly with apostrophes 
 - [x] Spell check does not work properly with subscript or superscript
+- [x] Place where you can click to spell check is "shifted over" by one character (can't click last letter, but can click space before word)
 
 ### Other Bugs
 
@@ -355,6 +356,7 @@
 - [x] Ability to move images by dragging
 - [x] Only load en_words.txt when in document editor
 - [x] Option to turn spell check off and on
+- [x] User dictionary for spell check
 
 ### CONVERTER: Img 2 Img
 

@@ -61,7 +61,6 @@
 - [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] Place where you can click to spell check is "shifted over" by one character (can't click last letter, but can click space before word)
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -118,7 +117,7 @@
 ### Document Editor
 
 - [ ] Spell check
-  - [ ] User dictionary and document only dictionary for spell check
+  - [ ] Document only dictionary for spell check
   - [ ] Ignore words for spell check, for the user and the document as a whole
   - [ ] Improve performance
   - [ ] Change dictionary to one thats more encompassing

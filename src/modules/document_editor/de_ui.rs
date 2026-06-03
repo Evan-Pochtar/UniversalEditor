@@ -594,16 +594,7 @@ fn run_spell_check(ed: &mut DocumentEditor) {
         if matches!(p.style, ParaStyle::Table | ParaStyle::Image | ParaStyle::HRule) {
             ed.spell_errors[i] = Vec::new();
         } else {
-            let excluded: Vec<(usize, usize)> = {
-                let mut v = Vec::new(); let mut pos = 0usize;
-                for span in &p.spans {
-                    let end = pos + span.len;
-                    if span.fmt.sub || span.fmt.sup { v.push((pos, end)); }
-                    pos = end;
-                }
-                v
-            };
-            ed.spell_errors[i] = crate::spell::check_para(&p.text, &excluded);
+            ed.spell_errors[i] = crate::spell::check_para(&p.text);
         }
     }
     ed.spell_dirty = false;
@@ -1236,8 +1227,11 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             if shift {
                                 ed.spell_popup = None;
                             } else {
+                                let click_byte = byte.saturating_sub(1);
                                 let hit = ed.spell_errors.get(i)
-                                    .and_then(|errs| errs.iter().find(|&&(sb, eb)| byte >= sb && byte <= eb)).copied();
+                                    .and_then(|errs| {
+                                        errs.iter().find(|&&(sb, eb)| click_byte >= sb && click_byte < eb)
+                                    }).copied();
                                 if let Some((sb, eb)) = hit {
                                     let word = ed.paras[i].text[sb..eb].to_string();
                                     ed.spell_popup = Some((i, sb, eb, pp, crate::spell::suggestions(&word, 5)));
@@ -2290,15 +2284,19 @@ fn render_spell_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
     } else {
         (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_800, ColorPalette::GRAY_400, ColorPalette::GRAY_100)
     };
+    let word = ed.paras.get(pi).and_then(|p| p.text.get(sb..eb)).unwrap_or("").to_string();
     let mut replacement: Option<String> = None;
+    let mut add_to_dict = false;
     let mut close = false;
     let win = egui::Window::new("##de_spell_popup")
         .title_bar(false).collapsible(false).resizable(false)
         .fixed_pos(egui::pos2(pos.x, pos.y + 20.0))
+        .min_size(egui::vec2(140.0, 0.0))
+        .max_size(egui::vec2(156.0, 500.0))
         .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(6.0).inner_margin(egui::Margin::same(4)))
         .order(egui::Order::Tooltip)
         .show(ctx, |ui| {
-            ui.set_min_width(152.0);
+            let bw = ui.available_width().max(132.0);
             if suggs.is_empty() {
                 ui.add_space(2.0);
                 ui.label(egui::RichText::new("No suggestions found").size(12.0).color(mc).italics());
@@ -2316,11 +2314,23 @@ fn render_spell_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
                         st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
                         st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         ui.add(egui::Button::new(egui::RichText::new(&disp).size(12.5).color(tc))
-                            .min_size(egui::vec2(152.0, 26.0)))
+                            .min_size(egui::vec2(bw, 26.0)))
                     }).inner.on_hover_cursor(egui::CursorIcon::PointingHand);
                     if r.clicked() { replacement = Some(disp); }
                 }
             }
+            cm_sep(ui);
+            let add_r = ui.scope(|ui| {
+                let st = ui.style_mut();
+                st.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                st.visuals.widgets.hovered.bg_fill = hov;
+                st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                st.visuals.widgets.active.bg_fill = hov;
+                ui.add(egui::Button::new(egui::RichText::new("Add to Dictionary").size(12.0).color(tc))
+                    .min_size(egui::vec2(bw, 26.0)))
+            }).inner.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if add_r.clicked() { add_to_dict = true; }
         });
     if !fresh {
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { close = true; }
@@ -2343,6 +2353,11 @@ fn render_spell_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
                 ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true;
             }
         }
+        close = true;
+    }
+    if add_to_dict && !word.is_empty() {
+        crate::spell::add_to_user_dict(&word);
+        ed.spell_dirty = true;
         close = true;
     }
     if close { ed.spell_popup = None; }
