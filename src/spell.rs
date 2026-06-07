@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
+use crate::modules::document_editor::de_tools::DocSpan;
 
 static DICT: OnceLock<HashSet<String>> = OnceLock::new();
 static USER_DICT: OnceLock<std::sync::Mutex<HashSet<String>>> = OnceLock::new();
@@ -51,20 +52,31 @@ fn normalize(s: &str) -> String {
     s.chars().map(|c| if is_apos(c) { '\'' } else { c }).collect::<String>().to_lowercase()
 }
 
-pub fn check_para(text: &str) -> Vec<(usize, usize)> {
+pub fn check_para(text: &str, spans: &[DocSpan]) -> Vec<(usize, usize)> {
     let dict = dict();
     let ud = user_dict().lock().unwrap();
     let mut errors = Vec::new();
     let len = text.len();
     let mut i = 0;
+    let mut is_script = vec![false; len];
+    let mut pos = 0;
+    for span in spans {
+        let end = pos + span.len;
+        let script = span.fmt.sup || span.fmt.sub;
+        for b in pos..end.min(len) {
+            is_script[b] = script;
+        }
+        pos = end;
+    }
     while i < len {
         let c = match text[i..].chars().next() { Some(c) => c, None => break };
         if c.is_alphabetic() {
             let start = i;
+            let start_script = is_script[start];
             i += c.len_utf8();
             while i < len {
                 let ch = match text[i..].chars().next() { Some(c) => c, None => break };
-                if is_word_char(ch) { i += ch.len_utf8(); } else { break; }
+                if is_word_char(ch) && is_script[i] == start_script { i += ch.len_utf8(); } else { break; }
             }
             let word = &text[start..i];
             let ls = word.trim_start_matches(|c: char| is_apos(c));

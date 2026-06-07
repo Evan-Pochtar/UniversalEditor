@@ -372,6 +372,7 @@
 - **DOCUMENT EDITOR**: Adding spell check suggestions
 - **DOCUMENT EDITOR**: Added option to turn spell check off and on
 - **DOCUMENT EDITOR**: Added user dictionary to spell check
+- **DOCUMENT EDITOR**: Added export to PDF
 
 #### Debugging
 

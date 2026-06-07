@@ -358,6 +358,7 @@
 - [x] Only load en_words.txt when in document editor
 - [x] Option to turn spell check off and on
 - [x] User dictionary for spell check
+- [x] PDF Export
 
 ### CONVERTER: Img 2 Img
 

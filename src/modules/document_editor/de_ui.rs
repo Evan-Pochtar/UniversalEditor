@@ -594,7 +594,7 @@ fn run_spell_check(ed: &mut DocumentEditor) {
         if matches!(p.style, ParaStyle::Table | ParaStyle::Image | ParaStyle::HRule) {
             ed.spell_errors[i] = Vec::new();
         } else {
-            ed.spell_errors[i] = crate::spell::check_para(&p.text);
+            ed.spell_errors[i] = crate::spell::check_para(&p.text, &p.spans);
         }
     }
     ed.spell_dirty = false;
@@ -2298,9 +2298,16 @@ fn render_spell_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: boo
         .show(ctx, |ui| {
             let bw = ui.available_width().max(132.0);
             if suggs.is_empty() {
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new("No suggestions found").size(12.0).color(mc).italics());
-                ui.add_space(2.0);
+                ui.scope(|ui| {
+                    let st = ui.style_mut();
+                    st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                    st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new(egui::RichText::new("No suggestions found").size(12.5).color(mc).italics())
+                            .min_size(egui::vec2(bw, 26.0))
+                    );
+                });
             } else {
                 for s in &suggs {
                     let disp = if cap {

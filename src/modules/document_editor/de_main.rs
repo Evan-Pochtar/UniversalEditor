@@ -824,6 +824,7 @@ impl EditorModule for DocumentEditor {
     fn get_menu_contributions(&self) -> MenuContribution {
         MenuContribution {
             file_items: vec![
+                (MenuItem { label: "Export as PDF...".into(), shortcut: None, enabled: true }, MenuAction::Custom("ExportPdf".into())),
                 (MenuItem { label: "Find & Replace...".into(), shortcut: Some("Ctrl+F".into()), enabled: true }, MenuAction::Custom("Find".into())),
                 (MenuItem { label: "Document Statistics".into(), shortcut: None, enabled: true }, MenuAction::Custom("Stats".into())),
                 (MenuItem { label: "Page Settings...".into(), shortcut: None, enabled: true }, MenuAction::Custom("PageSettings".into())),
@@ -865,6 +866,27 @@ impl EditorModule for DocumentEditor {
             MenuAction::Undo => { self.undo(); true }
             MenuAction::Redo => { self.redo(); true }
             MenuAction::Custom(ref v) => match v.as_str() {
+                "ExportPdf" => {
+                    let default_name = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str()).unwrap_or("document").to_string();
+                    if let Some(path) = rfd::FileDialog::new().add_filter("PDF Document", &["pdf"]).set_file_name(&format!("{}.pdf", default_name)).save_file() {
+                        let mut export_paras = self.paras.clone();
+                        let mut j = 0;
+                        while j < export_paras.len() {
+                            if export_paras[j].is_split && j > 0 {
+                                let sa = export_paras[j].space_after;
+                                merge_paragraphs(&mut export_paras, j - 1);
+                                export_paras[j - 1].space_after = sa;
+                                export_paras[j - 1].is_split = false;
+                            } else {
+                                j += 1;
+                            }
+                        }
+                        if let Err(e) = super::de_pdf::export_to_pdf(&export_paras, &self.layout, &path) {
+                            eprintln!("PDF export error: {e}");
+                        }
+                    }
+                    true
+                }
                 "Find" => { self.show_find = true; self.focus_find = true; true }
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
