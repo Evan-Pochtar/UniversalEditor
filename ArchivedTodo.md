@@ -213,6 +213,9 @@
 - [x] Spell check does not work properly with subscript or superscript
 - [x] Place where you can click to spell check is "shifted over" by one character (can't click last letter, but can click space before word)
 - [x] Sometimes cuts off last line of text below loaded image
+- [x] Tab indents do not load properly in pdf
+- [x] Highlights do not load properly in pdf
+- [x] Cannot click links in pdf
 
 ### Other Bugs
 

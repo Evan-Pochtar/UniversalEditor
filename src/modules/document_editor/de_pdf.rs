@@ -5,8 +5,9 @@ use crate::style::{
     FONT_UB_BLD_ITL, FONT_UB_ITL, FONT_UB_REG,
 };
 use printpdf::{
-    Color, FontId, Greyscale, Line, LinePoint, Mm, Op, ParsedFont, PdfDocument, PdfFontHandle,
-    PdfPage, PdfSaveOptions, PdfWarnMsg, Point, Pt, RawImage, Rgb, TextItem, XObjectTransform,
+    Actions, Color, FontId, Greyscale, Line, LinePoint, LinkAnnotation, Mm, Op, ParsedFont, PdfDocument,
+    PdfFontHandle, PdfPage, PdfSaveOptions, PdfWarnMsg, Point, Pt, RawImage, Rect as PdfRect,
+    Rgb, TextItem, XObjectTransform,
 };
 use std::{io::BufWriter, path::PathBuf};
 use super::de_tools::*;
@@ -136,6 +137,13 @@ impl PdfCtx {
         let total_w = mw(text, seg.font, seg.bold, seg.italic, seg.size);
         let yy = y_bl + seg.y_shift;
 
+        if let Some(hl) = seg.highlight {
+            let hl_col = Color::Rgb(Rgb::new(
+                hl[0] as f32 / 255.0, hl[1] as f32 / 255.0, hl[2] as f32 / 255.0, None,
+            ));
+            self.push_filled_rect(x, yy - seg.size * 0.22, x + total_w, yy + seg.size * 0.82, hl_col);
+        }
+
         let fh = self.fonts.handle(seg.font, seg.bold, seg.italic);
         self.ops.push(Op::StartTextSection);
         self.ops.push(Op::SetFillColor {
@@ -155,22 +163,14 @@ impl PdfCtx {
 
         if seg.underline {
             self.push_line(
-                x,
-                yy - seg.size * 0.10,
-                x + total_w,
-                yy - seg.size * 0.10,
-                rgba_col(seg.color, [0, 0, 0]),
-                (seg.size * 0.05).max(0.4),
+                x, yy - seg.size * 0.10, x + total_w, yy - seg.size * 0.10,
+                rgba_col(seg.color, [0, 0, 0]), (seg.size * 0.05).max(0.4),
             );
         }
         if seg.strike {
             self.push_line(
-                x,
-                yy + seg.size * 0.30,
-                x + total_w,
-                yy + seg.size * 0.30,
-                rgba_col(seg.color, [0, 0, 0]),
-                (seg.size * 0.05).max(0.4),
+                x, yy + seg.size * 0.30, x + total_w, yy + seg.size * 0.30,
+                rgba_col(seg.color, [0, 0, 0]), (seg.size * 0.05).max(0.4),
             );
         }
     }
@@ -194,11 +194,27 @@ impl PdfCtx {
             },
         });
     }
+
+    fn push_filled_rect(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, col: Color) {
+        let h = (y1 - y0).abs().max(0.1);
+        let mid_y = (y0 + y1) / 2.0;
+        self.ops.push(Op::SetOutlineColor { col });
+        self.ops.push(Op::SetOutlineThickness { pt: Pt(h) });
+        self.ops.push(Op::DrawLine {
+            line: Line {
+                points: vec![
+                    LinePoint { p: Point::new(pm(x0), pm(mid_y)), bezier: false },
+                    LinePoint { p: Point::new(pm(x1), pm(mid_y)), bezier: false },
+                ],
+                is_closed: false,
+            },
+        });
+    }
 }
 
 #[derive(Clone)]
 struct Seg { text: String, font: FontChoice, bold: bool, italic: bool, size: f32,
-    color: Option<[u8; 3]>, underline: bool, strike: bool, y_shift: f32, }
+    color: Option<[u8; 3]>, underline: bool, strike: bool, y_shift: f32, highlight: Option<[u8; 3]>, link: Option<String> }
 impl Seg {
     fn w(&self) -> f32 { mw(&self.text, self.font, self.bold, self.italic, self.size) }
 }
@@ -226,7 +242,7 @@ fn build_segs(para: &DocParagraph) -> Vec<Seg> {
                 bold: sb || span.fmt.bold, italic: si || span.fmt.italic,
                 size, color: span.fmt.color,
                 underline: span.fmt.underline || span.fmt.link.is_some(), strike: span.fmt.strike,
-                y_shift,
+                y_shift, highlight: span.fmt.highlight, link: span.fmt.link.clone(),
             });
         }
         pos = end;
@@ -234,9 +250,9 @@ fn build_segs(para: &DocParagraph) -> Vec<Seg> {
     out
 }
 
-fn wrap_segs(segs: &[Seg], max_w: f32) -> Vec<Vec<Seg>> {
+fn wrap_segs(segs: &[Seg], max_w: f32, first_line_indent: f32) -> Vec<Vec<Seg>> {
     let mut lines: Vec<Vec<Seg>> = vec![Vec::new()];
-    let mut x = 0.0f32;
+    let mut x = first_line_indent;
     for seg in segs {
         for (pi, part) in seg.text.split('\n').enumerate() {
             if pi > 0 { lines.push(Vec::new()); x = 0.0; }
@@ -279,8 +295,28 @@ fn render_line(ctx: &mut PdfCtx, line: &[Seg], x0: f32, avail_w: f32, y_bl: f32,
     };
     let mut x = x0 + offset;
     for seg in line {
+        let seg_w = seg.w();
         ctx.draw_text(&seg.text, seg, x, y_bl);
-        x += seg.w();
+        if let Some(ref uri) = seg.link {
+            if !seg.text.trim().is_empty() && seg_w > 0.0 {
+                let rect = PdfRect::from_xywh(
+                    pm(x).into(),
+                    pm(y_bl - seg.size * 0.22).into(),
+                    pm(seg_w).into(),
+                    pm(seg.size * 1.04).into(),
+                );
+                ctx.ops.push(Op::LinkAnnotation {
+                    link: LinkAnnotation::new(
+                        rect,
+                        Actions::uri(uri.clone()),
+                        None,
+                        None,
+                        None,
+                    ),
+                });
+            }
+        }
+        x += seg_w;
     }
 }
 
@@ -347,9 +383,9 @@ fn render_table(ctx: &mut PdfCtx, tbl: &TableData, layout: &PageLayout) {
                 bold: false, italic: false,
                 size: bsz, color: None,
                 underline: false, strike: false,
-                y_shift: 0.0,
+                y_shift: 0.0, highlight: None, link: None,
             };
-            let n = wrap_segs(&[seg], (cw - pad * 2.0).max(5.0)).len() as f32;
+            let n = wrap_segs(&[seg], (cw - pad * 2.0).max(5.0), 0.0).len() as f32;
             acc.max((n * bsz * 1.35 + 8.0).max(18.0))
         });
 
@@ -370,9 +406,9 @@ fn render_table(ctx: &mut PdfCtx, tbl: &TableData, layout: &PageLayout) {
                 bold: cell.spans.first().map(|s| s.fmt.bold).unwrap_or(false), italic: cell.spans.first().map(|s| s.fmt.italic).unwrap_or(false),
                 size: bsz, color: cell.spans.first().and_then(|s| s.fmt.color),
                 underline: false, strike: false,
-                y_shift: 0.0,
+                y_shift: 0.0, highlight: None, link: None,
             };
-            let wrapped = wrap_segs(&[cell_seg], (cw - pad * 2.0).max(5.0));
+            let wrapped = wrap_segs(&[cell_seg], (cw - pad * 2.0).max(5.0), 0.0);
             let mut y_c = ctx.y + 6.0 + bsz * 0.8;
             for line in &wrapped {
                 render_line(ctx, line, left + pad, cw - pad * 2.0, layout.height - y_c, Align::Left);
@@ -417,7 +453,7 @@ fn render_para(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout, list_
     let lines = if segs.is_empty() {
         vec![Vec::new()]
     } else {
-        wrap_segs(&segs, cw)
+        wrap_segs(&segs, cw, para.indent_first)
     };
 
     for (li, line) in lines.iter().enumerate() {
@@ -425,6 +461,11 @@ fn render_para(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout, list_
         ctx.ensure(lh, layout);
         let ascent = base * 0.78;
         let y_bl = layout.height - ctx.y - ascent;
+        let (line_x0, line_cw) = if li == 0 {
+            (x0 + para.indent_first, (cw - para.indent_first).max(10.0))
+        } else {
+            (x0, cw)
+        };
         if li == 0 {
             let marker: Option<String> = match para.style {
                 ParaStyle::ListBullet => Some("\u{2022}".into()),
@@ -439,12 +480,13 @@ fn render_para(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout, list_
                     size: base * 0.9, color: Some([110, 110, 110]),
                     underline: false, strike: false,
                     y_shift: 0.0,
+                    highlight: None, link: None,
                 };
                 let mx = (layout.margin_left + indent - base * 1.5).max(2.0);
                 ctx.draw_text(&mseg.text, &mseg, mx, y_bl);
             }
         }
-        render_line(ctx, line, x0, cw, y_bl, para.align);
+        render_line(ctx, line, line_x0, line_cw, y_bl, para.align);
         ctx.y += lh;
     }
     ctx.y += para.space_after;

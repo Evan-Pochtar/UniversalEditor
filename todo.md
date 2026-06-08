@@ -61,12 +61,10 @@
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
 - [ ] PDF Export Issues
-  - [ ] Tab indents do not load properly
-  - [ ] Highlights do not load properly
-  - [ ] Cannot click links
   - [ ] Table cell color doesn't export properly
   - [ ] Table cell size doesn't export properly (e.g if there is a lot of text in one cell)
   - [ ] Large font causes there to be a big space between text and a horizontal line
+  - [ ] Images don't load properly
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

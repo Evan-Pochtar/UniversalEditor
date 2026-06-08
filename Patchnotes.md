@@ -383,3 +383,4 @@
 - **DOCUMENT EDITOR**: Spell check now works with subscript and superscript
 - **DOCUMENT EDITOR**: Spell check popup doesn't show up one space to early anymore
 - **DOCUMENT EDITOR**: Line after images no longer gets cut off when importing docx files
+- **DOCUMENT EDITOR**: Fixed issue where links, highlights, and tab indents did not show up in pdf exports
