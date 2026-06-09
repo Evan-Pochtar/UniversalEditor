@@ -63,7 +63,6 @@
 - [ ] PDF Export Issues
   - [ ] Table cell color doesn't export properly
   - [ ] Table cell size doesn't export properly (e.g if there is a lot of text in one cell)
-  - [ ] Large font causes there to be a big space between text and a horizontal line
   - [ ] Images don't load properly
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)

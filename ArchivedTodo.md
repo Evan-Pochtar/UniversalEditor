@@ -216,6 +216,7 @@
 - [x] Tab indents do not load properly in pdf
 - [x] Highlights do not load properly in pdf
 - [x] Cannot click links in pdf
+- [x] Large font causes there to be a big space between text and a horizontal line in pdf export
 
 ### Other Bugs
 

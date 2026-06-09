@@ -325,9 +325,11 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
         Some(i) if !i.data.is_empty() => i,
         _ => return,
     };
-    let raw = match RawImage::decode_from_bytes(&img.data, &mut ctx.warn) {
-        Ok(r) => r,
-        Err(_) => return,
+    let raw = if let Ok(r) = RawImage::decode_from_bytes(&img.data, &mut ctx.warn) { r } else {
+        let Ok(dyn_img) = image::load_from_memory(&img.data) else { return; };
+        let mut buf = Vec::new();
+        if dyn_img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_err() { return; }
+        match RawImage::decode_from_bytes(&buf, &mut ctx.warn) { Ok(r) => r, Err(_) => return }
     };
     let max_h = layout.height - layout.margin_top - layout.margin_bot;
     let h = img.display_h.min(max_h).max(1.0);
@@ -339,12 +341,6 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
         _ => layout.margin_left,
     };
     let iy = layout.height - ctx.y - h;
-    let dyn_img = match image::load_from_memory(&img.data) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    let scale_x = w / dyn_img.width().max(1) as f32;
-    let scale_y = h / dyn_img.height().max(1) as f32;
     let id = ctx.doc.add_image(&raw);
     ctx.ops.push(Op::UseXobject {
         id,
@@ -352,9 +348,9 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
             translate_x: Some(Pt(ix)),
             translate_y: Some(Pt(iy)),
             rotate: None,
-            scale_x: Some(scale_x),
-            scale_y: Some(scale_y),
-            dpi: Some(72.0),
+            scale_x: Some(w),
+            scale_y: Some(h),
+            dpi: None,
         },
     });
     ctx.y += h + 4.0;
@@ -458,9 +454,9 @@ fn render_para(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout, list_
 
     for (li, line) in lines.iter().enumerate() {
         let lh = lh_for(line, base, para.line_height);
+        let line_max_size = line.iter().map(|s| s.size).fold(base, f32::max);
         ctx.ensure(lh, layout);
-        let ascent = base * 0.78;
-        let y_bl = layout.height - ctx.y - ascent;
+        let y_bl = layout.height - ctx.y - line_max_size;
         let (line_x0, line_cw) = if li == 0 {
             (x0 + para.indent_first, (cw - para.indent_first).max(10.0))
         } else {
