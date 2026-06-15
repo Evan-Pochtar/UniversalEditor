@@ -373,6 +373,7 @@
 - **DOCUMENT EDITOR**: Added option to turn spell check off and on
 - **DOCUMENT EDITOR**: Added user dictionary to spell check
 - **DOCUMENT EDITOR**: Added export to PDF
+- **DOCUMENT EDITOR**: Reworked overlay for headers
 
 #### Debugging
 

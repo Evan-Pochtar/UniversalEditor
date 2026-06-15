@@ -609,10 +609,7 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     run_spell_check(ed);
     render_toolbar(ed, ui, theme, is_dark);
     ui.separator();
-    egui::SidePanel::left("de_outline_panel").resizable(true).default_width(200.0).min_width(140.0).max_width(320.0)
-        .frame(egui::Frame::new().fill(if is_dark { egui::Color32::from_rgb(20,20,26) } else { ColorPalette::GRAY_50 })
-            .stroke(egui::Stroke::new(1.0, if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 })))
-        .show_animated_inside(ui, ed.show_outline, |ui| render_outline(ed, ui, is_dark));
+    let content_rect = ui.available_rect_before_wrap();
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(if is_dark { egui::Color32::from_rgb(14,14,18) } else { egui::Color32::from_rgb(188,188,196) }))
         .show_inside(ui, |ui| render_canvas(ed, ui, ctx, is_dark));
@@ -621,6 +618,7 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     render_page_settings(ed, ctx, is_dark);
     render_ctx_link_modal(ed, ctx, is_dark);
     render_spell_popup(ed, ctx, is_dark);
+    render_outline_overlay(ed, ctx, is_dark, content_rect);
 }
 
 fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
@@ -822,10 +820,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
 
 fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
     let tc = if is_dark { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_800 };
-    let muted = if is_dark { ColorPalette::ZINC_500 } else { ColorPalette::ZINC_500 };
     ui.add_space(8.0);
-    ui.horizontal(|ui| { ui.add_space(6.0); ui.label(egui::RichText::new("Outline").size(12.0).color(muted).strong()); });
-    ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         let entries: Vec<(usize, u8, String)> = ed.paras.iter().enumerate()
             .filter_map(|(i, p)| p.style.outline_depth().map(|d| (i, d, p.text.clone())))
@@ -843,6 +838,39 @@ fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
             ui.add_space(2.0);
         }
     });
+}
+
+fn render_outline_overlay(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool, content_rect: egui::Rect) {
+    let anim_val = ctx.animate_bool(egui::Id::new("de_outline_anim"), ed.show_outline);
+    if anim_val <= 0.001 { return; }
+    let full_w  = 180_f32.min(content_rect.width() * 0.40);
+    let current_w = full_w * anim_val;
+    let panel_h   = content_rect.height();
+    let (fill, border) = if is_dark {
+        (egui::Color32::from_rgb(20, 20, 26), ColorPalette::ZINC_700)
+    } else {
+        (ColorPalette::GRAY_50, ColorPalette::GRAY_200)
+    };
+    let panel_rect = egui::Rect::from_min_size(content_rect.min, egui::vec2(current_w, panel_h));
+
+    egui::Area::new(egui::Id::new("de_outline_overlay"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(content_rect.min)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(panel_rect);
+            ui.allocate_ui(egui::vec2(current_w, panel_h), |ui| {
+                let bg = ui.max_rect();
+                ui.painter().rect_filled(bg, 0.0, fill);
+                ui.painter().vline(
+                    bg.max.x,
+                    bg.min.y..=bg.max.y,
+                    egui::Stroke::new(1.0, border),
+                );
+                if anim_val > 0.5 {
+                    render_outline(ed, ui, is_dark);
+                }
+            });
+        });
 }
 
 struct ComputedPageLayout {para_page: Vec<usize>, para_content_y: Vec<f32>, page_tops: Vec<f32>}
