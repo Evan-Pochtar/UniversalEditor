@@ -374,6 +374,7 @@
 - **DOCUMENT EDITOR**: Added user dictionary to spell check
 - **DOCUMENT EDITOR**: Added export to PDF
 - **DOCUMENT EDITOR**: Reworked overlay for headers
+- **DOCUMENT EDITOR**: Auto link recognition  
 
 #### Debugging
 

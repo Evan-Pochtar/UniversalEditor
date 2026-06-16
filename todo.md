@@ -138,7 +138,6 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
-- [ ] Auto recognize links
 
 ### CONVERTERS
 

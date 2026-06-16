@@ -2136,6 +2136,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 let ns = if ed.paras[i].style.is_heading() { ParaStyle::Normal } else { ed.paras[i].style };
                 let (al, lh, il) = (ed.paras[i].align, ed.paras[i].line_height, ed.paras[i].indent_left);
                 rebuild_spans(&mut ed.paras[i], lns[0].to_string(), &cur_fmt);
+                auto_link_para(&mut ed.paras[i], lns[0].len());
                 let mut ins = i + 1;
                 for &ln in &lns[1..] {
                     let mut np = DocParagraph::with_style(ns);
@@ -2163,6 +2164,18 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 ed.last_edit_action = new_action;
                 rebuild_spans(&mut ed.paras[i], new_text, &cur_fmt);
                 ed.para_texts[i] = ed.paras[i].text.clone();
+                if diff == 1 {
+                    if let Some(s) = egui::TextEdit::load_state(ctx, ed.para_ids[i]) {
+                        if let Some(cr) = s.cursor.char_range() {
+                            if cr.primary == cr.secondary {
+                                let cb = char_to_byte(&ed.para_texts[i], cr.primary.index);
+                                if cb > 0 && ed.para_texts[i].as_bytes().get(cb.saturating_sub(1)).copied().map_or(false, |b| b == b' ') {
+                                    auto_link_para(&mut ed.paras[i], cb.saturating_sub(1));
+                                }
+                            }
+                        }
+                    }
+                }
             }
             ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true;
         }

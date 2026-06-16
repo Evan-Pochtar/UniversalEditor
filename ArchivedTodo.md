@@ -363,6 +363,7 @@
 - [x] Option to turn spell check off and on
 - [x] User dictionary for spell check
 - [x] PDF Export
+- [x] Auto recognize links
 
 ### CONVERTER: Img 2 Img
 
