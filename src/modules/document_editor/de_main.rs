@@ -62,6 +62,8 @@ pub struct DocumentEditor {
     pub spell_enabled: bool,
     pub(super) spell_popup: Option<(usize, usize, usize, egui::Pos2, Vec<String>)>,
     pub(super) spell_popup_fresh: bool,
+    pub(super) link_popup: Option<(usize, usize, egui::Pos2)>,
+    pub(super) link_popup_fresh: bool
 }
 
 impl DocumentEditor {
@@ -104,6 +106,7 @@ impl DocumentEditor {
             toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, doc_scroll_y: 0.0, ctx_link_show: false,
             spell_errors: Vec::new(), spell_version: 0, spell_dirty: true,
             spell_enabled: true, spell_popup: None, spell_popup_fresh: false,
+            link_popup: None, link_popup_fresh: false,
         }
     }
 

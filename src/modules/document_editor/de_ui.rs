@@ -618,6 +618,7 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     render_page_settings(ed, ctx, is_dark);
     render_ctx_link_modal(ed, ctx, is_dark);
     render_spell_popup(ed, ctx, is_dark);
+    render_link_popup(ed, ctx, is_dark);
     render_outline_overlay(ed, ctx, is_dark, content_rect);
 }
 
@@ -1254,18 +1255,24 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             ed.doc_sel = if shift { ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos])) } else { Some([pos, pos]) };
                             if shift {
                                 ed.spell_popup = None;
+                                ed.link_popup = None;
                             } else {
                                 let click_byte = byte.saturating_sub(1);
                                 let hit = ed.spell_errors.get(i)
-                                    .and_then(|errs| {
-                                        errs.iter().find(|&&(sb, eb)| click_byte >= sb && click_byte < eb)
-                                    }).copied();
+                                    .and_then(|errs| errs.iter().find(|&&(sb, eb)| click_byte >= sb && click_byte < eb))
+                                    .copied();
                                 if let Some((sb, eb)) = hit {
                                     let word = ed.paras[i].text[sb..eb].to_string();
                                     ed.spell_popup = Some((i, sb, eb, pp, crate::spell::suggestions(&word, 5)));
                                     ed.spell_popup_fresh = true;
                                 } else {
                                     ed.spell_popup = None;
+                                }
+                                if link_at_byte(&ed.paras[i], click_byte).is_some() {
+                                    ed.link_popup = Some((i, click_byte, pp));
+                                    ed.link_popup_fresh = true;
+                                } else {
+                                    ed.link_popup = None;
                                 }
                             }
                         } else if btn_down {
@@ -2515,4 +2522,43 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
         ed.layout = layout; ed.preset_idx = preset; ed.heights_dirty = true; ed.auto_zoom_done = false; ed.dirty = true;
         ed.page_settings_draft = None; ed.show_page_settings = false;
     } else if cancel || !open { ed.page_settings_draft = None; ed.show_page_settings = false; }
+}
+
+fn render_link_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
+    let (pi, byte, pos) = match ed.link_popup { Some(p) => p, None => return };
+    let raw = match ed.paras.get(pi).and_then(|p| link_at_byte(p, byte)).map(str::to_string) {
+        Some(u) => u, None => { ed.link_popup = None; return }
+    };
+    let url = if raw.starts_with("http://") || raw.starts_with("https://") { raw.clone() } else { format!("https://{}", raw) };
+    let fresh = ed.link_popup_fresh;
+    ed.link_popup_fresh = false;
+    let (bg, border, link_col) = if is_dark {
+        (ColorPalette::ZINC_800, ColorPalette::ZINC_600, ColorPalette::BLUE_400)
+    } else {
+        (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::BLUE_600)
+    };
+    let mut open_it = false;
+    let win = egui::Window::new("##de_link_popup")
+        .title_bar(false).collapsible(false).resizable(false)
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(egui::pos2(pos.x, pos.y - 4.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(6.0)
+            .inner_margin(egui::Margin { left: 10, right: 10, top: 6, bottom: 6 }))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| {
+            ui.set_max_width(260.0);
+            let r = ui.add(egui::Label::new(egui::RichText::new(&raw).size(12.0).color(link_col).underline())
+                .truncate().sense(egui::Sense::click()))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if r.clicked() { open_it = true; }
+        });
+    if open_it { ctx.open_url(egui::OpenUrl::new_tab(&url)); ed.link_popup = None; return; }
+    if !fresh {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { ed.link_popup = None; return; }
+        if let Some(w) = win {
+            if ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !w.response.rect.contains(p))) {
+                ed.link_popup = None;
+            }
+        }
+    }
 }

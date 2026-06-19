@@ -375,6 +375,7 @@
 - **DOCUMENT EDITOR**: Added export to PDF
 - **DOCUMENT EDITOR**: Reworked overlay for headers
 - **DOCUMENT EDITOR**: Auto link recognition  
+- **DOCUMENT EDITOR**: On click of text with a link attached, it opens a popup with a link that is clickable
 
 #### Debugging
 
