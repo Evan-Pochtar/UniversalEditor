@@ -217,6 +217,8 @@
 - [x] Highlights do not load properly in pdf
 - [x] Cannot click links in pdf
 - [x] Large font causes there to be a big space between text and a horizontal line in pdf export
+- [x] Table cell color doesn't export properly (PDF)
+- [x] Table cell size doesn't export properly (e.g if there is a lot of text in one cell) (PDF)
 
 ### Other Bugs
 

@@ -250,12 +250,20 @@ fn build_segs(para: &DocParagraph) -> Vec<Seg> {
     out
 }
 
+fn break_line(lines: &mut Vec<Vec<Seg>>, x: &mut f32) {
+    if let Some(l) = lines.last_mut().and_then(|v| v.last_mut()) {
+        l.text = l.text.trim_end_matches(' ').to_string();
+    }
+    lines.push(Vec::new());
+    *x = 0.0;
+}
+
 fn wrap_segs(segs: &[Seg], max_w: f32, first_line_indent: f32) -> Vec<Vec<Seg>> {
     let mut lines: Vec<Vec<Seg>> = vec![Vec::new()];
     let mut x = first_line_indent;
     for seg in segs {
         for (pi, part) in seg.text.split('\n').enumerate() {
-            if pi > 0 { lines.push(Vec::new()); x = 0.0; }
+            if pi > 0 { break_line(&mut lines, &mut x); }
             let mut pos = 0usize;
             while pos < part.len() {
                 let wl = part[pos..].find(' ').unwrap_or(part.len() - pos);
@@ -266,14 +274,25 @@ fn wrap_segs(segs: &[Seg], max_w: f32, first_line_indent: f32) -> Vec<Vec<Seg>> 
                 let chunk = &part[pos..ce];
                 if chunk.is_empty() { pos = ce; continue; }
                 let w = mw(word, seg.font, seg.bold, seg.italic, seg.size);
-                if x > 0.0 && x + w > max_w {
-                    if let Some(l) = lines.last_mut().and_then(|v| v.last_mut()) {
-                        l.text = l.text.trim_end_matches(' ').to_string();
+                if x > 0.0 && x + w > max_w { break_line(&mut lines, &mut x); }
+                if w > max_w {
+                    for ch in word.chars() {
+                        let cs = ch.to_string();
+                        let cw = mw(&cs, seg.font, seg.bold, seg.italic, seg.size);
+                        if x > 0.0 && x + cw > max_w { break_line(&mut lines, &mut x); }
+                        lines.last_mut().unwrap().push(Seg { text: cs, ..seg.clone() });
+                        x += cw;
                     }
-                    lines.push(Vec::new()); x = 0.0;
+                    let spaces = &part[we..ce];
+                    if !spaces.is_empty() {
+                        let sw = mw(spaces, seg.font, seg.bold, seg.italic, seg.size);
+                        lines.last_mut().unwrap().push(Seg { text: spaces.to_string(), ..seg.clone() });
+                        x += sw;
+                    }
+                } else {
+                    x += mw(chunk, seg.font, seg.bold, seg.italic, seg.size);
+                    lines.last_mut().unwrap().push(Seg { text: chunk.to_string(), ..seg.clone() });
                 }
-                x += mw(chunk, seg.font, seg.bold, seg.italic, seg.size);
-                lines.last_mut().unwrap().push(Seg { text: chunk.to_string(), ..seg.clone() });
                 pos = ce;
             }
         }
@@ -374,9 +393,12 @@ fn render_table(ctx: &mut PdfCtx, tbl: &TableData, layout: &PageLayout) {
     for row in rows {
         let rh = row.iter().enumerate().fold(18.0f32, |acc, (ci, cell)| {
             let cw = col_px.get(ci).copied().unwrap_or(layout.content_width() / nc as f32);
+            let cell_font   = cell.spans.first().and_then(|s| s.fmt.font).unwrap_or(DEFAULT_BASE_FONT);
+            let cell_bold   = cell.spans.first().map(|s| s.fmt.bold).unwrap_or(false);
+            let cell_italic = cell.spans.first().map(|s| s.fmt.italic).unwrap_or(false);
             let seg = Seg {
-                text: cell.text.clone(), font: DEFAULT_BASE_FONT,
-                bold: false, italic: false,
+                text: cell.text.clone(), font: cell_font,
+                bold: cell_bold, italic: cell_italic,
                 size: bsz, color: None,
                 underline: false, strike: false,
                 y_shift: 0.0, highlight: None, link: None,
@@ -391,6 +413,16 @@ fn render_table(ctx: &mut PdfCtx, tbl: &TableData, layout: &PageLayout) {
         for (ci, cell) in row.iter().enumerate() {
             let cw = col_px.get(ci).copied().unwrap_or(layout.content_width() / nc as f32);
             let (left, right, bot) = (x, x + cw, top - rh);
+            if let Some(bg) = cell.bg_color {
+                let bg_color = Color::Rgb(Rgb::new(
+                    bg[0] as f32 / 255.0,
+                    bg[1] as f32 / 255.0,
+                    bg[2] as f32 / 255.0,
+                    None,
+                ));
+                ctx.push_filled_rect(left, bot, right, top, bg_color);
+            }
+
             let border = rgba_col(Some(tbl.border_color), [110, 110, 110]);
             ctx.push_line(left, top, right, top, border.clone(), bw);
             ctx.push_line(left, bot, right, bot, border.clone(), bw);
