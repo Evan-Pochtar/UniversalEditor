@@ -60,8 +60,6 @@
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] PDF Export Issues
-  - [ ] Images don't load properly
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)

@@ -344,11 +344,15 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
         Some(i) if !i.data.is_empty() => i,
         _ => return,
     };
-    let raw = if let Ok(r) = RawImage::decode_from_bytes(&img.data, &mut ctx.warn) { r } else {
-        let Ok(dyn_img) = image::load_from_memory(&img.data) else { return; };
-        let mut buf = Vec::new();
-        if dyn_img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_err() { return; }
-        match RawImage::decode_from_bytes(&buf, &mut ctx.warn) { Ok(r) => r, Err(_) => return }
+    let Ok(dyn_img) = image::load_from_memory(&img.data) else { return };
+    let (px_w, px_h) = (dyn_img.width().max(1) as f32, dyn_img.height().max(1) as f32);
+    let raw = match RawImage::decode_from_bytes(&img.data, &mut ctx.warn) {
+        Ok(r) => r,
+        Err(_) => {
+            let mut buf = Vec::new();
+            if dyn_img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_err() { return; }
+            match RawImage::decode_from_bytes(&buf, &mut ctx.warn) { Ok(r) => r, Err(_) => return }
+        }
     };
     let max_h = layout.height - layout.margin_top - layout.margin_bot;
     let h = img.display_h.min(max_h).max(1.0);
@@ -360,6 +364,7 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
         _ => layout.margin_left,
     };
     let iy = layout.height - ctx.y - h;
+    let dpi = 300.0_f32;
     let id = ctx.doc.add_image(&raw);
     ctx.ops.push(Op::UseXobject {
         id,
@@ -367,9 +372,9 @@ fn render_image(ctx: &mut PdfCtx, para: &DocParagraph, layout: &PageLayout) {
             translate_x: Some(Pt(ix)),
             translate_y: Some(Pt(iy)),
             rotate: None,
-            scale_x: Some(w),
-            scale_y: Some(h),
-            dpi: None,
+            scale_x: Some(w * dpi / (px_w * 72.0)),
+            scale_y: Some(h * dpi / (px_h * 72.0)),
+            dpi: Some(dpi),
         },
     });
     ctx.y += h + 4.0;
