@@ -207,6 +207,19 @@
 - [x] Can click behind the right click context menu for text and images
 - [x] Cursor icon doesn't update properly in the right click context menu for text and images
 - [x] Cannot highlight and scroll at the same time
+- [x] Copy with formatting doesn't work with multi-line highlights
+- [x] Spell check should not run while currently typing a word
+- [x] Spell check does not work properly with apostrophes 
+- [x] Spell check does not work properly with subscript or superscript
+- [x] Place where you can click to spell check is "shifted over" by one character (can't click last letter, but can click space before word)
+- [x] Sometimes cuts off last line of text below loaded image
+- [x] Tab indents do not load properly in pdf
+- [x] Highlights do not load properly in pdf
+- [x] Cannot click links in pdf
+- [x] Large font causes there to be a big space between text and a horizontal line in pdf export
+- [x] Table cell color doesn't export properly (PDF)
+- [x] Table cell size doesn't export properly (e.g if there is a lot of text in one cell) (PDF)
+- [x] Images don't load properly (PDF)
 
 ### Other Bugs
 
@@ -349,6 +362,11 @@
 - [x] Text
 - [x] Copy with formatting
 - [x] Ability to move images by dragging
+- [x] Only load en_words.txt when in document editor
+- [x] Option to turn spell check off and on
+- [x] User dictionary for spell check
+- [x] PDF Export
+- [x] Auto recognize links
 
 ### CONVERTER: Img 2 Img
 

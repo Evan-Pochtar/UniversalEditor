@@ -19,6 +19,27 @@ fn extract_sel_spans(para: &DocParagraph, start: usize, end: usize) -> Vec<DocSp
     out
 }
 
+fn draw_squiggle(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    let y = rect.max.y + 1.0;
+    let x0 = rect.min.x;
+    let x1 = rect.max.x;
+    let w = (x1 - x0).max(0.0);
+    if w < 2.0 { return; }
+    let amp = 1.5_f32;
+    let period = 4.0_f32;
+    let steps = ((w / period) * 4.0).ceil() as usize + 1;
+    let stroke = egui::Stroke::new(1.0, color);
+    let mut prev: Option<egui::Pos2> = None;
+    for s in 0..=steps {
+        let t = x0 + (s as f32 / steps as f32) * w;
+        let phase = (t - x0) / period * std::f32::consts::TAU;
+        let ys = y + phase.sin() * amp;
+        let cur = egui::pos2(t, ys);
+        if let Some(p) = prev { painter.line_segment([p, cur], stroke); }
+        prev = Some(cur);
+    }
+}
+
 fn compute_drop_idx(ed: &DocumentEditor, pl: &ComputedPageLayout, omy: f32, cy: f32) -> usize {
     let n = ed.paras.len();
     let gy = |i: usize| -> f32 {
@@ -44,8 +65,12 @@ enum CtxAction {
 }
 
 fn multiline_highlight(galley: &egui::text::Galley, text: &str, start_byte: usize, end_byte: usize) -> Vec<egui::Rect> {
-    let start_byte = start_byte.min(text.len()); let end_byte = end_byte.min(text.len());
-    let start_char = text[..start_byte].chars().count(); let end_char = text[..end_byte].chars().count();
+    let mut sb = start_byte.min(text.len());
+    let mut eb = end_byte.min(text.len());
+    while sb > 0 && !text.is_char_boundary(sb) { sb -= 1; }
+    while eb > 0 && !text.is_char_boundary(eb) { eb -= 1; }
+    if sb >= eb { return Vec::new(); }
+    let start_char = text[..sb].chars().count(); let end_char = text[..eb].chars().count();
     let start_adjust = 4.0; let end_adjust = 4.0;
     let mut rects = Vec::new();
     let mut char_pos = 0usize;
@@ -78,7 +103,7 @@ fn multiline_highlight(galley: &egui::text::Galley, text: &str, start_byte: usiz
         if row.ends_with_newline { char_pos += 1; }
     }
 
-    if rects.is_empty() && start_byte == 0 && end_byte >= text.len() {
+    if rects.is_empty() && sb == 0 && eb >= text.len() {
         if let Some(row) = galley.rows.first() {
             rects.push(egui::Rect::from_min_max(
                 egui::pos2(row.rect().min.x + start_adjust, row.rect().min.y),
@@ -339,6 +364,22 @@ fn process_ctx_action(ed: &mut DocumentEditor, ctx: &egui::Context, action: CtxA
         }
         CtxAction::Delete => do_delete_sel(ed, ctx),
         CtxAction::CopyWithFmt => {
+            if let Some((from, to)) = ed.norm_sel() {
+                if from.para != to.para || from.byte != to.byte {
+                    let text = ed.collect_sel_text(from, to);
+                    ctx.copy_text(text.clone());
+                    let mut combined_spans: Vec<DocSpan> = Vec::new();
+                    for pi in from.para..=to.para {
+                        if pi >= ed.paras.len() { break; }
+                        let start = if pi == from.para { from.byte } else { 0 };
+                        let end = if pi == to.para { to.byte } else { ed.paras[pi].text.len() };
+                        if pi > from.para { combined_spans.push(DocSpan { len: 1, fmt: SpanFmt::default() }); }
+                        combined_spans.extend(extract_sel_spans(&ed.paras[pi], start, end));
+                    }
+                    RICH_CLIP.with(|c| *c.borrow_mut() = Some((text, combined_spans)));
+                    return;
+                }
+            }
             let sel = ed.ctx_sel.filter(|(_, s, e)| s != e).or(ed.last_selection.filter(|(_, s, e)| s != e));
             if let Some((pi, sb, eb)) = sel {
                 if pi < ed.paras.len() {
@@ -544,17 +585,31 @@ fn img_cm(ui: &mut egui::Ui, para_idx: usize, action: &std::cell::RefCell<Option
     cm_btn(ui, "Crop Image", false);
 }
 
+fn run_spell_check(ed: &mut DocumentEditor) {
+    if !ed.spell_dirty || !ed.spell_enabled { return; }
+    let n = ed.paras.len();
+    ed.spell_errors.resize(n, Vec::new());
+    for i in 0..n {
+        let p = &ed.paras[i];
+        if matches!(p.style, ParaStyle::Table | ParaStyle::Image | ParaStyle::HRule) {
+            ed.spell_errors[i] = Vec::new();
+        } else {
+            ed.spell_errors[i] = crate::spell::check_para(&p.text, &p.spans);
+        }
+    }
+    ed.spell_dirty = false;
+    ed.spell_version = ed.spell_version.wrapping_add(1);
+}
+
 pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     let is_dark = ui.visuals().dark_mode;
     let theme = if is_dark { ThemeMode::Dark } else { ThemeMode::Light };
     handle_keyboard(ed, ctx);
     ed.run_find();
+    run_spell_check(ed);
     render_toolbar(ed, ui, theme, is_dark);
     ui.separator();
-    egui::SidePanel::left("de_outline_panel").resizable(true).default_width(200.0).min_width(140.0).max_width(320.0)
-        .frame(egui::Frame::new().fill(if is_dark { egui::Color32::from_rgb(20,20,26) } else { ColorPalette::GRAY_50 })
-            .stroke(egui::Stroke::new(1.0, if is_dark { ColorPalette::ZINC_700 } else { ColorPalette::GRAY_300 })))
-        .show_animated_inside(ui, ed.show_outline, |ui| render_outline(ed, ui, is_dark));
+    let content_rect = ui.available_rect_before_wrap();
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(if is_dark { egui::Color32::from_rgb(14,14,18) } else { egui::Color32::from_rgb(188,188,196) }))
         .show_inside(ui, |ui| render_canvas(ed, ui, ctx, is_dark));
@@ -562,6 +617,9 @@ pub fn render(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context) {
     render_stats_modal(ed, ctx, is_dark);
     render_page_settings(ed, ctx, is_dark);
     render_ctx_link_modal(ed, ctx, is_dark);
+    render_spell_popup(ed, ctx, is_dark);
+    render_link_popup(ed, ctx, is_dark);
+    render_outline_overlay(ed, ctx, is_dark, content_rect);
 }
 
 fn handle_keyboard(ed: &mut DocumentEditor, ctx: &egui::Context) {
@@ -763,10 +821,7 @@ fn render_toolbar(ed: &mut DocumentEditor, ui: &mut egui::Ui, theme: ThemeMode, 
 
 fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
     let tc = if is_dark { ColorPalette::ZINC_300 } else { ColorPalette::ZINC_800 };
-    let muted = if is_dark { ColorPalette::ZINC_500 } else { ColorPalette::ZINC_500 };
     ui.add_space(8.0);
-    ui.horizontal(|ui| { ui.add_space(6.0); ui.label(egui::RichText::new("Outline").size(12.0).color(muted).strong()); });
-    ui.add_space(4.0); ui.separator(); ui.add_space(4.0);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         let entries: Vec<(usize, u8, String)> = ed.paras.iter().enumerate()
             .filter_map(|(i, p)| p.style.outline_depth().map(|d| (i, d, p.text.clone())))
@@ -784,6 +839,39 @@ fn render_outline(ed: &mut DocumentEditor, ui: &mut egui::Ui, is_dark: bool) {
             ui.add_space(2.0);
         }
     });
+}
+
+fn render_outline_overlay(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool, content_rect: egui::Rect) {
+    let anim_val = ctx.animate_bool(egui::Id::new("de_outline_anim"), ed.show_outline);
+    if anim_val <= 0.001 { return; }
+    let full_w  = 180_f32.min(content_rect.width() * 0.40);
+    let current_w = full_w * anim_val;
+    let panel_h   = content_rect.height();
+    let (fill, border) = if is_dark {
+        (egui::Color32::from_rgb(20, 20, 26), ColorPalette::ZINC_700)
+    } else {
+        (ColorPalette::GRAY_50, ColorPalette::GRAY_200)
+    };
+    let panel_rect = egui::Rect::from_min_size(content_rect.min, egui::vec2(current_w, panel_h));
+
+    egui::Area::new(egui::Id::new("de_outline_overlay"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(content_rect.min)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(panel_rect);
+            ui.allocate_ui(egui::vec2(current_w, panel_h), |ui| {
+                let bg = ui.max_rect();
+                ui.painter().rect_filled(bg, 0.0, fill);
+                ui.painter().vline(
+                    bg.max.x,
+                    bg.min.y..=bg.max.y,
+                    egui::Stroke::new(1.0, border),
+                );
+                if anim_val > 0.5 {
+                    render_outline(ed, ui, is_dark);
+                }
+            });
+        });
 }
 
 struct ComputedPageLayout {para_page: Vec<usize>, para_content_y: Vec<f32>, page_tops: Vec<f32>}
@@ -930,7 +1018,7 @@ fn reflow_overflow_paragraphs(ed: &mut DocumentEditor, ctx: &egui::Context, is_d
     ed.para_texts.resize(n, String::new()); ed.para_ids.resize_with(n, || egui::Id::new(egui::Id::NULL)); ed.para_heights.resize(n, 0.0);
     for k in 0..n { ed.para_texts[k] = ed.paras[k].text.clone(); ed.para_ids[k] = egui::Id::new(("de_para", k as u64)); }
     if structure_changed {
-        ed.doc_sel = None;
+        ed.doc_sel = None; ed.spell_dirty = true;
         if focus_p < n && ed.paras[focus_p].style != ParaStyle::Table && ed.paras[focus_p].style != ParaStyle::HRule {
             ed.focused_para = focus_p;
             if !ed.toolbar_has_focus {
@@ -1165,6 +1253,28 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                             ed.table_sel = None; ed.table_multi_sel = None; ed.selected_image_para = None;
                             let pos = DocPos { para: i, byte };
                             ed.doc_sel = if shift { ed.doc_sel.map(|[a, _]| [a, pos]).or(Some([pos, pos])) } else { Some([pos, pos]) };
+                            if shift {
+                                ed.spell_popup = None;
+                                ed.link_popup = None;
+                            } else {
+                                let click_byte = byte.saturating_sub(1);
+                                let hit = ed.spell_errors.get(i)
+                                    .and_then(|errs| errs.iter().find(|&&(sb, eb)| click_byte >= sb && click_byte < eb))
+                                    .copied();
+                                if let Some((sb, eb)) = hit {
+                                    let word = ed.paras[i].text[sb..eb].to_string();
+                                    ed.spell_popup = Some((i, sb, eb, pp, crate::spell::suggestions(&word, 5)));
+                                    ed.spell_popup_fresh = true;
+                                } else {
+                                    ed.spell_popup = None;
+                                }
+                                if link_at_byte(&ed.paras[i], click_byte).is_some() {
+                                    ed.link_popup = Some((i, click_byte, pp));
+                                    ed.link_popup_fresh = true;
+                                } else {
+                                    ed.link_popup = None;
+                                }
+                            }
                         } else if btn_down {
                             if ed.doc_sel.is_none() {
                                 if let Some((pi, sb, _)) = ed.last_selection {
@@ -1611,6 +1721,32 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     galley_cache = Some(g.clone()); g
                 };
 
+                if let Some(errors) = ed.spell_errors.get(i) {
+                    if !errors.is_empty() && near_view {
+                        let cursor_byte: usize = if i == focused {
+                            egui::TextEdit::load_state(ctx, ed.para_ids[i])
+                                .and_then(|s| s.cursor.char_range())
+                                .map(|cr| char_to_byte(&para.text, cr.primary.index))
+                                .unwrap_or(usize::MAX)
+                        } else { usize::MAX };
+                        let galley = get_galley();
+                        let align_offset = match para.align {
+                            Align::Center => ((edit_w - galley.rect.width() - 8.0) / 2.0).max(0.0),
+                            Align::Right => (edit_w - galley.rect.width() - 8.0).max(0.0),
+                            _ => 0.0,
+                        };
+                        let squig_col = egui::Color32::from_rgb(220, 38, 38);
+                        for &(sb, se) in errors {
+                            let popup_here = ed.spell_popup.as_ref().map_or(false, |p| p.0 == i && p.1 == sb && p.2 == se);
+                            if !popup_here && cursor_byte >= sb && cursor_byte <= se { continue; }
+                            for rect in multiline_highlight(&galley, &para.text, sb, se) {
+                                let tr = rect.translate(egui::vec2(edit_x + align_offset, text_y));
+                                draw_squiggle(&painter, tr, squig_col);
+                            }
+                        }
+                    }
+                }
+
                 if let Some((fi, fs, fe)) = find_hl {
                     if fi == i {
                         let galley = get_galley();
@@ -1820,7 +1956,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                     }
 
                     if !changed { ed.undo_stack.pop_back(); }
-                    else { ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; }
+                    else { ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true; }
                 }
 
                 if let Some(state) = egui::TextEdit::load_state(ctx, id) {
@@ -2007,6 +2143,7 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 let ns = if ed.paras[i].style.is_heading() { ParaStyle::Normal } else { ed.paras[i].style };
                 let (al, lh, il) = (ed.paras[i].align, ed.paras[i].line_height, ed.paras[i].indent_left);
                 rebuild_spans(&mut ed.paras[i], lns[0].to_string(), &cur_fmt);
+                auto_link_para(&mut ed.paras[i], lns[0].len());
                 let mut ins = i + 1;
                 for &ln in &lns[1..] {
                     let mut np = DocParagraph::with_style(ns);
@@ -2034,8 +2171,20 @@ fn render_canvas(ed: &mut DocumentEditor, ui: &mut egui::Ui, ctx: &egui::Context
                 ed.last_edit_action = new_action;
                 rebuild_spans(&mut ed.paras[i], new_text, &cur_fmt);
                 ed.para_texts[i] = ed.paras[i].text.clone();
+                if diff == 1 {
+                    if let Some(s) = egui::TextEdit::load_state(ctx, ed.para_ids[i]) {
+                        if let Some(cr) = s.cursor.char_range() {
+                            if cr.primary == cr.secondary {
+                                let cb = char_to_byte(&ed.para_texts[i], cr.primary.index);
+                                if cb > 0 && ed.para_texts[i].as_bytes().get(cb.saturating_sub(1)).copied().map_or(false, |b| b == b' ') {
+                                    auto_link_para(&mut ed.paras[i], cb.saturating_sub(1));
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true;
+            ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true;
         }
     }
 }
@@ -2165,6 +2314,110 @@ fn render_ctx_link_modal(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: 
     }
 }
 
+fn render_spell_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
+    if ed.spell_dirty { ed.spell_popup = None; return; }
+    let (pi, sb, eb, pos, suggs) = match ed.spell_popup.as_ref() {
+        Some(p) => (p.0, p.1, p.2, p.3, p.4.clone()),
+        None => return,
+    };
+    if pi >= ed.paras.len() { ed.spell_popup = None; return; }
+    let cap = ed.paras[pi].text.get(sb..eb)
+        .and_then(|s| s.chars().next())
+        .map(|c| c.is_uppercase())
+        .unwrap_or(false);
+    let fresh = ed.spell_popup_fresh;
+    ed.spell_popup_fresh = false;
+    let (bg, border, tc, mc, hov) = if is_dark {
+        (ColorPalette::ZINC_800, ColorPalette::ZINC_600, ColorPalette::ZINC_100, ColorPalette::ZINC_500, ColorPalette::ZINC_700)
+    } else {
+        (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::GRAY_800, ColorPalette::GRAY_400, ColorPalette::GRAY_100)
+    };
+    let word = ed.paras.get(pi).and_then(|p| p.text.get(sb..eb)).unwrap_or("").to_string();
+    let mut replacement: Option<String> = None;
+    let mut add_to_dict = false;
+    let mut close = false;
+    let win = egui::Window::new("##de_spell_popup")
+        .title_bar(false).collapsible(false).resizable(false)
+        .fixed_pos(egui::pos2(pos.x, pos.y + 20.0))
+        .min_size(egui::vec2(140.0, 0.0))
+        .max_size(egui::vec2(156.0, 500.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(6.0).inner_margin(egui::Margin::same(4)))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| {
+            let bw = ui.available_width().max(132.0);
+            if suggs.is_empty() {
+                ui.scope(|ui| {
+                    let st = ui.style_mut();
+                    st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                    st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new(egui::RichText::new("No suggestions found").size(12.5).color(mc).italics())
+                            .min_size(egui::vec2(bw, 26.0))
+                    );
+                });
+            } else {
+                for s in &suggs {
+                    let disp = if cap {
+                        let mut c = s.chars();
+                        c.next().map(|f| f.to_uppercase().to_string() + c.as_str()).unwrap_or_default()
+                    } else { s.clone() };
+                    let r = ui.scope(|ui| {
+                        let st = ui.style_mut();
+                        st.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                        st.visuals.widgets.hovered.bg_fill = hov;
+                        st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                        st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                        ui.add(egui::Button::new(egui::RichText::new(&disp).size(12.5).color(tc))
+                            .min_size(egui::vec2(bw, 26.0)))
+                    }).inner.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if r.clicked() { replacement = Some(disp); }
+                }
+            }
+            cm_sep(ui);
+            let add_r = ui.scope(|ui| {
+                let st = ui.style_mut();
+                st.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                st.visuals.widgets.hovered.bg_fill = hov;
+                st.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                st.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                st.visuals.widgets.active.bg_fill = hov;
+                ui.add(egui::Button::new(egui::RichText::new("Add to Dictionary").size(12.0).color(tc))
+                    .min_size(egui::vec2(bw, 26.0)))
+            }).inner.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if add_r.clicked() { add_to_dict = true; }
+        });
+    if !fresh {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { close = true; }
+        if let Some(ref wr) = win {
+            if ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(true, |p| !wr.response.rect.contains(p))) {
+                close = true;
+            }
+        }
+    }
+    if let Some(new_word) = replacement {
+        if pi < ed.paras.len() {
+            let tlen = ed.paras[pi].text.len();
+            let (s, e) = (sb.min(tlen), eb.min(tlen));
+            if s < e {
+                ed.push_undo();
+                let fmt = para_fmt_at(&ed.paras[pi], s);
+                let new_text = format!("{}{}{}", &ed.paras[pi].text[..s], new_word, &ed.paras[pi].text[e..]);
+                rebuild_spans(&mut ed.paras[pi], new_text, &fmt);
+                ed.para_texts[pi] = ed.paras[pi].text.clone();
+                ed.dirty = true; ed.heights_dirty = true; ed.find_stale = true; ed.spell_dirty = true;
+            }
+        }
+        close = true;
+    }
+    if add_to_dict && !word.is_empty() {
+        crate::spell::add_to_user_dict(&word);
+        ed.spell_dirty = true;
+        close = true;
+    }
+    if close { ed.spell_popup = None; }
+}
+
 fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
     if !ed.show_page_settings { return; }
     if ed.page_settings_draft.is_none() { let l = ed.layout.clone(); ed.page_settings_draft = Some((l.clone(), l.preset_idx(), format!("{:.2}", l.width / PageLayout::PTS_PER_INCH), format!("{:.2}", l.height / PageLayout::PTS_PER_INCH), String::new())); }
@@ -2269,4 +2522,43 @@ fn render_page_settings(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: b
         ed.layout = layout; ed.preset_idx = preset; ed.heights_dirty = true; ed.auto_zoom_done = false; ed.dirty = true;
         ed.page_settings_draft = None; ed.show_page_settings = false;
     } else if cancel || !open { ed.page_settings_draft = None; ed.show_page_settings = false; }
+}
+
+fn render_link_popup(ed: &mut DocumentEditor, ctx: &egui::Context, is_dark: bool) {
+    let (pi, byte, pos) = match ed.link_popup { Some(p) => p, None => return };
+    let raw = match ed.paras.get(pi).and_then(|p| link_at_byte(p, byte)).map(str::to_string) {
+        Some(u) => u, None => { ed.link_popup = None; return }
+    };
+    let url = if raw.starts_with("http://") || raw.starts_with("https://") { raw.clone() } else { format!("https://{}", raw) };
+    let fresh = ed.link_popup_fresh;
+    ed.link_popup_fresh = false;
+    let (bg, border, link_col) = if is_dark {
+        (ColorPalette::ZINC_800, ColorPalette::ZINC_600, ColorPalette::BLUE_400)
+    } else {
+        (egui::Color32::WHITE, ColorPalette::GRAY_300, ColorPalette::BLUE_600)
+    };
+    let mut open_it = false;
+    let win = egui::Window::new("##de_link_popup")
+        .title_bar(false).collapsible(false).resizable(false)
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(egui::pos2(pos.x, pos.y - 4.0))
+        .frame(egui::Frame::new().fill(bg).stroke(egui::Stroke::new(1.0, border)).corner_radius(6.0)
+            .inner_margin(egui::Margin { left: 10, right: 10, top: 6, bottom: 6 }))
+        .order(egui::Order::Tooltip)
+        .show(ctx, |ui| {
+            ui.set_max_width(260.0);
+            let r = ui.add(egui::Label::new(egui::RichText::new(&raw).size(12.0).color(link_col).underline())
+                .truncate().sense(egui::Sense::click()))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if r.clicked() { open_it = true; }
+        });
+    if open_it { ctx.open_url(egui::OpenUrl::new_tab(&url)); ed.link_popup = None; return; }
+    if !fresh {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { ed.link_popup = None; return; }
+        if let Some(w) = win {
+            if ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().map_or(false, |p| !w.response.rect.contains(p))) {
+                ed.link_popup = None;
+            }
+        }
+    }
 }

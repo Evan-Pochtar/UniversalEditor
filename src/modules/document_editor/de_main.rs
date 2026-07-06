@@ -56,6 +56,14 @@ pub struct DocumentEditor {
     pub(super) ctx_sel: Option<(usize, usize, usize)>,
     pub(super) doc_scroll_y: f32,
     pub(super) ctx_link_show: bool,
+    pub(super) spell_errors: Vec<Vec<(usize, usize)>>,
+    pub(super) spell_version: u64,
+    pub(super) spell_dirty: bool,
+    pub spell_enabled: bool,
+    pub(super) spell_popup: Option<(usize, usize, usize, egui::Pos2, Vec<String>)>,
+    pub(super) spell_popup_fresh: bool,
+    pub(super) link_popup: Option<(usize, usize, egui::Pos2)>,
+    pub(super) link_popup_fresh: bool
 }
 
 impl DocumentEditor {
@@ -96,6 +104,9 @@ impl DocumentEditor {
             table_picker_hover: (0, 0), active_table: None, table_sel: None, table_multi_sel: None, table_text_sel: None, cell_edit_buf: String::new(),
             image_textures: std::collections::HashMap::new(), selected_image_para: None, image_drag: None, next_image_uid: 0,
             toolbar_has_focus: false, pending_open_in_image_editor: None, ctx_sel: None, doc_scroll_y: 0.0, ctx_link_show: false,
+            spell_errors: Vec::new(), spell_version: 0, spell_dirty: true,
+            spell_enabled: true, spell_popup: None, spell_popup_fresh: false,
+            link_popup: None, link_popup_fresh: false,
         }
     }
 
@@ -108,7 +119,7 @@ impl DocumentEditor {
             self.para_texts[i] = self.paras[i].text.clone();
             self.para_ids[i] = egui::Id::new(("de_para", i as u64));
         }
-        self.heights_dirty = true;
+        self.heights_dirty = true; self.spell_dirty = true;
     }
 
     pub(super) fn push_undo(&mut self) {
@@ -816,6 +827,7 @@ impl EditorModule for DocumentEditor {
     fn get_menu_contributions(&self) -> MenuContribution {
         MenuContribution {
             file_items: vec![
+                (MenuItem { label: "Export as PDF...".into(), shortcut: None, enabled: true }, MenuAction::Custom("ExportPdf".into())),
                 (MenuItem { label: "Find & Replace...".into(), shortcut: Some("Ctrl+F".into()), enabled: true }, MenuAction::Custom("Find".into())),
                 (MenuItem { label: "Document Statistics".into(), shortcut: None, enabled: true }, MenuAction::Custom("Stats".into())),
                 (MenuItem { label: "Page Settings...".into(), shortcut: None, enabled: true }, MenuAction::Custom("PageSettings".into())),
@@ -825,7 +837,9 @@ impl EditorModule for DocumentEditor {
                 (MenuItem { label: "Redo".into(), shortcut: Some("Ctrl+Y".into()), enabled: !self.redo_stack.is_empty() }, MenuAction::Redo),
             ],
             view_items: vec![
+                (MenuItem { label: if self.spell_enabled { "Turn Spell Check Off".into() } else { "Turn Spell Check On".into() }, shortcut: None, enabled: true }, MenuAction::Custom("ToggleSpellCheck".into())),
                 (MenuItem { label: if self.show_outline { "Hide Outline".into() } else { "Show Outline".into() }, shortcut: None, enabled: true }, MenuAction::Custom("ToggleOutline".into())),
+                (MenuItem { label: "Separator".into(), shortcut: None, enabled: false }, MenuAction::None),
                 (MenuItem { label: "Zoom In".into(), shortcut: Some("Ctrl++".into()), enabled: true }, MenuAction::Custom("ZoomIn".into())),
                 (MenuItem { label: "Zoom Out".into(), shortcut: Some("Ctrl+-".into()), enabled: true }, MenuAction::Custom("ZoomOut".into())),
                 (MenuItem { label: "Reset Zoom".into(), shortcut: Some("Ctrl+0".into()), enabled: true }, MenuAction::Custom("ZoomReset".into())),
@@ -855,6 +869,27 @@ impl EditorModule for DocumentEditor {
             MenuAction::Undo => { self.undo(); true }
             MenuAction::Redo => { self.redo(); true }
             MenuAction::Custom(ref v) => match v.as_str() {
+                "ExportPdf" => {
+                    let default_name = self.file_path.as_ref().and_then(|p| p.file_stem()).and_then(|s| s.to_str()).unwrap_or("document").to_string();
+                    if let Some(path) = rfd::FileDialog::new().add_filter("PDF Document", &["pdf"]).set_file_name(&format!("{}.pdf", default_name)).save_file() {
+                        let mut export_paras = self.paras.clone();
+                        let mut j = 0;
+                        while j < export_paras.len() {
+                            if export_paras[j].is_split && j > 0 {
+                                let sa = export_paras[j].space_after;
+                                merge_paragraphs(&mut export_paras, j - 1);
+                                export_paras[j - 1].space_after = sa;
+                                export_paras[j - 1].is_split = false;
+                            } else {
+                                j += 1;
+                            }
+                        }
+                        if let Err(e) = super::de_pdf::export_to_pdf(&export_paras, &self.layout, &path) {
+                            eprintln!("PDF export error: {e}");
+                        }
+                    }
+                    true
+                }
                 "Find" => { self.show_find = true; self.focus_find = true; true }
                 "Stats" => { self.show_stats = true; true }
                 "PageSettings" => { self.page_settings_draft = None; self.show_page_settings = true; true }
@@ -871,6 +906,7 @@ impl EditorModule for DocumentEditor {
                 "ToggleSubscript" => { self.apply_fmt_toggle_sub(); true }
                 "IncreaseIndent" => { self.adjust_indent_selection(36.0); true }
                 "DecreaseIndent" => { self.adjust_indent_selection(-36.0); true }
+                "ToggleSpellCheck" => { self.spell_enabled = !self.spell_enabled; self.spell_dirty = true; if !self.spell_enabled { self.spell_errors.iter_mut().for_each(|v| v.clear()); self.spell_popup = None; } true }
                 "InsertImage" => {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp", "tiff", "ico"]).pick_file() {
                         if let Ok(img) = image::open(&path) {

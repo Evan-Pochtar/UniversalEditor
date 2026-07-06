@@ -363,3 +363,30 @@
 - **DOCUMENT EDITOR**: Single line highlights no longer get deselected when right clicking
 - **DOCUMENT EDITOR**: Can now scroll while highlighting
 - **DOCUMENT EDITOR**: Can now scroll while moving an image
+
+## V0.1.1
+
+#### Features
+
+- **DOCUMENT EDITOR**: Added rudimentary spell check
+- **DOCUMENT EDITOR**: Adding spell check suggestions
+- **DOCUMENT EDITOR**: Added option to turn spell check off and on
+- **DOCUMENT EDITOR**: Added user dictionary to spell check
+- **DOCUMENT EDITOR**: Added export to PDF
+- **DOCUMENT EDITOR**: Reworked overlay for headers
+- **DOCUMENT EDITOR**: Auto link recognition  
+- **DOCUMENT EDITOR**: On click of text with a link attached, it opens a popup with a link that is clickable
+
+#### Debugging
+
+- **DOCUMENT EDITOR**: Copy with formatting now works with multi-line highlights
+- **DOCUMENT EDITOR**: Spell check now works with long documents (100+ pages)
+- **DOCUMENT EDITOR**: Spell check no longer crashes the app when interacting with weird unicode characters
+- **DOCUMENT EDITOR**: Spell check does not run when currently typing, only after the word is finished (clicked space)
+- **DOCUMENT EDITOR**: Spell check now works with subscript and superscript
+- **DOCUMENT EDITOR**: Spell check popup doesn't show up one space to early anymore
+- **DOCUMENT EDITOR**: Line after images no longer gets cut off when importing docx files
+- **DOCUMENT EDITOR**: Fixed issue where links, highlights, and tab indents did not show up in pdf exports
+- **DOCUMENT EDITOR**: Fixed issue where large fonts would appear far away from horizontal lines and links in pdf exports
+- **DOCUMENT EDITOR**: Table now exports color and cell size properly to pdf
+- **DOCUMENT EDITOR**: Images now export properly from documents to pdf

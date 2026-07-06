@@ -4,6 +4,7 @@ mod app;
 mod modules;
 mod registry;
 mod style;
+mod spell;
 
 use app::UniversalEditor;
 use eframe::egui;
@@ -18,7 +19,8 @@ fn main() -> eframe::Result<()> {
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("img/logo.png")).unwrap_or_default()),
         ..Default::default()
     };
-    
+
+    spell::init();
     eframe::run_native(
         "Universal Editor",
         options,

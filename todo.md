@@ -58,10 +58,8 @@
 
 - [ ] Navigating up beyond a page break sometimes brings the cursor one line too far up
 - [ ] Cursor gets stuck when making text larger than 1 page with font size changes
-- [ ] Sometimes cuts off last line of text below loaded image
 - [ ] When increasing font size in table cell text, it does not expand the size of the cell
 - [ ] Can't right click to open context menu while editing text in table cell
-- [ ] Copy with formatting doesn't work with multi-line highlights
 - [ ] ODT Issues
   - [ ] Doesn't load horizontal lines properly (.odt)
   - [ ] Doesn't load checklists properly (.odt)
@@ -105,6 +103,7 @@
 - [ ] Perspective/affine warp
 - [ ] Edge detection filter
 - [ ] Snap to grid for text/crop
+- [ ] Saving image imported from document gives options to "Return to Document", "Save Image", or "Undo" instead of usual saving
 
 ### Json Editor
 
@@ -117,11 +116,11 @@
 ### Document Editor
 
 - [ ] Spell check
-- [ ] Grammar Check
-- [ ] Document Templates
-- [ ] Add way to create comments
+  - [ ] Document only dictionary for spell check
+  - [ ] Ignore words for spell check, for the user and the document as a whole
+  - [ ] Improve performance
+  - [ ] Change dictionary to one thats more encompassing
 - [ ] Export
-  - [ ] PDF
   - [ ] MD
   - [ ] rtf
   - [ ] epub
@@ -132,6 +131,9 @@
 - [ ] Header and footers
 - [ ] Cell colors in tables for dark mode
 - [ ] Increase max table size creation from the table button
+- [ ] Grammar Check
+- [ ] Document Templates
+- [ ] Add way to create comments
 
 ### CONVERTERS
 
