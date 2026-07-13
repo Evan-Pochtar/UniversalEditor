@@ -865,7 +865,11 @@ impl TextEditor {
 
         let is_valid_start = |pos: usize, mlen: usize| -> bool {
             if pos + mlen >= chars.len() { return false; }
-            (pos == 0 || chars[pos - 1].is_whitespace()) && !chars[pos + mlen].is_whitespace()
+            let prev_is_boundary = pos == 0
+                || chars[pos - 1].is_whitespace()
+                || chars[pos - 1].is_ascii_punctuation()
+                || matches!(chars[pos - 1], '“' | '”' | '‘' | '’' | '«' | '»');
+            prev_is_boundary && !chars[pos + mlen].is_whitespace()
         };
 
         let cursor_in = |current_pos: usize, marker_end: usize| -> bool {

@@ -28,9 +28,12 @@ pub fn register_fonts(ctx: &egui::Context) {
         ("GoogleSans", FONT_GS_REG), ("GoogleSans-Bold", FONT_GS_BLD), ("GoogleSans-Italic", FONT_GS_ITL), ("GoogleSans-BoldItalic", FONT_GS_BLD_ITL),
         ("OpenSans", FONT_OS_REG), ("OpenSans-Bold", FONT_OS_BLD), ("OpenSans-Italic", FONT_OS_ITL), ("OpenSans-BoldItalic", FONT_OS_BLD_ITL),
     ];
+    let fallback_chain = fonts.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
     for (name, bytes) in entries {
         fonts.font_data.insert(name.to_string(), egui::FontData::from_static(bytes).into());
-        fonts.families.insert(egui::FontFamily::Name((*name).into()), vec![name.to_string()]);
+        let mut chain = vec![name.to_string()];
+        chain.extend(fallback_chain.iter().cloned());
+        fonts.families.insert(egui::FontFamily::Name((*name).into()), chain);
     }
     ctx.set_fonts(fonts);
 }

@@ -390,3 +390,11 @@
 - **DOCUMENT EDITOR**: Fixed issue where large fonts would appear far away from horizontal lines and links in pdf exports
 - **DOCUMENT EDITOR**: Table now exports color and cell size properly to pdf
 - **DOCUMENT EDITOR**: Images now export properly from documents to pdf
+
+## V0.1.2
+
+#### Features
+- **TEXT EDITOR**: Added fallback font to render more unique characters
+
+#### Debugging
+- **TEXT EDITOR**: Formatting within quotation marks now load properly
