@@ -1760,6 +1760,7 @@ impl ImageEditor {
 
 impl EditorModule for ImageEditor {
     fn as_any(&self) -> &dyn std::any::Any { self }
+    fn has_path(&self) -> bool { self.file_path.is_some() }
 
     fn get_title(&self) -> String {
         let name = self.file_path.as_ref()

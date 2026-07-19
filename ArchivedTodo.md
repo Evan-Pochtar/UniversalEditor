@@ -22,6 +22,7 @@
 - [x] Keyboard shortcuts to close/open sidebar, toolbar, etc.
 - [x] Add way to differentiate between same name files in "recent files" list
 - [x] Improve look of patch notes and settings modal
+- [x] Autosave
 
 ## Screens
 

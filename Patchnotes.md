@@ -394,6 +394,7 @@
 ## V0.1.2
 
 #### Features
+- **GENERAL**: Added autosaving with customizable autosave interval
 - **TEXT EDITOR**: Added fallback font to render more unique characters
 
 #### Debugging

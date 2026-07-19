@@ -416,6 +416,7 @@ impl JsonEditor {
 
 impl EditorModule for JsonEditor {
     fn as_any(&self) -> &dyn std::any::Any { self }
+    fn has_path(&self) -> bool { self.file_path.is_some() }
 
     fn take_converter_path(&mut self) -> Option<std::path::PathBuf> {
         self.open_in_converter_path.take()

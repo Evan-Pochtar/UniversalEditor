@@ -3,6 +3,8 @@
 ## General
 
 - [ ] Editable keyboard shortcuts per page
+- [ ] Favorites on sidebar
+- [ ] Autosave on focus loss
 
 ## Screens
 
@@ -134,6 +136,9 @@
 - [ ] Grammar Check
 - [ ] Document Templates
 - [ ] Add way to create comments
+- [ ] Manual page break
+- [ ] Em-dash, ellipses, smart quotes
+- [ ] Typewriter scrolling
 
 ### CONVERTERS
 

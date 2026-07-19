@@ -56,6 +56,7 @@ pub enum ThemePreference { System, Light, Dark }
 
 fn default_font_name() -> String { "Ubuntu".to_string() }
 fn default_font_size() -> f32 { 14.0 }
+fn default_autosave_interval() -> u32 { 300 }
 
 #[derive(Serialize, Deserialize)]
 struct AppSettings {
@@ -65,6 +66,8 @@ struct AppSettings {
     #[serde(default = "default_font_name")] default_font: String,
     #[serde(default = "default_font_size")] default_font_size: f32,
     show_file_info_je: bool,
+    #[serde(default)] autosave_enabled: bool,
+    #[serde(default = "default_autosave_interval")] autosave_interval_secs: u32,
 }
 
 impl Default for AppSettings {
@@ -74,6 +77,7 @@ impl Default for AppSettings {
             show_toolbar_te: true, show_file_info_te: true,
             default_font: default_font_name(), default_font_size: default_font_size(),
             show_file_info_je: true,
+            autosave_enabled: false, autosave_interval_secs: default_autosave_interval(),
         }
     }
 }
@@ -98,6 +102,7 @@ impl AppSettings {
 }
 
 enum PendingAction { OpenFile(PathBuf), NewFile, SwitchModule(Box<dyn EditorModule>), GoHome, Exit }
+enum CacheOpenAction { Metadata(PathBuf), Image(PathBuf) }
 
 #[derive(PartialEq)]
 enum HomeAction { NewTextFile, OpenFile, OpenScreen(&'static str), OpenConverter(&'static str), ShowSettings, ShowPatchNotes, ShowAbout }
@@ -138,7 +143,10 @@ pub struct UniversalEditor {
     rename_target: Option<PathBuf>,
     rename_buffer: String,
     cache_entries: Option<Vec<ie_cache::CacheEntry>>,
-    open_cache_path: Option<PathBuf>,
+    open_cache_action: Option<CacheOpenAction>,
+    autosave_enabled: bool,
+    autosave_interval_secs: u32,
+    last_autosave_time: f64,
 }
 
 fn open_file_location(path: &PathBuf) {
@@ -247,7 +255,9 @@ impl UniversalEditor {
             recent_file_tx: tx, recent_file_rx: rx,
             path_replace_tx: replace_tx, path_replace_rx: replace_rx,
             patch_notes, patch_notes_page: 0, rename_target: None, rename_buffer: String::new(),
-            cache_entries: None, open_cache_path: None,
+            cache_entries: None, open_cache_action: None,
+            autosave_enabled: settings.autosave_enabled, autosave_interval_secs: settings.autosave_interval_secs,
+            last_autosave_time: cc.egui_ctx.input(|i| i.time),
         }
     }
 
@@ -353,6 +363,7 @@ impl UniversalEditor {
             theme_preference: self.theme_preference, show_toolbar_te: self.show_toolbar_te,
             show_file_info_te: self.show_file_info_te, default_font: self.default_font.clone(),
             default_font_size: self.default_font_size, show_file_info_je: self.show_file_info_je,
+            autosave_enabled: self.autosave_enabled, autosave_interval_secs: self.autosave_interval_secs,
         }.save();
     }
 
@@ -784,6 +795,28 @@ impl UniversalEditor {
                                     sys_c = ui.selectable_label(matches!(self.theme_preference, ThemePreference::System), "System").on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
                                 });
                             });
+                            ui.add_space(16.0);
+                            ui.label(egui::RichText::new("AUTOSAVE").size(11.0).color(muted));
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Enable Autosave").size(14.0).color(text));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.checkbox(&mut self.autosave_enabled, "").changed() { prefs_changed = true; }
+                                });
+                            });
+                            if self.autosave_enabled {
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Interval").size(14.0).color(text));
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let mut mins = (self.autosave_interval_secs / 60).max(1);
+                                        if ui.add(egui::DragValue::new(&mut mins).range(1..=60).speed(1).suffix(" min")).changed() {
+                                            self.autosave_interval_secs = mins.max(1) * 60; prefs_changed = true;
+                                        }
+                                    });
+                                });
+                                ui.label(egui::RichText::new("Autosaves only files that already have a save location.").size(11.0).color(muted).italics());
+                            }
                         }
                         SettingsTab::TextEditor => {
                             ui.label(egui::RichText::new("DISPLAY").size(11.0).color(muted));
@@ -857,21 +890,26 @@ impl UniversalEditor {
                             if count == 0 {
                                 ui.label(egui::RichText::new("No layer caches stored.").size(13.0).color(muted).italics());
                             } else {
-                                egui::ScrollArea::vertical().max_height(220.0).id_salt("cache_scroll").show(ui, |ui| {
+                                egui::ScrollArea::vertical().max_height(260.0).id_salt("cache_scroll").show(ui, |ui| {
+                                    ui.set_max_width(380.0);
+                                    let avail = ui.available_width().min(380.0);
                                     if let Some(ref entries_vec) = self.cache_entries {
                                         for (i, entry) in entries_vec.iter().enumerate() {
-                                            let fname = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path);
-                                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { egui::Color32::WHITE }).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                                            let fname = std::path::Path::new(&entry.src_path).file_name().and_then(|n| n.to_str()).unwrap_or(&entry.src_path).to_string();
+                                            egui::Frame::new().fill(if is_dark { ColorPalette::ZINC_800 } else { ColorPalette::GRAY_100 }).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                                                ui.set_max_width(avail);
+                                                ui.add(egui::Label::new(egui::RichText::new(&fname).size(13.0).color(text)).truncate()).on_hover_text(&fname);
+                                                ui.add(egui::Label::new(egui::RichText::new(&entry.src_path).size(10.0).color(muted)).truncate()).on_hover_text(&entry.src_path);
+                                                ui.add_space(4.0);
                                                 ui.horizontal(|ui| {
-                                                    ui.vertical(|ui| {
-                                                        ui.label(egui::RichText::new(fname).size(13.0).color(text));
-                                                        ui.label(egui::RichText::new(&entry.src_path).size(10.0).color(muted));
-                                                    });
+                                                    ui.label(egui::RichText::new(format!("{} KB", entry.size_kb)).size(11.0).color(muted));
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        ui.label(egui::RichText::new(format!("{} KB", entry.size_kb)).size(11.0).color(muted));
-                                                        if ui.button(egui::RichText::new("Delete").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { to_delete = Some(i); }
-                                                        if ui.button(egui::RichText::new("Open").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open cache metadata in JSON Editor").clicked() {
-                                                            self.open_cache_path = Some(entry.cache_dir.join("meta.json"));
+                                                        if ui.button(egui::RichText::new("Delete").size(11.0).color(if is_dark { ColorPalette::RED_400 } else { ColorPalette::RED_600 })).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { to_delete = Some(i); }
+                                                        if ui.button(egui::RichText::new("View Cache").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open cache metadata in JSON Editor").clicked() {
+                                                            self.open_cache_action = Some(CacheOpenAction::Metadata(entry.cache_dir.join("meta.json")));
+                                                        }
+                                                        if ui.button(egui::RichText::new("Open Image").size(11.0)).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open the source image in the Image Editor").clicked() {
+                                                            self.open_cache_action = Some(CacheOpenAction::Image(std::path::PathBuf::from(&entry.src_path)));
                                                         }
                                                     });
                                                 });
@@ -1155,10 +1193,29 @@ impl eframe::App for UniversalEditor {
         while let Ok(path) = self.recent_file_rx.try_recv() { self.recent_files.add_file(path); }
         while let Ok((old, new)) = self.path_replace_rx.try_recv() { self.recent_files.remove_file(&old); self.recent_files.add_file(new); }
 
-        if let Some(path) = self.open_cache_path.take() {
+        if self.autosave_enabled {
+            let now = ctx.input(|i| i.time);
+            if now - self.last_autosave_time >= self.autosave_interval_secs as f64 {
+                self.last_autosave_time = now;
+                if self.has_unsaved_changes() {
+                    if let Some(m) = &mut self.active_module { if m.has_path() { let _ = m.save(); } }
+                }
+            }
+        }
+
+        if let Some(action) = self.open_cache_action.take() {
             self.show_settings = false;
             self.cache_entries = None;
-            self.active_module = Some(Box::new(JsonEditor::load(path)));
+            self.active_module = Some(match action {
+                CacheOpenAction::Metadata(p) => Box::new(JsonEditor::load(p)) as Box<dyn EditorModule>,
+                CacheOpenAction::Image(p) => {
+                    let mut e = ImageEditor::load(p.clone());
+                    if let Some(cache) = ie_cache::load_cache(&p) { ie_cache::apply_cache(&mut e, cache); }
+                    let tx = self.recent_file_tx.clone();
+                    e.set_file_callback(Box::new(move |np: PathBuf| { let _ = tx.send(np); }));
+                    Box::new(e) as Box<dyn EditorModule>
+                }
+            });
         }
 
         if let Some(PendingAction::Exit) = &self.pending_action {

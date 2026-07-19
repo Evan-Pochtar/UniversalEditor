@@ -806,6 +806,7 @@ impl DocumentEditor {
 
 impl EditorModule for DocumentEditor {
     fn as_any(&self) -> &dyn std::any::Any { self }
+    fn has_path(&self) -> bool { self.file_path.is_some() }
     fn get_title(&self) -> String {
         let name = self.file_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("Untitled").to_string();
         if self.dirty { format!("{} *", name) } else { name }
