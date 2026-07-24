@@ -2,7 +2,7 @@ use eframe::egui::Color32;
 use crate::style::ColorPalette;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter, ArchiveConverter, DocEditor }
+pub enum CreateModule { TextEditor, ImageEditor, JsonEditor, ImageConverter, DataConverter, ArchiveConverter, DocEditor, SpreadsheetEditor }
 
 pub struct ScreenDef {
     pub id: &'static str,
@@ -59,6 +59,15 @@ pub static SCREENS: &[ScreenDef] = &[
         sidebar_letter: "D",
         accepted_extensions: &["docx", "doc", "odt"],
         create: CreateModule::DocEditor,
+    },
+    ScreenDef {
+        id: "spreadsheet_editor",
+        name: "Spreadsheet Editor",
+        description: "Edit spreadsheets with formulas, formatting, and sheets",
+        color: ColorPalette::TEAL_500,
+        sidebar_letter: "S",
+        accepted_extensions: &["csv", "tsv", "xlsx", "xls", "ods"],
+        create: CreateModule::SpreadsheetEditor,
     },
 ];
 

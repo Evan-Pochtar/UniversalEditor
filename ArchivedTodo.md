@@ -30,6 +30,7 @@
 - [x] Image Editor (.jpg, .jpeg, .png, .webp, .bmp, .tiff, .ico)
 - [x] JSON Processing (.json)
 - [x] Document Editor (.docx, .doc, .odt)
+- [x] Spreadsheet Editor (.csv, .tsv, .xlsx, .xls, .ods)
 
 ## Converters
 

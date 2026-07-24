@@ -9,7 +9,6 @@
 ## Screens
 
 - [ ] Code Editor (.rs, .py, .js, .ts, .c, .cpp, .go, .java, .sh, .css, .sql)
-- [ ] Spreadsheet Editor (.csv, .tsv, .xlsx, .xls, .ods)
 - [ ] PDF Editor (.pdf)
 - [ ] HTML Editor (.html, .htm)
 - [ ] Archive Manager (.zip, .tar, .gz, .tar.gz, .7z, .bz2)
@@ -139,6 +138,25 @@
 - [ ] Manual page break
 - [ ] Em-dash, ellipses, smart quotes
 - [ ] Typewriter scrolling
+
+### Spreadsheet Editor
+
+- [ ] Frozen panes (true pinned header row/column while scrolling)
+- [ ] Drag-to-select cell ranges (currently click + shift-click only)
+- [ ] Autofill drag handle
+- [ ] Cell merging
+- [ ] Conditional formatting
+- [ ] Data validation dropdowns
+- [ ] Charts
+- [ ] Pivot tables
+- [ ] AutoFilter / column filtering
+- [ ] Named ranges
+- [ ] More formula functions (VLOOKUP, INDEX, MATCH, text functions, date functions)
+- [ ] Variable row heights
+- [ ] Full OpenFormula export for ODS (currently exports computed values only)
+- [ ] Native XLS writing (currently redirects Save to Save As for legacy .xls files)
+- [ ] Cell comments/notes
+- [ ] Multi-cell formatted paste (currently plain text only)
 
 ### CONVERTERS
 

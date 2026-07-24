@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::style::ColorPalette;
 use super::style::{self, ThemeMode};
-use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter, archive_converter::ArchiveConverter};
+use super::modules::{EditorModule, text_edit::TextEditor, image_converter::ImageConverter, image_edit::ImageEditor, json_edit::JsonEditor, data_converter::DataConverter, archive_converter::ArchiveConverter, spreadsheet_edit::SpreadsheetEditor};
 use crate::modules::image_editor::ie_cache;
 use crate::modules::doc_edit::DocumentEditor;
 use std::path::PathBuf;
@@ -275,6 +275,7 @@ impl UniversalEditor {
             if let Some(e) = m.as_any().downcast_ref::<ImageEditor>() { return e.is_dirty(); }
             if let Some(e) = m.as_any().downcast_ref::<JsonEditor>() { return e.is_dirty() || e.is_text_modified(); }
             if let Some(e) = m.as_any().downcast_ref::<DocumentEditor>() { return e.is_dirty(); }
+            if let Some(e) = m.as_any().downcast_ref::<SpreadsheetEditor>() { return e.is_dirty(); }
         }
         false
     }
@@ -301,7 +302,8 @@ impl UniversalEditor {
                 Box::new(e)
             }
             CreateModule::JsonEditor => Box::new(if let Some(p) = path { JsonEditor::load(p) } else { JsonEditor::new_empty() }),
-            CreateModule::DocEditor => { Box::new(if let Some(p) = path { DocumentEditor::load(p) } else { DocumentEditor::new_empty() }) }
+            CreateModule::DocEditor => { Box::new(if let Some(p) = path { DocumentEditor::load(p) } else { DocumentEditor::new_empty() }) },
+            CreateModule::SpreadsheetEditor => Box::new(if let Some(p) = path { SpreadsheetEditor::load(p) } else { SpreadsheetEditor::new_empty() }),
             CreateModule::ImageConverter => Box::new(ImageConverter::new()),
             CreateModule::DataConverter => Box::new(DataConverter::new()),
             CreateModule::ArchiveConverter => Box::new(ArchiveConverter::new()),

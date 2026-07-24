@@ -498,3 +498,18 @@ pub fn tool_card_placeholder(ui: &mut egui::Ui, label: &str, theme: ThemeMode) {
         ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(12.0), text_color);
     }
 }
+
+pub fn color_palette_grid(ui: &mut egui::Ui, palette: &[([u8;3], &str)], cols: usize, none_label: Option<&str>, is_dark: bool, mut on_pick: impl FnMut(Option<[u8;3]>)) {
+    if let Some(label) = none_label {
+        if ui.add(egui::Button::new(egui::RichText::new(label).size(11.0)).min_size(egui::vec2(120.0, 20.0))).clicked() { on_pick(None); }
+        ui.add_space(4.0);
+    }
+    let bdr = if is_dark { ColorPalette::ZINC_600 } else { ColorPalette::GRAY_400 };
+    for row in palette.chunks(cols) {
+        ui.horizontal(|ui| {
+            for &(c, name) in row {
+                if ui.add(egui::Button::new("").fill(egui::Color32::from_rgb(c[0],c[1],c[2])).stroke(egui::Stroke::new(1.0,bdr)).min_size(egui::vec2(20.0,20.0)).corner_radius(3.0)).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { on_pick(Some(c)); }
+            }
+        });
+    }
+}

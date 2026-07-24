@@ -396,6 +396,7 @@
 #### Features
 - **GENERAL**: Added autosaving with customizable autosave interval
 - **TEXT EDITOR**: Added fallback font to render more unique characters
+- **SPREADSHEET EDITOR**: First Prototype of the spreadsheet editor
 
 #### Debugging
 - **TEXT EDITOR**: Formatting within quotation marks now load properly
