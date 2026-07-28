@@ -400,3 +400,6 @@
 
 #### Debugging
 - **TEXT EDITOR**: Formatting within quotation marks now load properly
+- **SPREADSHEET EDITOR**: Column widths now load/save
+- **SPREADSHEET EDITOR**: Removed focus bug where you could not click on the top text bar after selecting a cell
+- **SPREADSHEET EDITOR**: Computed cells now properly load in the correct cell when importing a spreadsheet from elsewhere

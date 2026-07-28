@@ -219,12 +219,12 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
                 let in_sel = sel.map_or(false, |((r0_,c0_),(r1_,c1_))| { let (a,b)=(r0_.min(r1_),r0_.max(r1_)); let (x,y)=(c0_.min(c1_),c0_.max(c1_)); r>=a&&r<=b&&c>=x&&c<=y });
                 painter.rect_filled(rect, 0.0, se_style::cell_bg(dark, fmt.bg, alt));
                 if in_sel { painter.rect_filled(rect, 0.0, se_style::sel_fill(dark)); }
-                painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5, se_style::grid_line(dark)), egui::StrokeKind::Outside);
+                painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5_f32, se_style::grid_line(dark)), egui::StrokeKind::Outside);
 
                 if is_editing {
                     if let Some((_,_,val)) = se.editing.as_mut() {
                         let er = ui.put(rect.shrink(1.0), egui::TextEdit::singleline(val).font(egui::FontId::monospace(12.5)));
-                        er.request_focus();
+                        if se.editing_focus_pending { er.request_focus(); se.editing_focus_pending = false; }
                         if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) { cancel_edit = true; }
                         else if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { commit_edit = true; }
                         else if er.lost_focus() { commit_edit = true; }
@@ -245,7 +245,7 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
                         let name = match (fmt.bold, fmt.italic) { (true,true)=>"Ubuntu-BoldItalic", (true,false)=>"Ubuntu-Bold", (false,true)=>"Ubuntu-Italic", _=>"Ubuntu" };
                         let font = egui::FontId::new(12.5, egui::FontFamily::Name(name.into()));
                         let text_rect = painter.text(pos, align, &disp, font, color);
-                        if fmt.underline { painter.line_segment([text_rect.left_bottom(), text_rect.right_bottom()], egui::Stroke::new(1.0, color)); }
+                        if fmt.underline { painter.line_segment([text_rect.left_bottom(), text_rect.right_bottom()], egui::Stroke::new(1.0_f32, color)); }
                     }
                     let resp = ui.interact(rect, ui.id().with(("se_cell", r, c)), egui::Sense::click());
                     if resp.double_clicked() { begin_at = Some((r,c)); }
@@ -261,12 +261,12 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
             let x = outer.min.x + ROWNUM_W + col_x[c as usize];
             let rect = egui::Rect::from_min_size(egui::pos2(x, outer.min.y+viewport.min.y.max(0.0)), egui::vec2(col_w[c as usize], HEADER_H));
             painter.rect_filled(rect, 0.0, se_style::header_bg(dark));
-            painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5, se_style::grid_line(dark)), egui::StrokeKind::Outside);
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5_f32, se_style::grid_line(dark)), egui::StrokeKind::Outside);
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, se_tools::col_label(c), egui::FontId::proportional(12.0), se_style::header_text(dark));
             let resize_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x-3.0, rect.min.y), egui::vec2(6.0, HEADER_H));
             let hresp = ui.interact(resize_rect, ui.id().with(("se_colrz", c)), egui::Sense::drag());
             if hresp.hovered() || hresp.dragged() { ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal); }
-            if hresp.dragged() { let cur = se.sheets[idx].col_width(c); let nw = (cur+hresp.drag_delta().x).max(30.0); se.sheets[idx].col_widths.insert(c, nw); }
+            if hresp.dragged() { let cur = se.sheets[idx].col_width(c); let nw = (cur+hresp.drag_delta().x).max(30.0); se.sheets[idx].col_widths.insert(c, nw); se.dirty = true; }
             let hdr_resp = ui.interact(rect, ui.id().with(("se_colhdr", c)), egui::Sense::click());
             hdr_resp.context_menu(|ui| {
                 if ui.button("Sort A-Z").clicked() { se.sort_col(c, true); ui.close(); }
@@ -280,7 +280,7 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
             let y = outer.min.y + HEADER_H + r as f32*ROW_H;
             let rect = egui::Rect::from_min_size(egui::pos2(outer.min.x+viewport.min.x.max(0.0), y), egui::vec2(ROWNUM_W, ROW_H));
             painter.rect_filled(rect, 0.0, se_style::header_bg(dark));
-            painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5, se_style::grid_line(dark)), egui::StrokeKind::Outside);
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5_f32, se_style::grid_line(dark)), egui::StrokeKind::Outside);
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, format!("{}", r+1), egui::FontId::proportional(11.0), se_style::header_text(dark));
             let rn_resp = ui.interact(rect, ui.id().with(("se_rowhdr", r)), egui::Sense::click());
             rn_resp.context_menu(|ui| {

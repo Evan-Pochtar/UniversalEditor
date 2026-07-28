@@ -30,6 +30,7 @@ pub struct SpreadsheetEditor {
     pub(super) search_cursor: usize,
     pub(super) rename_buf: Option<(usize, String)>,
     pub(super) scroll_to: Option<(u32,u32)>,
+    pub(super) editing_focus_pending: bool,
 }
 
 impl SpreadsheetEditor {
@@ -53,7 +54,7 @@ impl SpreadsheetEditor {
             undo_stack: VecDeque::new(), redo_stack: VecDeque::new(),
             calc_cache: AHashMap::default(), calc_dirty: true,
             search_query: String::new(), search_results: Vec::new(), search_cursor: 0,
-            rename_buf: None, scroll_to: None,
+            rename_buf: None, scroll_to: None, editing_focus_pending: false,
         }
     }
 
@@ -73,6 +74,7 @@ impl SpreadsheetEditor {
         self.push_undo();
         let raw = initial.unwrap_or_else(|| self.sheet().raw(r,c).to_string());
         self.editing = Some((r, c, raw));
+        self.editing_focus_pending = true;
     }
     pub(super) fn commit_edit(&mut self) { if let Some((r,c,val)) = self.editing.take() { self.sheet_mut().set_raw(r,c,val); self.dirty = true; self.calc_dirty = true; self.text_dirty = true; } }
     pub(super) fn cancel_edit(&mut self) { if self.editing.take().is_some() { self.undo_stack.pop_back(); } }
@@ -172,6 +174,7 @@ pub(super) fn run_search(&mut self) {
             "xlsx" => se_io::save_xlsx(&self.sheets, &path),
             _ => se_io::save_delim(&self.sheets, &path, b','),
         }?;
+        se_io::save_col_widths_sidecar(&path, &self.sheets);
         self.file_path = Some(path); self.dirty = false;
         Ok(())
     }

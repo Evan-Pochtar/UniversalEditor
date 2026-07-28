@@ -1,10 +1,79 @@
-use std::io::Write;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use ahash::AHashMap;
 use super::se_model::{Sheet, CellFmt, HAlign};
 use super::se_formula::{eval_cell, FVal};
 
 fn estr<E: std::fmt::Debug>(e: E) -> String { format!("{:?}", e) }
+
+fn char_width_to_px(w: f32) -> f32 { (w * 7.0 + 5.0).round() }
+fn px_to_char_width(px: f32) -> f32 { ((px - 5.0) / 7.0).max(0.0) }
+
+fn parse_sheet_col_widths(xml: &str) -> AHashMap<u32, f32> {
+    use quick_xml::{Reader, events::Event};
+    let mut out = AHashMap::default();
+    let mut reader = Reader::from_str(xml);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) if e.local_name().as_ref() == b"col" => {
+                let get = |k: &[u8]| e.attributes().filter_map(|a| a.ok()).find(|a| a.key.local_name().as_ref()==k).and_then(|a| std::str::from_utf8(&a.value).ok().map(str::to_string));
+                if let (Some(min), Some(max), Some(w)) = (get(b"min"), get(b"max"), get(b"width")) {
+                    if let (Ok(min), Ok(max), Ok(w)) = (min.parse::<u32>(), max.parse::<u32>(), w.parse::<f32>()) {
+                        for c in min..=max.min(min+2000) { out.insert(c-1, char_width_to_px(w)); }
+                    }
+                }
+            }
+            Ok(Event::Start(ref e)) if e.local_name().as_ref() == b"sheetData" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+fn load_xlsx_col_widths(path: &Path) -> Vec<AHashMap<u32, f32>> {
+    let mut out = Vec::new();
+    let Ok(file) = std::fs::File::open(path) else { return out };
+    let Ok(mut zip) = zip::ZipArchive::new(file) else { return out };
+    let mut names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string())).filter(|n| n.starts_with("xl/worksheets/sheet") && n.ends_with(".xml")).collect();
+    names.sort_by_key(|n| n.trim_start_matches("xl/worksheets/sheet").trim_end_matches(".xml").parse::<u32>().unwrap_or(0));
+    for name in names {
+        if let Ok(mut f) = zip.by_name(&name) {
+            let mut buf = Vec::new();
+            let _ = f.by_ref().take(65536).read_to_end(&mut buf);
+            out.push(parse_sheet_col_widths(&String::from_utf8_lossy(&buf)));
+        }
+    }
+    out
+}
+
+fn col_widths_path(src: &Path) -> PathBuf {
+    let abs = std::fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    let mut h = DefaultHasher::new();
+    abs.hash(&mut h);
+    let mut p = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    p.push("universal_editor"); p.push("col_widths");
+    p.push(format!("{:016x}.json", h.finish()));
+    p
+}
+
+pub fn load_col_widths_sidecar(path: &Path, sheets: &mut [Sheet]) {
+    let p = col_widths_path(path);
+    let Ok(s) = std::fs::read_to_string(&p) else { return };
+    let Ok(all) = serde_json::from_str::<Vec<Vec<(u32,f32)>>>(&s) else { return };
+    for (sheet, widths) in sheets.iter_mut().zip(all) {
+        for (c, w) in widths { sheet.col_widths.insert(c, w); }
+    }
+}
+
+pub fn save_col_widths_sidecar(path: &Path, sheets: &[Sheet]) {
+    let p = col_widths_path(path);
+    if let Some(parent) = p.parent() { let _ = std::fs::create_dir_all(parent); }
+    let all: Vec<Vec<(u32,f32)>> = sheets.iter().map(|s| s.col_widths.iter().map(|(&c,&w)| (c,w)).collect()).collect();
+    if let Ok(json) = serde_json::to_string(&all) { let _ = std::fs::write(p, json); }
+}
 
 pub fn load_delim(path: &Path, delim: u8) -> Sheet {
     let mut sheet = Sheet::new("Sheet1");
@@ -14,6 +83,7 @@ pub fn load_delim(path: &Path, delim: u8) -> Sheet {
             if let Ok(rec) = rec { for (c, field) in rec.iter().enumerate() { if !field.is_empty() { sheet.set_raw(r as u32, c as u32, field.to_string()); } } }
         }
     }
+    load_col_widths_sidecar(path, std::slice::from_mut(&mut sheet));
     sheet
 }
 
@@ -23,14 +93,26 @@ pub fn load_workbook(path: &Path) -> Vec<Sheet> {
     if let Ok(mut wb) = calamine::open_workbook_auto(path) {
         for name in wb.sheet_names() {
             if let Ok(range) = wb.worksheet_range(&name) {
+                let (r0, c0) = range.start().unwrap_or((0, 0));
                 let mut sheet = Sheet::new(name.clone());
-                for (r, row) in range.rows().enumerate() { for (c, cell) in row.iter().enumerate() { let s = data_to_string(cell); if !s.is_empty() { sheet.set_raw(r as u32, c as u32, s); } } }
-                if let Ok(formulas) = wb.worksheet_formula(&name) { for (r, row) in formulas.rows().enumerate() { for (c, f) in row.iter().enumerate() { if !f.is_empty() { sheet.set_raw(r as u32, c as u32, format!("={}", f)); } } } }
+                for (r, row) in range.rows().enumerate() { for (c, cell) in row.iter().enumerate() { let s = data_to_string(cell); if !s.is_empty() { sheet.set_raw(r as u32 + r0, c as u32 + c0, s); } } }
+                if let Ok(formulas) = wb.worksheet_formula(&name) {
+                    let (fr0, fc0) = formulas.start().unwrap_or((0, 0));
+                    for (r, row) in formulas.rows().enumerate() { for (c, f) in row.iter().enumerate() { if !f.is_empty() { sheet.set_raw(r as u32 + fr0, c as u32 + fc0, format!("={}", f)); } } }
+                }
                 sheets.push(sheet);
             }
         }
     }
     if sheets.is_empty() { sheets.push(Sheet::new("Sheet1")); }
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if ext.eq_ignore_ascii_case("xlsx") || ext.eq_ignore_ascii_case("xlsm") {
+            for (sheet, widths) in sheets.iter_mut().zip(load_xlsx_col_widths(path)) {
+                for (c, w) in widths { sheet.col_widths.entry(c).or_insert(w); }
+            }
+        }
+    }
+    load_col_widths_sidecar(path, &mut sheets);
     sheets
 }
 
@@ -62,6 +144,7 @@ pub fn save_xlsx(sheets: &[Sheet], path: &Path) -> Result<(), String> {
     for sheet in sheets {
         let ws = wb.add_worksheet();
         ws.set_name(&sheet.name).map_err(estr)?;
+        for (&c, &w) in &sheet.col_widths { ws.set_column_width(c as u16, px_to_char_width(w) as f64).map_err(estr)?; }
         for (&(r,c), cell) in sheet.cells.iter() {
             if cell.raw.is_empty() && cell.fmt == CellFmt::default() { continue; }
             let fmt = xlsx_format(&cell.fmt);
