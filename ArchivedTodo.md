@@ -370,6 +370,10 @@
 - [x] PDF Export
 - [x] Auto recognize links
 
+### Spreadsheet Editor
+
+- [x] Drag-to-select cell ranges (currently click + shift-click only)
+
 ### CONVERTER: Img 2 Img
 
 - [x] Display Error (For example, width > 256 for ico conversion)

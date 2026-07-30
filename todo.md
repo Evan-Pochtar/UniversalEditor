@@ -142,7 +142,6 @@
 ### Spreadsheet Editor
 
 - [ ] Frozen panes (true pinned header row/column while scrolling)
-- [ ] Drag-to-select cell ranges (currently click + shift-click only)
 - [ ] Autofill drag handle
 - [ ] Cell merging
 - [ ] Conditional formatting

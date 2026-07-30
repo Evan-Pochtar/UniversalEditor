@@ -30,18 +30,25 @@ fn handle_keyboard(se: &mut SpreadsheetEditor, ctx: &egui::Context) {
     if undo_k { se.undo(); }
     if redo_k { se.redo(); }
     if se.editing.is_some() { return; }
-    let Some(((r,c),_)) = se.sel else { return };
-    let (del,enter,tab,up,down,left,right,typed) = ctx.input_mut(|i| {
+    let Some((anchor,(r,c))) = se.sel else { return };
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::A)) {
+        let (mr, mc) = { let s = se.sheet(); (s.max_used_row(), s.max_used_col()) };
+        se.sel = Some(((0,0),(mr,mc)));
+        return;
+    }
+    let (del,enter,tab,up,down,left,right,shift,typed) = ctx.input_mut(|i| {
+        let shift = i.modifiers.shift;
+        let m = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
         let del = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete) || i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace);
         let enter = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter) || i.consume_key(egui::Modifiers::NONE, egui::Key::F2);
         let tab = i.consume_key(egui::Modifiers::NONE, egui::Key::Tab);
-        let up = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp);
-        let down = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown);
-        let left = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft);
-        let right = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight);
+        let up = i.consume_key(m, egui::Key::ArrowUp);
+        let down = i.consume_key(m, egui::Key::ArrowDown);
+        let left = i.consume_key(m, egui::Key::ArrowLeft);
+        let right = i.consume_key(m, egui::Key::ArrowRight);
         let mut ch = None;
         i.events.retain(|e| { if ch.is_none() { if let egui::Event::Text(t) = e { if !t.trim().is_empty() { ch = Some(t.clone()); return false; } } } true });
-        (del, enter, tab, up, down, left, right, ch)
+        (del, enter, tab, up, down, left, right, shift, ch)
     });
     if del { se.clear_selection(); return; }
     if enter { se.begin_edit(r, c, None); return; }
@@ -51,7 +58,10 @@ fn handle_keyboard(se: &mut SpreadsheetEditor, ctx: &egui::Context) {
     if down { nr = r + 1; }
     if left { nc = c.saturating_sub(1); }
     if right || tab { nc = c + 1; }
-    if nr != r || nc != c { se.sel = Some(((nr,nc),(nr,nc))); se.scroll_to = Some((nr,nc)); }
+    if nr != r || nc != c {
+        let new_anchor = if shift { anchor } else { (nr,nc) };
+        se.sel = Some((new_anchor,(nr,nc))); se.scroll_to = Some((nr,nc));
+    }
 }
 
 fn render_toolbar(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, dark: bool) {
@@ -180,6 +190,17 @@ fn render_text(se: &mut SpreadsheetEditor, ui: &mut egui::Ui) {
     });
 }
 
+fn cell_at_pos(pos: egui::Pos2, origin: egui::Pos2, col_x: &[f32], n_cols: u32, n_rows: u32) -> Option<(u32,u32)> {
+    let rx = pos.x - origin.x - ROWNUM_W;
+    let ry = pos.y - origin.y - HEADER_H;
+    if rx < 0.0 || ry < 0.0 { return None; }
+    let r = (ry / ROW_H) as u32;
+    if r >= n_rows { return None; }
+    let c = col_x.partition_point(|&x| x <= rx).saturating_sub(1) as u32;
+    if c >= n_cols { return None; }
+    Some((r, c))
+}
+
 fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Context, dark: bool) {
     let idx = se.active_sheet;
     let n_rows = se.sheets[idx].rows.max(se.sheets[idx].max_used_row()+40);
@@ -198,6 +219,19 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
     scroll_area.show_viewport(ui, |ui, viewport| {
         let (outer, _) = ui.allocate_exact_size(egui::vec2(total_w+ROWNUM_W, total_h+HEADER_H), egui::Sense::hover());
         let painter = ui.painter_at(outer);
+
+        let pointer_pos = ctx.input(|i| i.pointer.latest_pos());
+        let primary_pressed = ctx.input(|i| i.pointer.primary_pressed());
+        let primary_down = ctx.input(|i| i.pointer.primary_down());
+        if let Some(cell) = pointer_pos.filter(|p| outer.contains(*p)).and_then(|p| cell_at_pos(p, outer.min, &col_x, n_cols, n_rows)) {
+            if primary_pressed {
+                let anchor = if shift { se.sel.map(|(a,_)| a).unwrap_or(cell) } else { cell };
+                se.sel = Some((anchor, cell));
+            } else if primary_down {
+                if let Some((anchor,_)) = se.sel { se.sel = Some((anchor, cell)); }
+            }
+        }
+
         let r0 = ((viewport.min.y-HEADER_H).max(0.0)/ROW_H) as u32;
         let r1 = (((viewport.max.y-HEADER_H).max(0.0)/ROW_H) as u32 + 2).min(n_rows);
         let c0 = col_x.partition_point(|&x| x < viewport.min.x-ROWNUM_W).saturating_sub(1) as u32;
@@ -205,7 +239,8 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
 
         let sel = se.sel;
         let editing_pos = se.editing.as_ref().map(|(r,c,_)| (*r,*c));
-        let mut new_sel = None; let mut begin_at = None; let mut commit_edit = false; let mut cancel_edit = false;
+        let mut begin_at = None; let mut commit_edit = false; let mut cancel_edit = false;
+        let mut commit_move: Option<(u32,u32,i32,i32)> = None;
 
         for r in r0..r1 {
             let ry = outer.min.y + HEADER_H + r as f32*ROW_H;
@@ -226,7 +261,8 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
                         let er = ui.put(rect.shrink(1.0), egui::TextEdit::singleline(val).font(egui::FontId::monospace(12.5)));
                         if se.editing_focus_pending { er.request_focus(); se.editing_focus_pending = false; }
                         if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) { cancel_edit = true; }
-                        else if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { commit_edit = true; }
+                        else if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { commit_edit = true; commit_move = Some((r,c,1,0)); }
+                        else if er.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Tab)) { commit_edit = true; commit_move = Some((r,c,0,1)); }
                         else if er.lost_focus() { commit_edit = true; }
                     }
                 } else {
@@ -249,10 +285,6 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
                     }
                     let resp = ui.interact(rect, ui.id().with(("se_cell", r, c)), egui::Sense::click());
                     if resp.double_clicked() { begin_at = Some((r,c)); }
-                    else if resp.clicked() {
-                        if shift { let anchor = sel.map(|(a,_)| a).unwrap_or((r,c)); new_sel = Some((anchor,(r,c))); }
-                        else { new_sel = Some(((r,c),(r,c))); }
-                    }
                 }
             }
         }
@@ -268,6 +300,7 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
             if hresp.hovered() || hresp.dragged() { ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal); }
             if hresp.dragged() { let cur = se.sheets[idx].col_width(c); let nw = (cur+hresp.drag_delta().x).max(30.0); se.sheets[idx].col_widths.insert(c, nw); se.dirty = true; }
             let hdr_resp = ui.interact(rect, ui.id().with(("se_colhdr", c)), egui::Sense::click());
+            if hdr_resp.clicked() { se.sel = Some(((0,c),(n_rows.saturating_sub(1),c))); }
             hdr_resp.context_menu(|ui| {
                 if ui.button("Sort A-Z").clicked() { se.sort_col(c, true); ui.close(); }
                 if ui.button("Sort Z-A").clicked() { se.sort_col(c, false); ui.close(); }
@@ -283,6 +316,7 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
             painter.rect_stroke(rect, 0.0, egui::Stroke::new(0.5_f32, se_style::grid_line(dark)), egui::StrokeKind::Outside);
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, format!("{}", r+1), egui::FontId::proportional(11.0), se_style::header_text(dark));
             let rn_resp = ui.interact(rect, ui.id().with(("se_rowhdr", r)), egui::Sense::click());
+            if rn_resp.clicked() { se.sel = Some(((r,0),(r,n_cols.saturating_sub(1)))); }
             rn_resp.context_menu(|ui| {
                 if ui.button("Insert Row Above").clicked() { se.insert_row(r); ui.close(); }
                 if ui.button("Delete Row").clicked() { se.delete_row(r); ui.close(); }
@@ -292,10 +326,14 @@ fn render_grid(se: &mut SpreadsheetEditor, ui: &mut egui::Ui, ctx: &egui::Contex
         let corner = egui::Rect::from_min_size(egui::pos2(outer.min.x+viewport.min.x.max(0.0), outer.min.y+viewport.min.y.max(0.0)), egui::vec2(ROWNUM_W, HEADER_H));
         painter.rect_filled(corner, 0.0, se_style::header_bg(dark));
 
-        if let Some(s) = new_sel { se.sel = Some(s); }
         if let Some((r,c)) = begin_at { se.begin_edit(r,c,None); }
         if commit_edit { se.commit_edit(); }
         if cancel_edit { se.cancel_edit(); }
+        if let Some((er,ec,dr,dc)) = commit_move {
+            let nr = (er as i32 + dr).max(0) as u32;
+            let nc = (ec as i32 + dc).max(0) as u32;
+            se.sel = Some(((nr,nc),(nr,nc))); se.scroll_to = Some((nr,nc));
+        }
     });
 
     let (do_copy, do_cut, paste) = ctx.input(|i| {

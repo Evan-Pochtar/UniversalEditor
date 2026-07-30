@@ -397,6 +397,8 @@
 - **GENERAL**: Added autosaving with customizable autosave interval
 - **TEXT EDITOR**: Added fallback font to render more unique characters
 - **SPREADSHEET EDITOR**: First Prototype of the spreadsheet editor
+- **SPREADSHEET EDITOR**: Clicking row headers or column headers selects the row/column
+- **SPREADSHEET EDITOR**: Click and drag now selects multiple cells
 
 #### Debugging
 - **TEXT EDITOR**: Formatting within quotation marks now load properly
